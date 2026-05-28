@@ -54,7 +54,9 @@
     "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
     "prepare": "npm run build",
     "prepack": "npm run verify:self",
+    "prepublishOnly": "npm run verify:self",
     "pack:dry-run": "npm pack --dry-run",
+    "publish:dry": "npm publish --dry-run --access public",
     "budget": "node ./dist/bin/yam.js budget",
     "measure": "node ./dist/bin/yam.js measure",
     "tools": "node ./dist/bin/yam.js tools",
@@ -81,7 +83,9 @@
     "ui"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "latest"
   },
   "license": "MIT",
   "devDependencies": {
