@@ -1,0 +1,90 @@
+{
+  "name": "yam-codex",
+  "version": "0.1.0",
+  "description": "Progressive proof-first Codex harness: start fast, deepen deliberately, stay honest by design.",
+  "type": "module",
+  "author": "0kim0bos",
+  "homepage": "https://github.com/0kim0bos/yam#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0kim0bos/yam.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0kim0bos/yam/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "yam": "dist/bin/yam.js"
+  },
+  "types": "dist/lib/trust-kernel.d.ts",
+  "exports": {
+    "./trust-kernel": {
+      "types": "./dist/lib/trust-kernel.d.ts",
+      "import": "./dist/lib/trust-kernel.js"
+    }
+  },
+  "files": [
+    "AGENTS.md",
+    "COMMANDS.md",
+    "DECISIONS.md",
+    "LICENSE",
+    "README.md",
+    "ROADMAP.md",
+    "dist",
+    "src",
+    "tsconfig.json",
+    "references",
+    "skills",
+    "templates",
+    "yam.manifest.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "install:skills": "node ./dist/bin/yam.js install",
+    "uninstall:skills": "node ./dist/bin/yam.js uninstall",
+    "status": "node ./dist/bin/yam.js status",
+    "verify": "node ./dist/bin/yam.js verify",
+    "doctor": "node ./dist/bin/yam.js doctor",
+    "list": "node ./dist/bin/yam.js list",
+    "examples": "node ./dist/bin/yam.js examples",
+    "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
+    "prepare": "npm run build",
+    "prepack": "npm run verify:self",
+    "pack:dry-run": "npm pack --dry-run",
+    "budget": "node ./dist/bin/yam.js budget",
+    "measure": "node ./dist/bin/yam.js measure",
+    "tools": "node ./dist/bin/yam.js tools",
+    "proof": "node ./dist/bin/yam.js proof",
+    "safety": "node ./dist/bin/yam.js safety",
+    "detect": "node ./dist/bin/yam.js detect",
+    "pack": "node ./dist/bin/yam.js pack",
+    "memory": "node ./dist/bin/yam.js memory",
+    "template": "node ./dist/bin/yam.js template",
+    "tune-log": "node ./dist/bin/yam.js tune-log",
+    "init-project": "node ./dist/bin/yam.js init-project"
+  },
+  "keywords": [
+    "codex",
+    "harness",
+    "codex-skills",
+    "ai-agents",
+    "developer-tools",
+    "verification",
+    "ui-review",
+    "proof-first",
+    "skills",
+    "proof",
+    "ui"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  }
+}

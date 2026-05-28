@@ -1,0 +1,48 @@
+{
+  "name": "yam",
+  "version": "0.1.0",
+  "principles": [
+    "Direction before execution.",
+    "Start fast.",
+    "Deepen deliberately.",
+    "Basic direction fit and honest verification always.",
+    "Honest by design.",
+    "Heavy proof when risk or user intent calls for it.",
+    "Token-aware by default.",
+    "Context-reuse first.",
+    "End with remaining tasks and fix-first items."
+  ],
+  "defaultHooks": false,
+  "routes": [
+    {
+      "id": "quick",
+      "stage": "v0.3",
+      "purpose": "Fast scoped implementation, small fixes, and quick error scans with focused verification."
+    },
+    {
+      "id": "ueye",
+      "stage": "v0.3",
+      "purpose": "Tight UI/UX/design implementation and visual review with reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
+    },
+    {
+      "id": "question",
+      "stage": "v0.1",
+      "purpose": "Very-light direct Q&A for stable or local questions without implementation."
+    },
+    {
+      "id": "scout",
+      "stage": "v0.1",
+      "purpose": "Lightweight investigation and recommendation without code changes by default."
+    },
+    {
+      "id": "deep",
+      "stage": "v0",
+      "purpose": "Single-agent heavy verification by explicit request, including runtime/tmux/browser/process proof when needed."
+    },
+    {
+      "id": "mission",
+      "stage": "v0.2",
+      "purpose": "Explicit real-subagent/team execution route for approved plans, cross-verification, doctor scan, and final proof."
+    }
+  ]
+}
