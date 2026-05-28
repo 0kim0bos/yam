@@ -72,3 +72,11 @@ tmp/
 .tmp/
 temp/
 logs/
+
+# Local yam runtime artifacts are private by default.
+# Keep only the shared deferred-trigger summary in git.
+.yam/*
+!.yam/
+!.yam/memory/
+.yam/memory/*
+!.yam/memory/summary.md

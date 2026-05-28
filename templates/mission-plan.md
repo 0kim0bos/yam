@@ -29,6 +29,19 @@ Subagent 판단:
 - 이유:
 - subagent가 불가능하거나 불필요하면 기본적으로 $deep으로 전환:
 
+Patch envelope:
+- agent_id:
+- assigned_scope:
+- changed_files:
+- verification_hint:
+- truth_status: verified / partial / skipped / blocked / assumed
+
+Rollback hint:
+- touched_files:
+- generated_files:
+- before_check:
+- safe_revert_note:
+
 검증:
 - 필요한 가장 작은 검증 명령을 우선 실행
 - 필요하면 tmux/dev server/browser QA/process cleanup proof 사용

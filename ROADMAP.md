@@ -311,3 +311,113 @@ Tasks:
 - Add `yam proof write`. Done.
 - Prepare npm/npx package metadata and dry-run packaging. Done.
 - Add small route-scoped trust kernel: truth caps, fake/real policy, runtime truth matrix, and completion proof object. Done.
+
+### 16. Deferred Triggers
+
+Goal: keep useful future trust-layer ideas visible without turning them into always-on gates too early.
+
+Rules:
+
+- Do not implement deferred items just because they are listed here.
+- Mention an item again when its trigger appears in real use.
+- Prefer lite metadata before runtime systems.
+- Keep ordinary `$quick`, `$question`, and `$scout` flows free of these gates.
+
+#### Mission Patch Queue Lite
+
+Status: next candidate for `$mission` only.
+
+Trigger:
+
+- A mission uses two or more real subagent/lane outputs.
+- Multiple lanes touch nearby files or the same subsystem.
+- It becomes hard to tell who changed what, why, and how to revert it.
+- Mission rollback or apply order starts to matter.
+
+First shape:
+
+- pending / applied / verified / reverted / blocked state.
+- lane id and assigned scope.
+- changed files.
+- verification hint.
+- rollback hint.
+- truth status.
+
+Keep out for now:
+
+- automatic merge engine.
+- persistent locks.
+- parallel apply worker.
+- broad runtime orchestration.
+
+#### Tool Intent Label / Tool Trust Metadata
+
+Status: near-term lightweight metadata.
+
+Trigger:
+
+- A route uses several tool classes together, such as browser, package manager, GitHub, filesystem, database, or deployment tools.
+- Read-only and write actions need to be distinguished in proof.
+- Destructive actions need a visible route recommendation before execution.
+- Release or mission reports need clearer evidence about what kind of tool ran.
+
+First shape:
+
+- tool intent: read_only / write / destructive / runtime / visual.
+- parallel safe: true / false / unknown.
+- approval required: true / false / unknown.
+- evidence kind and truth status.
+
+Keep out for now:
+
+- automatic scheduling.
+- automatic permission mutation.
+- mandatory tool graph.
+
+#### MCP Scheduler Runtime
+
+Status: later.
+
+Trigger:
+
+- Tool intent labels are no longer enough.
+- The harness starts coordinating multiple external tools inside one route.
+- Write or destructive actions could run near read-only checks.
+- Parallel tool execution becomes common and needs ordering.
+- A mission needs deterministic tool sequence proof.
+
+First shape:
+
+- scheduler proof object.
+- read-only overlap allowed.
+- write/destructive serialization.
+- blocked/approved/skipped status.
+
+Keep out for now:
+
+- default scheduler for normal work.
+- route-wide mandatory scheduler.
+- background runtime service.
+
+#### Appshots Attachment Gate
+
+Status: deferred.
+
+Trigger:
+
+- Ueye visual provenance cannot answer which exact visual source was used.
+- A team workflow needs thread-level or attachment-level audit trails.
+- Reference and implementation screenshots are easy to confuse.
+- External review requires source image lineage beyond path/hash/id.
+
+First shape:
+
+- optional attachment source fields.
+- no mandatory gate.
+- preserve Ueye visual provenance as the default.
+
+Keep out for now:
+
+- required thread attachment ids.
+- app-specific visual gates.
+- blocking ordinary Ueye work when attachment metadata is absent.

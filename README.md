@@ -126,6 +126,9 @@ yam tools doctor /path/to/project --json
 yam proof /path/to/project
 yam proof write /path/to/project --route quick --truth verified --command "npm run verify:self: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
+yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
+yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
+yam release report --json
 yam safety "supabase db reset"
 yam detect /path/to/project
 yam pack /path/to/project

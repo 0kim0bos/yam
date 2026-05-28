@@ -77,13 +77,16 @@ Use these artifacts for reference-led implementation or serious visual review. K
    - reference, before, and after evidence when available.
    - path or URL, source type, state, viewport, and visual verification cap.
    - sha256 and dimensions when an image file is locally available.
-2. Reference Read Proof:
+2. Visual Provenance:
+   - source kind, path, hash, reference id, screenshot id, redaction/locality flags, operator-provided flag, comparison result, and truth status.
+   - use this to prove the route from reference reading to implementation recheck.
+3. Reference Read Proof:
    - concrete observations from the reference before implementation.
    - no implementation claim should depend on an unrecorded reference observation.
-3. Reference vs Implementation Matrix:
+4. Reference vs Implementation Matrix:
    - compare the implemented result against the reference by aspect.
    - record matched, similar, different, not-applicable, or not-verified.
-4. Design Quality Review:
+5. Design Quality Review:
    - judge whether the result is good UI/UX/design after reference comparison.
    - use pass, needs-polish, or fails for each relevant design dimension.
 

@@ -36,6 +36,30 @@ Subagent policy:
 - If the user explicitly insists on mission despite missing subagents, mark the result `partial` or `blocked`; do not treat self-review as team execution.
 - The final proof must record the subagent decision: `used`, `downgraded_to_deep`, `unavailable_partial`, or `blocked`, with the reason.
 
+Patch envelope:
+
+Use a small envelope when a real mission lane changes code:
+
+- `agent_id`: who or which lane made the change.
+- `assigned_scope`: the bounded work area.
+- `changed_files`: files the lane touched.
+- `verification_hint`: the smallest relevant check for the lane.
+- `rollback_hint`: what to inspect or revert if the change is wrong.
+- `truth_status`: the lane's honest status.
+
+This is only a record shape. It is not a queue, lock manager, or parallel apply engine.
+
+Rollback hint:
+
+Record:
+
+- touched files
+- generated files
+- before check
+- safe revert note
+
+Do not claim rollback safety unless the relevant check or revert path was actually inspected.
+
 Runtime use:
 
 - Mission may use deep runtime verification when needed, but runtime proof alone does not make a mission if subagents were not used.

@@ -22,7 +22,7 @@
     {
       "id": "ueye",
       "stage": "v0.3",
-      "purpose": "Tight UI/UX/design implementation and visual review with reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
+      "purpose": "Tight UI/UX/design implementation and visual review with visual provenance, reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
     },
     {
       "id": "question",
@@ -42,7 +42,7 @@
     {
       "id": "mission",
       "stage": "v0.2",
-      "purpose": "Explicit real-subagent/team execution route for approved plans, cross-verification, doctor scan, and final proof."
+      "purpose": "Explicit real-subagent/team execution route for approved plans, patch envelopes, rollback hints, cross-verification, doctor scan, and final proof."
     }
   ]
 }

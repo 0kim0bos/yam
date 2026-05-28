@@ -47,6 +47,38 @@ export interface RuntimeTruthMatrix {
   blockers: string[];
 }
 
+export interface UeyeVisualProvenance {
+  schema: 'yam.ueye-visual-provenance.v1';
+  source_kind: string;
+  source_path: string;
+  source_hash: string;
+  reference_id: string;
+  screenshot_id: string;
+  local_only: boolean;
+  redacted: boolean;
+  operator_provided: boolean;
+  comparison_result: string;
+  truth_status: TruthStatus;
+}
+
+export interface RollbackHint {
+  schema: 'yam.rollback-hint.v1';
+  touched_files: string[];
+  generated_files: string[];
+  before_check: string;
+  safe_revert_note: string;
+}
+
+export interface MissionPatchEnvelope {
+  schema: 'yam.mission-patch-envelope.v1';
+  agent_id: string;
+  assigned_scope: string;
+  changed_files: string[];
+  verification_hint: string;
+  rollback_hint: RollbackHint;
+  truth_status: TruthStatus;
+}
+
 export interface FakeRealPolicyResult {
   schema: 'yam.fake-real-policy.v1';
   ok: boolean;
@@ -71,6 +103,9 @@ export interface ProofSummary {
   blocked?: unknown;
   assumptions?: unknown;
   unverified?: unknown;
+  visualProvenance?: unknown;
+  missionEnvelope?: unknown;
+  rollbackHint?: unknown;
 }
 
 export interface ProofOptions {
@@ -101,6 +136,9 @@ export interface YamCompletionProof {
   evidence: string[];
   visual: string[];
   runtime: string[];
+  visualProvenance: string[];
+  missionEnvelope: string[];
+  rollbackHint: string[];
   cleanup: unknown;
   changed: string[];
   skipped: string[];
@@ -111,6 +149,48 @@ export interface YamCompletionProof {
   evidenceRows: EvidenceRow[];
   fakeReal: FakeRealPolicyResult;
   runtimeTruth: RuntimeTruthMatrix;
+}
+
+export function buildUeyeVisualProvenance(input: Partial<UeyeVisualProvenance> = {}): UeyeVisualProvenance {
+  const truth = isTruthStatus(input.truth_status) ? input.truth_status : 'partial';
+  return {
+    schema: 'yam.ueye-visual-provenance.v1',
+    source_kind: String(input.source_kind || ''),
+    source_path: String(input.source_path || ''),
+    source_hash: String(input.source_hash || 'unknown'),
+    reference_id: String(input.reference_id || ''),
+    screenshot_id: String(input.screenshot_id || ''),
+    local_only: Boolean(input.local_only),
+    redacted: Boolean(input.redacted),
+    operator_provided: Boolean(input.operator_provided),
+    comparison_result: String(input.comparison_result || 'not-verified'),
+    truth_status: truth
+  };
+}
+
+export function buildRollbackHint(input: Partial<RollbackHint> = {}): RollbackHint {
+  return {
+    schema: 'yam.rollback-hint.v1',
+    touched_files: asList(input.touched_files),
+    generated_files: asList(input.generated_files),
+    before_check: String(input.before_check || ''),
+    safe_revert_note: String(input.safe_revert_note || '')
+  };
+}
+
+export function buildMissionPatchEnvelope(input: Partial<MissionPatchEnvelope> = {}): MissionPatchEnvelope {
+  const rollback = input.rollback_hint && typeof input.rollback_hint === 'object'
+    ? buildRollbackHint(input.rollback_hint)
+    : buildRollbackHint();
+  return {
+    schema: 'yam.mission-patch-envelope.v1',
+    agent_id: String(input.agent_id || ''),
+    assigned_scope: String(input.assigned_scope || ''),
+    changed_files: asList(input.changed_files),
+    verification_hint: String(input.verification_hint || ''),
+    rollback_hint: rollback,
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : 'partial'
+  };
 }
 
 const TRUTH_RANK: Readonly<Record<TruthStatus, number>> = Object.freeze({
@@ -183,6 +263,15 @@ export function classifyEvidenceTruth(summary: ProofSummary = {}, options: Proof
   }
   for (const visual of asList(summary.visual)) {
     rows.push(evidenceRow('visual', visual, classifyVisualEvidence(visual)));
+  }
+  for (const provenance of asList(summary.visualProvenance)) {
+    rows.push(evidenceRow('visual', provenance, metadataTruth(provenance, 'partial')));
+  }
+  for (const envelope of asList(summary.missionEnvelope)) {
+    rows.push(evidenceRow('evidence', envelope, metadataTruth(envelope, 'partial')));
+  }
+  for (const rollback of asList(summary.rollbackHint)) {
+    rows.push(evidenceRow('evidence', rollback, metadataTruth(rollback, 'partial')));
   }
   for (const runtime of asList(summary.runtime)) {
     rows.push(evidenceRow('runtime', runtime, classifyRuntimeEvidence(runtime, options)));
@@ -267,6 +356,9 @@ export function buildYamCompletionProof(summary: ProofSummary = {}, options: Pro
     evidence: asList(summary.evidence),
     visual: asList(summary.visual),
     runtime: asList(summary.runtime),
+    visualProvenance: asList(summary.visualProvenance),
+    missionEnvelope: asList(summary.missionEnvelope),
+    rollbackHint: asList(summary.rollbackHint),
     cleanup: summary.cleanup || '',
     changed: asList(summary.changed),
     skipped: asList(summary.skipped),
@@ -315,6 +407,25 @@ function classifyCleanupEvidence(value: unknown = ''): TruthStatus {
 
 function commandPassed(value: unknown = ''): boolean {
   return /pass|passed|ok|success|exit\s*0|green/i.test(String(value || '')) && !/fail|failed|error|blocked/i.test(String(value || ''));
+}
+
+function metadataTruth(value: unknown = '', fallback: TruthStatus = 'partial'): TruthStatus {
+  return weakestTruth(readStructuredTruth(value, fallback), 'partial');
+}
+
+function readStructuredTruth(value: unknown = '', fallback: TruthStatus = 'partial'): TruthStatus {
+  if (typeof value === 'object' && value) {
+    const candidate = (value as { truth_status?: unknown; truth?: unknown }).truth_status || (value as { truth?: unknown }).truth;
+    return isTruthStatus(candidate) ? candidate : fallback;
+  }
+  const text = String(value || '');
+  try {
+    const data = JSON.parse(text);
+    const candidate = data.truth_status || data.truth;
+    return isTruthStatus(candidate) ? candidate : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function strongestSupportedTruth(rows: EvidenceRow[] = []): TruthStatus {

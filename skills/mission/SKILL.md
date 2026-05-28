@@ -49,12 +49,14 @@ Do not use for:
    - UX/browser verifier: checks screen behavior when relevant.
    - Doctor/scanner: checks direction fit, scope control, verification, cleanup, stale context, and false-completion risk.
 5. Execute the implementation in bounded steps.
-6. Use `$deep`-style runtime verification when the mission needs dev server, tmux, test watcher, browser QA, cleanup, or before/after evidence.
-7. Cross-check findings and resolve contradictions.
-8. Run the smallest honest final verification set.
-9. Run doctor scan with `references/doctor-scan.md`.
-10. Confirm cleanup or explicitly report intentionally running processes.
-11. Produce final proof summary, truth status, remaining tasks, and fix-first items.
+6. Record a compact patch envelope for each real lane that changes code.
+7. Add rollback hints for touched files, generated files, before checks, and safe revert notes.
+8. Use `$deep`-style runtime verification when the mission needs dev server, tmux, test watcher, browser QA, cleanup, or before/after evidence.
+9. Cross-check findings and resolve contradictions.
+10. Run the smallest honest final verification set.
+11. Run doctor scan with `references/doctor-scan.md`.
+12. Confirm cleanup or explicitly report intentionally running processes.
+13. Produce final proof summary, truth status, remaining tasks, and fix-first items.
 
 ## Proof Summary
 
@@ -64,6 +66,8 @@ Include:
 - Role work completed.
 - Subagent decision: used / downgraded_to_deep / unavailable_partial / blocked, with reason.
 - Files or surfaces changed.
+- Patch envelope for each real code-changing lane.
+- Rollback hint for risky or multi-file changes.
 - Runtime/tmux/browser evidence when used.
 - Cross-verification result.
 - Doctor/scanner result.

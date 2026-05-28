@@ -135,10 +135,18 @@ yam tools doctor /path/to/project --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
+yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
+yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam proof --route deep --truth proven --require-runtime --runtime "mock server fixture"
 yam proof write /path/to/project --route deep --truth partial --command "npm run build: pass"
 yam proof write /path/to/project --format md --truth assumed --assumption "No runtime was started"
 yam safety "supabase db reset --linked"
+```
+
+Release reporting intentionally runs the release checks and returns a machine-readable summary.
+
+```bash
+yam release report --json
 ```
 
 ## Lite Hook

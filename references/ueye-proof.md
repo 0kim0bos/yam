@@ -41,6 +41,25 @@ Bounds:
 - Record missing dimensions or hashes as `unknown`, not as failure.
 - Use generated annotations only as derivative aids.
 
+### Visual Provenance
+
+Purpose: prove the visual source path from reference reading to implementation recheck.
+
+Record these fields when a reference or screenshot materially affects the claim:
+
+- `source_kind`
+- `source_path`
+- `source_hash`
+- `reference_id`
+- `screenshot_id`
+- `local_only`
+- `redacted`
+- `operator_provided`
+- `comparison_result`
+- `truth_status`
+
+Use `unknown` for missing hashes and `not-verified` for comparisons that were not actually rechecked. Do not upgrade a visual claim only because a reference was supplied.
+
 ### Reference Read Proof
 
 Purpose: separate reading the reference from judging the implementation.

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -7,6 +8,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   TRUTH_STATUSES,
+  buildMissionPatchEnvelope,
+  buildRollbackHint,
+  buildUeyeVisualProvenance,
   buildYamCompletionProof,
   detectDbSafetyText as detectTrustDbSafetyText,
   isTruthStatus
@@ -128,6 +132,7 @@ Usage:
   yam tools doctor [dir]
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
+  yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
   yam hook <status|enable|disable|run> [lite] [--global|--project dir]
@@ -919,6 +924,85 @@ async function safety(args = []) {
   printSafetyResult(result);
 }
 
+async function release(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand !== 'report') {
+    console.error('usage: yam release report [--json]');
+    process.exitCode = 1;
+    return;
+  }
+  const asJson = args.includes('--json');
+  const report = runReleaseReport();
+  if (asJson) {
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
+  console.log('yam release report');
+  console.log(`- Package: ${report.packageName}@${report.version}`);
+  console.log(`- Truth status: ${report.truth_status}`);
+  for (const check of report.checks) {
+    console.log(`- ${check.id}: ${check.status} (${check.duration_ms}ms)`);
+    if (check.note) console.log(`  ${check.note}`);
+  }
+  if (report.failed.length) {
+    console.log('- Failed:');
+    for (const id of report.failed) console.log(`  - ${id}`);
+  }
+  if (!report.ok) process.exitCode = 1;
+}
+
+function runReleaseReport() {
+  const startedAt = new Date().toISOString();
+  const checks = [
+    ['typecheck', ['npm', ['run', 'typecheck']]],
+    ['forbidden_names', ['npm', ['run', 'forbidden-names:check']]],
+    ['package_boundary', ['npm', ['run', 'package-boundary:check']]],
+    ['registry_status', ['npm', ['run', 'registry:check']]],
+    ['cli_smoke', ['npm', ['run', 'cli-smoke']]],
+    ['dist_freshness', ['npm', ['run', 'dist:freshness']]]
+  ].map(([id, command]) => runReleaseCheck(id, command));
+  const failed = checks.filter((check) => check.status !== 'passed').map((check) => check.id);
+  return {
+    schema: 'yam.release-report.v1',
+    generated_at: startedAt,
+    packageName: PACKAGE_JSON.name,
+    version: VERSION,
+    ok: failed.length === 0,
+    truth_status: failed.length === 0 ? 'verified' : 'blocked',
+    checks,
+    failed
+  };
+}
+
+function runReleaseCheck(id, commandSpec) {
+  const [command, args] = commandSpec;
+  const start = Date.now();
+  const result = spawnSync(command, args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, npm_config_cache: path.join(os.tmpdir(), 'yam-npm-cache') },
+    timeout: 120000
+  });
+  const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+  const timedOut = result.error?.message?.includes('ETIMEDOUT') || result.signal === 'SIGTERM';
+  return {
+    id,
+    command: [command, ...args].join(' '),
+    status: result.status === 0 ? 'passed' : timedOut ? 'blocked' : 'failed',
+    exit_code: typeof result.status === 'number' ? result.status : null,
+    duration_ms: Date.now() - start,
+    note: summarizeCheckOutput(output || result.error?.message || '')
+  };
+}
+
+function summarizeCheckOutput(output = '') {
+  const lines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  const highSignal = lines.filter((line) => !line.startsWith('>')).slice(-4);
+  return highSignal.join(' | ').slice(0, 600);
+}
+
 async function readStdinTextIfAvailable() {
   if (process.stdin.isTTY) return '';
   const chunks = [];
@@ -966,6 +1050,9 @@ async function proof(args = []) {
   printProofList('Evidence', summary.evidence);
   printProofList('Visual evidence', summary.visual);
   printProofList('Runtime evidence', summary.runtime);
+  printProofList('Visual provenance', summary.visualProvenance || []);
+  printProofList('Mission patch envelope', summary.missionEnvelope || []);
+  printProofList('Rollback hint', summary.rollbackHint || []);
   printProofList('Changed surfaces', summary.changed);
   printProofList('Skipped', summary.skipped);
   printProofList('Blocked', summary.blocked);
@@ -1040,6 +1127,18 @@ function buildProofSummary(parsed, artifact) {
     evidence: [...artifact.evidence, ...arrayFlag(parsed.flags.evidence)],
     visual: [...artifact.visual, ...arrayFlag(parsed.flags.visual)],
     runtime: [...artifact.runtime, ...arrayFlag(parsed.flags.runtime)],
+    visualProvenance: [
+      ...structuredEvidenceList(artifact.visualProvenance),
+      ...structuredEvidenceList(parsed.flags.visual_provenance)
+    ],
+    missionEnvelope: [
+      ...structuredEvidenceList(artifact.missionEnvelope),
+      ...structuredEvidenceList(parsed.flags.mission_envelope)
+    ],
+    rollbackHint: [
+      ...structuredEvidenceList(artifact.rollbackHint),
+      ...structuredEvidenceList(parsed.flags.rollback_hint)
+    ],
     cleanup: parsed.flags.cleanup || artifact.cleanup || '',
     changed: [...artifact.changed, ...arrayFlag(parsed.flags.changed)],
     skipped: [...artifact.skipped, ...arrayFlag(parsed.flags.skipped)],
@@ -1090,6 +1189,15 @@ function renderProofMarkdown(summary) {
     '## Runtime evidence',
     ...renderProofMarkdownList(summary.runtime),
     '',
+    '## Visual provenance',
+    ...renderProofMarkdownList(summary.visualProvenance || []),
+    '',
+    '## Mission patch envelope',
+    ...renderProofMarkdownList(summary.missionEnvelope || []),
+    '',
+    '## Rollback hint',
+    ...renderProofMarkdownList(summary.rollbackHint || []),
+    '',
     '## Changed surfaces',
     ...renderProofMarkdownList(summary.changed),
     '',
@@ -1122,7 +1230,7 @@ function renderProofMarkdownList(values) {
 function parseProofArgs(args = []) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
-  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
+  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
@@ -1136,7 +1244,7 @@ function parseProofArgs(args = []) {
       }
       const value = inlineValue ?? args[index + 1] ?? '';
       if (inlineValue === undefined) index += 1;
-      if (['command', 'evidence', 'visual', 'runtime', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
+      if (['command', 'evidence', 'visual', 'runtime', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
         flags[normalizedKey] = [...arrayFlag(flags[normalizedKey]), value];
       } else {
         flags[normalizedKey] = value;
@@ -1174,6 +1282,9 @@ function emptyProofArtifact() {
     evidence: [],
     visual: [],
     runtime: [],
+    visualProvenance: [],
+    missionEnvelope: [],
+    rollbackHint: [],
     cleanup: '',
     changed: [],
     skipped: [],
@@ -1196,6 +1307,9 @@ async function parseProofJson(file, empty) {
       evidence: arrayFlag(data.evidence),
       visual: arrayFlag(data.visual || data.visualEvidence),
       runtime: arrayFlag(data.runtime || data.runtimeEvidence),
+      visualProvenance: structuredEvidenceList(data.visualProvenance || data.visual_provenance),
+      missionEnvelope: structuredEvidenceList(data.missionEnvelope || data.mission_envelope),
+      rollbackHint: structuredEvidenceList(data.rollbackHint || data.rollback_hint),
       cleanup: String(data.cleanup || data.cleanupStatus || ''),
       changed: arrayFlag(data.changed || data.files),
       skipped: arrayFlag(data.skipped),
@@ -1221,6 +1335,9 @@ async function parseProofMarkdown(file, empty) {
     evidence: readProofList(text, 'Evidence'),
     visual: readProofList(text, 'Visual evidence'),
     runtime: firstProofList(text, ['Runtime evidence', 'Processes', 'tmux']),
+    visualProvenance: readProofList(text, 'Visual provenance'),
+    missionEnvelope: readProofList(text, 'Mission patch envelope'),
+    rollbackHint: readProofList(text, 'Rollback hint'),
     cleanup: readProofField(text, 'Cleanup') || readProofField(text, 'Cleanup status'),
     changed: firstProofList(text, ['Changed surfaces', 'Files']),
     skipped: readProofList(text, 'Skipped'),
@@ -1267,9 +1384,36 @@ function arrayFlag(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [value].filter(Boolean);
 }
 
+function structuredEvidenceList(value) {
+  return arrayFlag(value).map((item) => formatStructuredEvidence(item)).filter(Boolean);
+}
+
+function formatStructuredEvidence(value) {
+  if (!value) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  const text = String(value).trim();
+  if (!text) return '';
+  if (!text.startsWith('{')) return text;
+  try {
+    const data = JSON.parse(text);
+    if (data.schema === 'yam.ueye-visual-provenance.v1' || data.source_kind || data.reference_id || data.screenshot_id) {
+      return JSON.stringify(buildUeyeVisualProvenance(data));
+    }
+    if (data.schema === 'yam.mission-patch-envelope.v1' || data.agent_id || data.assigned_scope) {
+      return JSON.stringify(buildMissionPatchEnvelope(data));
+    }
+    if (data.schema === 'yam.rollback-hint.v1' || data.touched_files || data.safe_revert_note) {
+      return JSON.stringify(buildRollbackHint(data));
+    }
+    return JSON.stringify(data);
+  } catch {
+    return text;
+  }
+}
+
 function hasProofEvidence(parsed) {
   const flags = parsed.flags || {};
-  return ['command', 'evidence', 'visual', 'runtime', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup);
+  return ['command', 'evidence', 'visual', 'runtime', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup);
 }
 
 function printProofList(label, values) {
@@ -1961,6 +2105,7 @@ async function main() {
   if (command === 'measure') return measure(process.argv[3], process.argv.slice(4));
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
+  if (command === 'release') return release(process.argv.slice(3));
   if (command === 'safety') return safety(process.argv.slice(3));
   if (command === 'memory') return memory(process.argv.slice(3));
   if (command === 'hook') return hook(process.argv.slice(3));

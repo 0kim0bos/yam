@@ -25,6 +25,21 @@
 - Role: proof / reference direction / annotation / partial evidence
 - Visual verification cap:
 
+## Visual Provenance
+
+| Field | Value |
+| --- | --- |
+| source_kind |  |
+| source_path |  |
+| source_hash | unknown |
+| reference_id |  |
+| screenshot_id |  |
+| local_only | true / false |
+| redacted | true / false |
+| operator_provided | true / false |
+| comparison_result | matched / similar / different / not-verified / not-applicable |
+| truth_status | verified / partial / skipped / blocked / assumed |
+
 ## Reference Read Proof
 
 - Layout:
