@@ -41,7 +41,8 @@
     "yam.manifest.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "install:skills": "node ./dist/bin/yam.js install",
     "uninstall:skills": "node ./dist/bin/yam.js uninstall",
