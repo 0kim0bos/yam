@@ -33,7 +33,6 @@ pnpm-debug.log*
 mcp.json
 *.mcp.json
 claude_desktop_config.json
-.cursor/
 .windsurf/
 .vscode/mcp.json
 

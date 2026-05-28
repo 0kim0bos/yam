@@ -14,6 +14,10 @@ import {
 
 type AnyRecord = Record<string, any>;
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SKILLS = [
   'quick',
@@ -624,7 +628,7 @@ async function scanSqlFiles(rootDir, { maxFiles = 30, maxBytes = 200000, maxDept
         await handle.close();
       }
     } catch (error) {
-      findings.push({ file: path.relative(root, file), level: 'warning', reason: `could not read SQL file: ${error.message}` });
+      findings.push({ file: path.relative(root, file), level: 'warning', reason: `could not read SQL file: ${errorMessage(error)}` });
       continue;
     }
     const safety = detectDbSafetyText(text);
@@ -1200,7 +1204,7 @@ async function parseProofJson(file, empty) {
       unverified: arrayFlag(data.unverified)
     };
   } catch (error) {
-    return { ...empty, path: file, blocked: [`Could not parse JSON proof: ${error.message}`], truth: 'blocked' };
+    return { ...empty, path: file, blocked: [`Could not parse JSON proof: ${errorMessage(error)}`], truth: 'blocked' };
   }
 }
 
@@ -1915,7 +1919,7 @@ async function readMemoryRecords(targetDir = process.cwd()) {
       const record = await readJson(file);
       records.push(record);
     } catch (error) {
-      records.push({ id: entry.name.replace(/\.json$/, ''), kind: 'invalid', status: 'invalid', summary: `invalid JSON: ${error.message}` });
+      records.push({ id: entry.name.replace(/\.json$/, ''), kind: 'invalid', status: 'invalid', summary: `invalid JSON: ${errorMessage(error)}` });
     }
   }
   return records.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
