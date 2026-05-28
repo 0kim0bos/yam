@@ -1,7 +1,7 @@
 {
-  "name": "yam-codex",
+  "name": "yam-flow",
   "version": "0.1.0",
-  "description": "Progressive proof-first Codex harness: start fast, deepen deliberately, stay honest by design.",
+  "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
   "homepage": "https://github.com/0kim0bos/yam#readme",

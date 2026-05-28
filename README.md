@@ -1,6 +1,6 @@
 # yam
 
-`yam` is a progressive proof-first personal Codex harness for fast product building, high-quality UI work, and honest verification.
+`yam` is a progressive proof-first personal agent flow for fast product building, high-quality UI work, and honest verification.
 
 ```text
 Direction before execution.
@@ -152,9 +152,9 @@ yam init-project /path/to/project
 The package exposes the `yam` binary. It does not mutate your home directory during package installation.
 
 ```bash
-npx -y --package yam-codex yam list
-npx -y --package yam-codex yam install
-npm install -g yam-codex
+npx -y --package yam-flow yam list
+npx -y --package yam-flow yam install
+npm install -g yam-flow
 yam status
 ```
 
