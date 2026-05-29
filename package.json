@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
@@ -96,6 +96,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "playwright": "^1.60.0",
     "typescript": "^6.0.3"
   }
 }

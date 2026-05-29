@@ -19,6 +19,26 @@ Skip or compress them when:
 
 ## Artifact Set
 
+### Opt-In CLI Helpers
+
+Ueye is one route. It should not split into separate lite/deep skills. Use these helpers only when the current visual claim needs real evidence:
+
+```bash
+yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
+yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
+```
+
+- `capture` uses a Playwright install from the current project when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
+- `compare` is local-only and dependency-free. It records hashes, dimensions, comparison result, and visual provenance. Different screenshots stay `partial`; exact file matches can be `verified`.
+- Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
+
+### Browser Preference
+
+- Prefer the Codex in-app Browser plugin for local pages, localhost, file URLs, and ordinary visual QA.
+- Do not silently switch to the user's Chrome browser when the in-app Browser cannot capture or inspect.
+- Use Chrome only when the user explicitly asks for it, or when the task requires existing Chrome cookies, sessions, extensions, or profile state.
+- If the in-app Browser is unavailable and Chrome was not explicitly requested or required, cap the visual claim at `partial` or `blocked`.
+
 ### Visual Evidence Inventory
 
 Purpose: identify what visual sources were inspected.

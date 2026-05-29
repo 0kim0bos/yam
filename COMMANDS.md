@@ -39,6 +39,14 @@ $ueye
 yam template ueye-comparison
 ```
 
+Opt-in visual evidence helpers:
+
+```bash
+yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
+yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
+yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
+```
+
 ## Review-Only
 
 ```text
@@ -136,6 +144,8 @@ yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
 yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
+yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
+yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam proof --route deep --truth proven --require-runtime --runtime "mock server fixture"
 yam proof write /path/to/project --route deep --truth partial --command "npm run build: pass"

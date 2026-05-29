@@ -19,6 +19,9 @@ try {
   execFileSync(bin, ['verify'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor'], { stdio: 'ignore' });
   execFileSync(bin, ['list'], { stdio: 'ignore' });
+  execFileSync(bin, ['ueye', '--help'], { stdio: 'ignore' });
+  execFileSync(bin, ['ueye', 'capture', '--help'], { stdio: 'ignore' });
+  execFileSync(bin, ['ueye', 'compare', '--help'], { stdio: 'ignore' });
   console.log(`cli-smoke: ok (${version})`);
 } finally {
   rmSync(prefix, { recursive: true, force: true });

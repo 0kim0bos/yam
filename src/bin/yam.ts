@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -132,6 +134,8 @@ Usage:
   yam tools doctor [dir]
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
+  yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
+  yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
@@ -1008,6 +1012,261 @@ async function readStdinTextIfAvailable() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+async function ueye(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return ueyeUsage();
+  if (subcommand === 'capture') return ueyeCapture(args.slice(1));
+  if (subcommand === 'compare') return ueyeCompare(args.slice(1));
+  console.error(`unknown ueye command: ${subcommand}`);
+  return ueyeUsage();
+}
+
+function ueyeUsage() {
+  console.log(`yam ueye
+
+Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/compare only when verified visual claims need real evidence.
+
+Usage:
+  yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
+  yam ueye compare --reference ref.png --actual screenshot.png [--json]
+
+Notes:
+  capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
+  compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
+`);
+}
+
+async function ueyeCapture(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
+  const flags = parseSimpleFlags(args, new Set(['url', 'out', 'viewport', 'wait-until', 'timeout', 'full-page', 'json']));
+  const url = String(flags.url || '');
+  const out = String(flags.out || '');
+  if (!url || !out) {
+    console.error('usage: yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]');
+    process.exitCode = 1;
+    return;
+  }
+
+  const target = path.resolve(expandHome(out));
+  const viewport = parseViewport(String(flags.viewport || '1440x900'));
+  const timeout = Number(flags.timeout || 30000);
+  const waitUntil = String(flags.wait_until || 'networkidle');
+  let browser;
+
+  try {
+    const playwright = await loadOptionalPlaywright();
+    const chromium = playwright?.chromium;
+    if (!chromium) throw new Error('Playwright chromium launcher was not found');
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport });
+    await page.goto(url, { waitUntil, timeout });
+    await page.screenshot({ path: target, fullPage: Boolean(flags.full_page) });
+    const info = await imageFileInfo(target);
+    const result = {
+      schema: 'yam.ueye-capture.v1',
+      status: 'verified',
+      url,
+      out: target,
+      viewport: `${viewport.width}x${viewport.height}`,
+      full_page: Boolean(flags.full_page),
+      sha256: info.sha256,
+      dimensions: info.dimensions,
+      visual_evidence: `browser screenshot captured: ${target} (${info.dimensions}, sha256:${info.sha256})`
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye capture');
+  } catch (error) {
+    const result = {
+      schema: 'yam.ueye-capture.v1',
+      status: 'blocked',
+      url,
+      out: target,
+      reason: errorMessage(error),
+      next_action: 'Install Playwright in the current project or provide a user/browser screenshot, then use `yam ueye compare`.',
+      visual_cap: 'blocked'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye capture');
+    process.exitCode = 1;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+async function ueyeCompare(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'json', 'reference-id', 'screenshot-id']));
+  const reference = String(flags.reference || flags.ref || '');
+  const actual = String(flags.actual || flags.screenshot || '');
+  if (!reference || !actual) {
+    console.error('usage: yam ueye compare --reference ref.png --actual screenshot.png [--json]');
+    process.exitCode = 1;
+    return;
+  }
+
+  const referencePath = path.resolve(expandHome(reference));
+  const actualPath = path.resolve(expandHome(actual));
+  try {
+    const referenceInfo = await imageFileInfo(referencePath);
+    const actualInfo = await imageFileInfo(actualPath);
+    if (referenceInfo.dimensions === 'unknown' || actualInfo.dimensions === 'unknown') {
+      throw new Error('compare requires image files with readable PNG, JPEG, or GIF dimensions');
+    }
+    const exactMatch = referenceInfo.sha256 === actualInfo.sha256;
+    const sameDimensions = referenceInfo.dimensions === actualInfo.dimensions;
+    const comparisonResult = exactMatch ? 'matched' : 'different';
+    const truthStatus = exactMatch ? 'verified' : 'partial';
+    const provenance = buildUeyeVisualProvenance({
+      source_kind: 'implementation_screenshot',
+      source_path: actualPath,
+      source_hash: actualInfo.sha256,
+      reference_id: String(flags.reference_id || path.basename(referencePath)),
+      screenshot_id: String(flags.screenshot_id || path.basename(actualPath)),
+      local_only: true,
+      redacted: false,
+      operator_provided: false,
+      comparison_result: comparisonResult,
+      truth_status: truthStatus
+    });
+    const result = {
+      schema: 'yam.ueye-compare.v1',
+      status: truthStatus,
+      comparison_result: comparisonResult,
+      exact_match: exactMatch,
+      same_dimensions: sameDimensions,
+      reference: referenceInfo,
+      actual: actualInfo,
+      visual_evidence: `browser/local screenshot comparison executed: reference=${referencePath}, actual=${actualPath}, result=${comparisonResult}`,
+      visual_provenance: provenance,
+      proof_hint: `yam proof --route ueye --truth ${truthStatus} --visual "browser/local screenshot comparison executed: ${comparisonResult}" --visual-provenance '${JSON.stringify(provenance)}' --require-visual`
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye compare');
+  } catch (error) {
+    const result = {
+      schema: 'yam.ueye-compare.v1',
+      status: 'blocked',
+      comparison_result: 'not-verified',
+      reason: errorMessage(error),
+      visual_cap: 'blocked'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye compare');
+    process.exitCode = 1;
+  }
+}
+
+function parseSimpleFlags(args = [], allowed = new Set<string>()) {
+  const flags: AnyRecord = {};
+  const positionals: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index] || '');
+    if (!arg.startsWith('--')) {
+      positionals.push(arg);
+      continue;
+    }
+    const [rawKey, inlineValue] = arg.includes('=') ? arg.split(/=(.*)/s, 2) : [arg, undefined];
+    const key = rawKey.slice(2);
+    if (allowed.size && !allowed.has(key)) continue;
+    const normalizedKey = key.replace(/-/g, '_');
+    if (['json', 'full-page'].includes(key)) {
+      flags[normalizedKey] = true;
+      continue;
+    }
+    const value = inlineValue ?? args[index + 1] ?? '';
+    if (inlineValue === undefined) index += 1;
+    flags[normalizedKey] = value;
+  }
+  flags._ = positionals;
+  return flags;
+}
+
+function parseViewport(value = '1440x900') {
+  const match = String(value || '').match(/^(\d{2,5})x(\d{2,5})$/i);
+  if (!match) return { width: 1440, height: 900 };
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+async function loadOptionalPlaywright() {
+  let projectError = '';
+  try {
+    const projectRequire = createRequire(path.join(process.cwd(), 'package.json'));
+    return projectRequire('playwright');
+  } catch (error) {
+    projectError = errorMessage(error);
+    // Fall through to the yam package context for local development or bundled installs.
+  }
+  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+  try {
+    return await dynamicImport('playwright');
+  } catch (error) {
+    throw new Error(`Playwright not found from current project or yam package context. Current project: ${projectError}; package context: ${errorMessage(error)}`);
+  }
+}
+
+async function imageFileInfo(file) {
+  const absolute = path.resolve(expandHome(file));
+  const buffer = await fsp.readFile(absolute);
+  const stat = await fsp.stat(absolute);
+  return {
+    path: absolute,
+    sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    bytes: stat.size,
+    dimensions: imageDimensions(buffer)
+  };
+}
+
+function imageDimensions(buffer) {
+  const png = pngDimensions(buffer);
+  if (png) return png;
+  const jpeg = jpegDimensions(buffer);
+  if (jpeg) return jpeg;
+  const gif = gifDimensions(buffer);
+  if (gif) return gif;
+  return 'unknown';
+}
+
+function pngDimensions(buffer) {
+  if (buffer.length < 24) return '';
+  if (buffer.readUInt32BE(0) !== 0x89504e47 || buffer.readUInt32BE(4) !== 0x0d0a1a0a) return '';
+  return `${buffer.readUInt32BE(16)}x${buffer.readUInt32BE(20)}`;
+}
+
+function gifDimensions(buffer) {
+  if (buffer.length < 10) return '';
+  const signature = buffer.toString('ascii', 0, 6);
+  if (signature !== 'GIF87a' && signature !== 'GIF89a') return '';
+  return `${buffer.readUInt16LE(6)}x${buffer.readUInt16LE(8)}`;
+}
+
+function jpegDimensions(buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return '';
+  let offset = 2;
+  while (offset < buffer.length) {
+    if (buffer[offset] !== 0xff) return '';
+    const marker = buffer[offset + 1];
+    const length = buffer.readUInt16BE(offset + 2);
+    if (marker >= 0xc0 && marker <= 0xc3 && offset + 8 < buffer.length) {
+      return `${buffer.readUInt16BE(offset + 7)}x${buffer.readUInt16BE(offset + 5)}`;
+    }
+    offset += 2 + length;
+  }
+  return '';
+}
+
+function printJsonOrHuman(result, json = false, label = 'yam') {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(label);
+  for (const [key, value] of Object.entries(result)) {
+    if (key === 'schema') continue;
+    if (typeof value === 'object' && value !== null) {
+      console.log(`- ${key}: ${JSON.stringify(value)}`);
+    } else {
+      console.log(`- ${key}: ${value}`);
+    }
+  }
 }
 
 function detectDbSafetyText(text = '') {
@@ -2105,6 +2364,7 @@ async function main() {
   if (command === 'measure') return measure(process.argv[3], process.argv.slice(4));
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
+  if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'release') return release(process.argv.slice(3));
   if (command === 'safety') return safety(process.argv.slice(3));
   if (command === 'memory') return memory(process.argv.slice(3));

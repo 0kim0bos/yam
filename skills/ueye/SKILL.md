@@ -35,6 +35,8 @@ Do not use for:
 - Generated annotated images are optional, not a default gate.
 - Image evidence should stay bounded: inspect the primary screen first, then only the states/images needed to support the claim.
 - Design quality judgment belongs after implementation/review: compare to the reference first, then judge whether the result is good design.
+- Keep Ueye as one route: start fast, then opt into `yam ueye capture` and `yam ueye compare` only when a `verified` visual claim needs real screen evidence.
+- Prefer the Codex in-app Browser plugin for interactive visual checks. Do not switch to the user's Chrome browser unless the user explicitly asks for Chrome or the task requires existing Chrome cookies, sessions, extensions, or profile state.
 
 ## Workflow
 
@@ -52,6 +54,10 @@ Do not use for:
 6. Implement the smallest coherent design improvement when implementation is requested.
 7. Check default, loading, error, empty, disabled, hover/focus, and mobile states when relevant.
 8. Run browser/screenshot verification when feasible.
+   - Prefer the Codex in-app Browser plugin for local pages, localhost, file URLs, and ordinary visual QA.
+   - Do not silently use Chrome as a fallback. If the in-app Browser cannot capture or inspect, report the visual cap as `partial` or `blocked`.
+   - Use `yam ueye capture --url URL --out path.png` when a local Playwright install is available and the claim needs real browser evidence.
+   - Use `yam ueye compare --reference ref.png --actual shot.png` when reference fidelity needs a proof-ready local comparison record.
 9. Compare reference and implementation when reference fidelity was requested:
    - matched, similar, different, not-applicable, or not-verified.
    - Separate "faithful to reference" from "good design."
