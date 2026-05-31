@@ -19,7 +19,7 @@ End with remaining tasks and fix-first items.
 - `$quick`: fast scoped implementation, small fixes, and quick error scans.
 - `$ueye`: tight UI/UX/design implementation and visual review with reference-read proof, comparison, and quality judgment.
 - `$question`: direct Q&A without turning simple questions into research projects.
-- `$scout`: bounded investigation and recommendation.
+- `$scout`: conduct broad investigations, gather evidence, analyze options, and provide recommendations.
 - `$deep`: single-agent heavy verification by request, including runtime/tmux/browser/process proof when needed.
 - `$mission`: approved-plan execution with real subagent/team lanes, cross-verification, doctor scan, and final proof.
 
