@@ -36,6 +36,8 @@ Do not use for:
 - Image evidence should stay bounded: inspect the primary screen first, then only the states/images needed to support the claim.
 - Design quality judgment belongs after implementation/review: compare to the reference first, then judge whether the result is good design.
 - Keep Ueye as one route: start fast, then opt into `yam ueye capture` and `yam ueye compare` only when a `verified` visual claim needs real screen evidence.
+- Use `yam ueye report` when reference, implementation screenshot, comparison result, design quality, and next action should be recorded as one compact run report.
+- Generated media can guide direction, but it cannot verify the implemented screen without implementation screenshot evidence.
 - Prefer the Codex in-app Browser plugin for interactive visual checks. Do not switch to the user's Chrome browser unless the user explicitly asks for Chrome or the task requires existing Chrome cookies, sessions, extensions, or profile state.
 
 ## Workflow
@@ -58,6 +60,7 @@ Do not use for:
    - Do not silently use Chrome as a fallback. If the in-app Browser cannot capture or inspect, report the visual cap as `partial` or `blocked`.
    - Use `yam ueye capture --url URL --out path.png` when a local Playwright install is available and the claim needs real browser evidence.
    - Use `yam ueye compare --reference ref.png --actual shot.png` when reference fidelity needs a proof-ready local comparison record.
+   - Use `yam ueye report --reference ref.png --actual shot.png --design-quality needs-polish --json` to preserve the run-level visual provenance and next action.
 9. Compare reference and implementation when reference fidelity was requested:
    - matched, similar, different, not-applicable, or not-verified.
    - Separate "faithful to reference" from "good design."
@@ -95,6 +98,10 @@ Use these artifacts for reference-led implementation or serious visual review. K
 5. Design Quality Review:
    - judge whether the result is good UI/UX/design after reference comparison.
    - use pass, needs-polish, or fails for each relevant design dimension.
+6. Media Generation Proof, when generated images are part of the task:
+   - record whether generation was requested, attempted, blocked, or produced an output.
+   - use `yam media proof --requested --attempted --output path.png --wait-loop --json` when a generated image materially affects the design direction.
+   - never use generated media proof as a substitute for implemented screen evidence.
 
 ## Visual Truth Caps
 

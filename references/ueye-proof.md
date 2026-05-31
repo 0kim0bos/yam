@@ -26,11 +26,31 @@ Ueye is one route. It should not split into separate lite/deep skills. Use these
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
 ```
 
 - `capture` uses a Playwright install from the current project when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
 - `compare` is local-only and dependency-free. It records hashes, dimensions, comparison result, and visual provenance. Different screenshots stay `partial`; exact file matches can be `verified`.
+- `report` records the Ueye run as reference sources, implementation sources, comparison result, design quality, blocked reason, next action, and truth status.
 - Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
+
+### Media Generation Proof
+
+Generated media can help with direction and visual ideation, but it is derivative evidence. It cannot prove that the implemented UI was captured or compared.
+
+```bash
+yam media proof --requested --attempted --output ./generated.png --wait-loop --json
+```
+
+Record:
+
+- tool name, when relevant
+- whether generation was requested
+- whether generation was attempted
+- output path and hash, when a local image exists
+- whether the wait loop was checked
+- blocked reason and next action
+- truth status
 
 ### Browser Preference
 

@@ -18,10 +18,14 @@ try {
   const version = execFileSync(bin, ['version'], { encoding: 'utf8' }).trim();
   execFileSync(bin, ['verify'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor'], { stdio: 'ignore' });
+  execFileSync(bin, ['doctor', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['list'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'capture', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'compare', '--help'], { stdio: 'ignore' });
+  execFileSync(bin, ['ueye', 'report', '--help'], { stdio: 'ignore' });
+  execFileSync(bin, ['media', 'proof', '--help'], { stdio: 'ignore' });
+  execFileSync(bin, ['media', 'proof', '--json'], { stdio: 'ignore' });
   console.log(`cli-smoke: ok (${version})`);
 } finally {
   rmSync(prefix, { recursive: true, force: true });

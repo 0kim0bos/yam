@@ -15,6 +15,8 @@ export type TruthStatus = (typeof TRUTH_STATUSES)[number];
 export type SafetyLevel = 'danger' | 'warning';
 export type EvidenceKind = 'command' | 'evidence' | 'visual' | 'runtime' | 'skipped' | 'blocked' | 'assumption' | 'cleanup' | 'none';
 export type RuntimeSubsystem = 'real_runtime' | 'tmux_physical' | 'process_cleanup' | 'browser_visual' | 'db_safety';
+export type RuntimeBackend = 'none' | 'in_app_browser' | 'playwright' | 'terminal' | 'tmux' | 'zellij' | 'unknown';
+export type RuntimeClaim = 'not_started' | 'started' | 'observed' | 'stopped' | 'cleanup_verified' | 'blocked' | 'unknown';
 
 export interface SafetyHit {
   level: SafetyLevel;
@@ -79,6 +81,41 @@ export interface MissionPatchEnvelope {
   truth_status: TruthStatus;
 }
 
+export interface RuntimeBackendEvidence {
+  schema: 'yam.runtime-backend-evidence.v1';
+  backend: RuntimeBackend;
+  claim: RuntimeClaim;
+  evidence_id: string;
+  command: string;
+  cleanup_checked: boolean;
+  note: string;
+  truth_status: TruthStatus;
+}
+
+export interface UeyeRunReport {
+  schema: 'yam.ueye-run-report.v1';
+  reference_sources: UeyeVisualProvenance[];
+  implementation_sources: UeyeVisualProvenance[];
+  comparison_result: string;
+  design_quality: string;
+  blocked_reason: string;
+  next_action: string;
+  truth_status: TruthStatus;
+}
+
+export interface MediaGenerationProof {
+  schema: 'yam.media-generation-proof.v1';
+  tool_name: string;
+  generation_requested: boolean;
+  generation_attempted: boolean;
+  output_path: string;
+  output_hash: string;
+  wait_loop_checked: boolean;
+  blocked_reason: string;
+  next_action: string;
+  truth_status: TruthStatus;
+}
+
 export interface FakeRealPolicyResult {
   schema: 'yam.fake-real-policy.v1';
   ok: boolean;
@@ -106,6 +143,8 @@ export interface ProofSummary {
   visualProvenance?: unknown;
   missionEnvelope?: unknown;
   rollbackHint?: unknown;
+  runtimeBackendEvidence?: unknown;
+  mediaProof?: unknown;
 }
 
 export interface ProofOptions {
@@ -139,6 +178,8 @@ export interface YamCompletionProof {
   visualProvenance: string[];
   missionEnvelope: string[];
   rollbackHint: string[];
+  runtimeBackendEvidence: string[];
+  mediaProof: string[];
   cleanup: unknown;
   changed: string[];
   skipped: string[];
@@ -190,6 +231,73 @@ export function buildMissionPatchEnvelope(input: Partial<MissionPatchEnvelope> =
     verification_hint: String(input.verification_hint || ''),
     rollback_hint: rollback,
     truth_status: isTruthStatus(input.truth_status) ? input.truth_status : 'partial'
+  };
+}
+
+export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidence> = {}): RuntimeBackendEvidence {
+  const backend = normalizeRuntimeBackend(input.backend);
+  const claim = normalizeRuntimeClaim(input.claim);
+  return {
+    schema: 'yam.runtime-backend-evidence.v1',
+    backend,
+    claim,
+    evidence_id: String(input.evidence_id || ''),
+    command: String(input.command || ''),
+    cleanup_checked: Boolean(input.cleanup_checked),
+    note: String(input.note || ''),
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : runtimeBackendTruth(backend, claim, Boolean(input.cleanup_checked))
+  };
+}
+
+export function buildUeyeRunReport(input: Partial<UeyeRunReport> = {}): UeyeRunReport {
+  const references = Array.isArray(input.reference_sources)
+    ? input.reference_sources.map((item) => buildUeyeVisualProvenance(item))
+    : [];
+  const implementations = Array.isArray(input.implementation_sources)
+    ? input.implementation_sources.map((item) => buildUeyeVisualProvenance(item))
+    : [];
+  const blockedReason = String(input.blocked_reason || '');
+  const comparisonResult = String(input.comparison_result || 'not-verified');
+  const hasImplementation = implementations.length > 0;
+  const derivedTruth: TruthStatus = blockedReason ? 'blocked'
+    : !references.length && !hasImplementation ? 'assumed'
+      : comparisonResult === 'matched' && hasImplementation ? 'verified'
+        : hasImplementation ? 'partial'
+          : 'partial';
+  return {
+    schema: 'yam.ueye-run-report.v1',
+    reference_sources: references,
+    implementation_sources: implementations,
+    comparison_result: comparisonResult,
+    design_quality: String(input.design_quality || 'not-checked'),
+    blocked_reason: blockedReason,
+    next_action: String(input.next_action || (derivedTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : derivedTruth
+  };
+}
+
+export function buildMediaGenerationProof(input: Partial<MediaGenerationProof> = {}): MediaGenerationProof {
+  const requested = Boolean(input.generation_requested);
+  const attempted = Boolean(input.generation_attempted);
+  const outputHash = String(input.output_hash || 'unknown');
+  const blockedReason = String(input.blocked_reason || '');
+  const derivedTruth: TruthStatus = blockedReason ? 'blocked'
+    : requested && !attempted ? 'blocked'
+      : attempted && outputHash !== 'unknown' ? 'verified'
+        : attempted ? 'partial'
+          : requested ? 'assumed'
+            : 'skipped';
+  return {
+    schema: 'yam.media-generation-proof.v1',
+    tool_name: String(input.tool_name || ''),
+    generation_requested: requested,
+    generation_attempted: attempted,
+    output_path: String(input.output_path || ''),
+    output_hash: outputHash,
+    wait_loop_checked: Boolean(input.wait_loop_checked),
+    blocked_reason: blockedReason,
+    next_action: String(input.next_action || (derivedTruth === 'blocked' ? 'provide a usable media tool or mark generation as skipped' : 'record output evidence before using generated media as implementation proof')),
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : derivedTruth
   };
 }
 
@@ -272,6 +380,12 @@ export function classifyEvidenceTruth(summary: ProofSummary = {}, options: Proof
   }
   for (const rollback of asList(summary.rollbackHint)) {
     rows.push(evidenceRow('evidence', rollback, metadataTruth(rollback, 'partial')));
+  }
+  for (const backend of asList(summary.runtimeBackendEvidence)) {
+    rows.push(evidenceRow('runtime', backend, readStructuredTruth(backend, 'partial')));
+  }
+  for (const media of asList(summary.mediaProof)) {
+    rows.push(evidenceRow('evidence', media, readStructuredTruth(media, 'partial')));
   }
   for (const runtime of asList(summary.runtime)) {
     rows.push(evidenceRow('runtime', runtime, classifyRuntimeEvidence(runtime, options)));
@@ -359,6 +473,8 @@ export function buildYamCompletionProof(summary: ProofSummary = {}, options: Pro
     visualProvenance: asList(summary.visualProvenance),
     missionEnvelope: asList(summary.missionEnvelope),
     rollbackHint: asList(summary.rollbackHint),
+    runtimeBackendEvidence: asList(summary.runtimeBackendEvidence),
+    mediaProof: asList(summary.mediaProof),
     cleanup: summary.cleanup || '',
     changed: asList(summary.changed),
     skipped: asList(summary.skipped),
@@ -489,6 +605,37 @@ function runtimeRow(subsystem: RuntimeSubsystem, proofLevel: TruthStatus, requir
       ? `collect ${subsystem} evidence when the claim requires it`
       : 'no action required'
   };
+}
+
+function normalizeRuntimeBackend(value: unknown = ''): RuntimeBackend {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (text === 'in_app_browser' || text === 'browser') return 'in_app_browser';
+  if (text === 'playwright') return 'playwright';
+  if (text === 'terminal' || text === 'shell') return 'terminal';
+  if (text === 'tmux') return 'tmux';
+  if (text === 'zellij') return 'zellij';
+  if (text === 'none' || text === 'not_started') return 'none';
+  return 'unknown';
+}
+
+function normalizeRuntimeClaim(value: unknown = ''): RuntimeClaim {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (text === 'not_started' || text === 'none') return 'not_started';
+  if (text === 'started') return 'started';
+  if (text === 'observed' || text === 'checked') return 'observed';
+  if (text === 'stopped') return 'stopped';
+  if (text === 'cleanup_verified' || text === 'cleanup_checked') return 'cleanup_verified';
+  if (text === 'blocked') return 'blocked';
+  return 'unknown';
+}
+
+function runtimeBackendTruth(backend: RuntimeBackend, claim: RuntimeClaim, cleanupChecked = false): TruthStatus {
+  if (claim === 'blocked') return 'blocked';
+  if (backend === 'none' || claim === 'not_started') return 'skipped';
+  if (backend === 'unknown' || claim === 'unknown') return 'partial';
+  if (claim === 'cleanup_verified' || cleanupChecked) return 'proven';
+  if (claim === 'observed' || claim === 'stopped' || claim === 'started') return 'verified';
+  return 'partial';
 }
 
 function evidenceRow(kind: EvidenceKind, value: unknown, truth: TruthStatus): EvidenceRow {

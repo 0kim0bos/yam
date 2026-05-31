@@ -10,9 +10,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   TRUTH_STATUSES,
+  buildMediaGenerationProof,
   buildMissionPatchEnvelope,
   buildRollbackHint,
+  buildRuntimeBackendEvidence,
   buildUeyeVisualProvenance,
+  buildUeyeRunReport,
   buildYamCompletionProof,
   detectDbSafetyText as detectTrustDbSafetyText,
   isTruthStatus
@@ -136,6 +139,8 @@ Usage:
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--json]
+  yam media proof [--requested] [--attempted] [--output file] [--json]
   yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
@@ -144,7 +149,7 @@ Usage:
   yam tune-log [dir]
   yam install
   yam uninstall
-  yam doctor
+  yam doctor [--json]
   yam examples
   yam path
   yam version
@@ -375,7 +380,33 @@ function failOrReport(label, issues, quiet = false) {
   return issues.length;
 }
 
-async function doctor() {
+async function doctor(args = []) {
+  const flags = parseSimpleFlags(args, new Set(['json']));
+  const report = await buildDoctorReport();
+  if (flags.json) {
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
+  if (report.ok) {
+    console.log('yam doctor: ok');
+    console.log('No hooks, automations, or global config are required.');
+    console.log('Skill install state is reported by `yam status`.');
+    console.log(`yam-lite hook: ${report.yamLiteHook} (optional)`);
+    return;
+  }
+
+  console.log('yam doctor: issues');
+  for (const issue of report.issues) console.log(`- ${issue}`);
+  if (report.nextActions.length) {
+    console.log('');
+    console.log('Next actions:');
+    for (const action of report.nextActions) console.log(`- ${action}`);
+  }
+  process.exitCode = 1;
+}
+
+async function buildDoctorReport() {
   const issues = [];
   for (const skill of SKILLS) {
     if (!await exists(path.join(ROOT, 'skills', skill, 'SKILL.md'))) issues.push(`missing source skill: ${skill}`);
@@ -398,19 +429,28 @@ async function doctor() {
   }
   const verifyIssues = await verify({ quiet: true });
   if (verifyIssues > 0) issues.push(`verify reported ${verifyIssues} issue(s)`);
+  const globalHook = await readJsonOrDefault(path.join(os.homedir(), '.codex', 'hooks.json'), {});
+  return {
+    schema: 'yam.doctor.v1',
+    generatedAt: new Date().toISOString(),
+    ok: issues.length === 0,
+    issues,
+    nextActions: doctorNextActions(issues),
+    yamLiteHook: hookConfigHasYamLite(globalHook) ? 'enabled' : 'disabled'
+  };
+}
 
-  if (!issues.length) {
-    console.log('yam doctor: ok');
-    const globalHook = await readJsonOrDefault(path.join(os.homedir(), '.codex', 'hooks.json'), {});
-    console.log('No hooks, automations, or global config are required.');
-    console.log('Skill install state is reported by `yam status`.');
-    console.log(`yam-lite hook: ${hookConfigHasYamLite(globalHook) ? 'enabled' : 'disabled'} (optional)`);
-    return;
+function doctorNextActions(issues = []) {
+  const actions = [];
+  for (const issue of issues) {
+    if (/missing source skill/i.test(issue)) actions.push('run from a complete yam-flow checkout or reinstall the published package');
+    else if (/missing truth matrix/i.test(issue)) actions.push('restore references/truth-matrix.md before publishing');
+    else if (/unexpected local hooks/i.test(issue)) actions.push('remove project hooks unless this repo is intentionally dogfooding them');
+    else if (/unexpected .*automation/i.test(issue)) actions.push('remove stale yam/timeto automations before claiming clean install state');
+    else if (/legacy|retired/i.test(issue)) actions.push('run `yam install` to replace old skill entries');
+    else if (/verify reported/i.test(issue)) actions.push('run `npm run verify` and fix the reported package boundary or metadata issue');
   }
-
-  console.log('yam doctor: issues');
-  for (const issue of issues) console.log(`- ${issue}`);
-  process.exitCode = 1;
+  return [...new Set(actions)];
 }
 
 async function tools(args = []) {
@@ -471,6 +511,7 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     packageInfo.packageJson ? JSON.stringify(packageInfo.pkg?.devDependencies || {}) : ''
   ].join('\n'));
   const projectSurfaces = await detectProjectToolSurfaces(dir, packageInfo.pkg);
+  const frameworkChecklist = await detectFrameworkChecklist(dir, packageInfo.pkg);
   const sqlScan = await scanSqlFiles(dir);
   const rows = [
     readinessRow('Codex home', await exists(codexHome) ? 'ready' : 'missing', codexHome),
@@ -500,8 +541,16 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     packageManager: detection.packageJson ? detection.packageManager : null,
     instructionSurfaces,
     projectSurfaces,
+    frameworkChecklist,
     sqlScan,
     riskNotes,
+    nextActions: toolsDoctorNextActions({
+      pack,
+      rows,
+      riskNotes,
+      frameworkChecklist,
+      commands: detection.packageJson ? detection.commands : {}
+    }),
     routeRecommendations: {
       dbSupabase: safety.hits.length || sqlScan.findings.length ? '$deep required before claiming safe' : '$deep when destructive or production mutation appears',
       currentDocs: 'use current-docs proof only when version/freshness matters',
@@ -534,6 +583,14 @@ function printToolsDoctorReport(data) {
     for (const surface of data.projectSurfaces) console.log(`- ${surface}`);
   }
 
+  if (data.frameworkChecklist?.detected) {
+    console.log('');
+    console.log(`Framework checklist: ${data.frameworkChecklist.framework}`);
+    for (const check of data.frameworkChecklist.checks) {
+      console.log(`- ${check.id}: ${check.label} (${check.route})`);
+    }
+  }
+
   if (data.sqlScan.filesScanned > 0) {
     console.log('');
     console.log(`SQL scan: ${data.sqlScan.filesScanned} file(s), ${data.sqlScan.findings.length} risk finding(s)`);
@@ -546,6 +603,12 @@ function printToolsDoctorReport(data) {
     console.log('');
     console.log('Risk notes:');
     for (const note of data.riskNotes) console.log(`- ${note.level}: ${note.reason}`);
+  }
+
+  if (data.nextActions?.length) {
+    console.log('');
+    console.log('Next actions:');
+    for (const action of data.nextActions) console.log(`- ${action}`);
   }
 
   console.log('');
@@ -618,6 +681,56 @@ async function detectProjectToolSurfaces(dir, pkg = null) {
   if (await exists(path.join(dir, 'vercel.json'))) surfaces.push('vercel.json detected');
   if (await exists(path.join(dir, '.env')) || await exists(path.join(dir, '.env.local'))) surfaces.push('.env file detected; values were not read');
   return surfaces;
+}
+
+async function detectFrameworkChecklist(dir, pkg = null) {
+  const deps = {
+    ...pkg?.dependencies,
+    ...pkg?.devDependencies
+  };
+  const depNames = Object.keys(deps || {});
+  const hasReact = depNames.includes('react');
+  const hasNext = depNames.includes('next') || await exists(path.join(dir, 'next.config.js')) || await exists(path.join(dir, 'next.config.mjs')) || await exists(path.join(dir, 'next.config.ts'));
+  const hasVite = depNames.includes('vite') || await exists(path.join(dir, 'vite.config.js')) || await exists(path.join(dir, 'vite.config.ts'));
+  const framework = hasNext ? 'next-app' : hasReact && hasVite ? 'react-vite' : hasReact ? 'react' : pkg ? 'node-package' : 'unknown';
+  const uiLike = hasReact || hasNext || hasVite || await exists(path.join(dir, 'app')) || await exists(path.join(dir, 'src', 'app')) || await exists(path.join(dir, 'pages'));
+  const checks = [];
+  if (uiLike) {
+    checks.push(
+      checklistRow('states', 'default/loading/error/empty states are reachable before claiming complete', '$ueye'),
+      checklistRow('responsive', 'mobile and desktop layouts avoid overlap and clipped text', '$ueye'),
+      checklistRow('accessibility', 'interactive controls have accessible labels and keyboard path', '$ueye'),
+      checklistRow('runtime', 'browser or in-app runtime evidence is recorded when claiming visual verified', '$ueye')
+    );
+  }
+  if (hasNext) {
+    checks.push(checklistRow('boundaries', 'server/client boundaries and async data states match the framework pattern', '$deep when risky'));
+  }
+  if (pkg) {
+    checks.push(checklistRow('package', 'run the smallest honest type/build/package check before publishing', '$quick or $deep'));
+  }
+  return {
+    schema: 'yam.framework-checklist.v1',
+    detected: checks.length > 0,
+    uiLike,
+    framework,
+    routeHint: uiLike ? '$ueye for visual claims; $deep when runtime/data risk appears' : '$quick by default; deepen on risk',
+    checks
+  };
+}
+
+function checklistRow(id, label, route) {
+  return { id, label, route };
+}
+
+function toolsDoctorNextActions({ pack, rows, riskNotes, frameworkChecklist, commands }) {
+  const actions = [];
+  if (!pack) actions.push('create or refresh yam.project.md so route choices reuse local project context');
+  if (rows.some((row) => row.name === 'Yam skills' && row.status !== 'ready')) actions.push('run `yam install` and restart Codex before relying on installed skills');
+  if (riskNotes.some((note) => note.level === 'danger')) actions.push('use $deep before claiming destructive database or production write safety');
+  if (frameworkChecklist?.detected && !commands?.build && !commands?.typecheck) actions.push('add or document a small build/typecheck command for implementation verification');
+  if (frameworkChecklist?.uiLike) actions.push('for Ueye verified claims, record reference, actual screenshot, and comparison result');
+  return [...new Set(actions)];
 }
 
 async function scanSqlFiles(rootDir, { maxFiles = 30, maxBytes = 200000, maxDepth = 5 } = {}) {
@@ -1019,6 +1132,7 @@ async function ueye(args = []) {
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return ueyeUsage();
   if (subcommand === 'capture') return ueyeCapture(args.slice(1));
   if (subcommand === 'compare') return ueyeCompare(args.slice(1));
+  if (subcommand === 'report') return ueyeReport(args.slice(1));
   console.error(`unknown ueye command: ${subcommand}`);
   return ueyeUsage();
 }
@@ -1031,10 +1145,12 @@ Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/c
 Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
   compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
+  report produces a proof-ready Ueye visual run report without requiring a new capture.
 `);
 }
 
@@ -1155,6 +1271,118 @@ async function ueyeCompare(args = []) {
   }
 }
 
+async function ueyeReport(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'json']));
+  const reference = String(flags.reference || flags.ref || '');
+  const actual = String(flags.actual || flags.screenshot || '');
+  const referenceSources = [];
+  const implementationSources = [];
+  let comparisonResult = 'not-verified';
+  let blockedReason = String(flags.blocked_reason || '');
+
+  try {
+    if (reference) {
+      const info = await imageFileInfo(reference);
+      referenceSources.push(buildUeyeVisualProvenance({
+        source_kind: 'reference_image',
+        source_path: info.path,
+        source_hash: info.sha256,
+        reference_id: path.basename(info.path),
+        local_only: true,
+        operator_provided: true,
+        comparison_result: 'reference-recorded',
+        truth_status: 'partial'
+      }));
+    }
+    if (actual) {
+      const info = await imageFileInfo(actual);
+      implementationSources.push(buildUeyeVisualProvenance({
+        source_kind: 'implementation_screenshot',
+        source_path: info.path,
+        source_hash: info.sha256,
+        screenshot_id: path.basename(info.path),
+        local_only: true,
+        operator_provided: false,
+        comparison_result: 'implementation-recorded',
+        truth_status: 'partial'
+      }));
+    }
+    if (reference && actual && referenceSources[0]?.source_hash === implementationSources[0]?.source_hash) {
+      comparisonResult = 'matched';
+    } else if (reference && actual) {
+      comparisonResult = 'different';
+    }
+  } catch (error) {
+    blockedReason = errorMessage(error);
+  }
+
+  const report = buildUeyeRunReport({
+    reference_sources: referenceSources,
+    implementation_sources: implementationSources,
+    comparison_result: comparisonResult,
+    design_quality: String(flags.design_quality || 'not-checked'),
+    blocked_reason: blockedReason,
+    next_action: String(flags.next_action || '')
+  });
+  const result = {
+    ...report,
+    capture_backend: String(flags.capture_backend || 'not-recorded'),
+    compare_backend: String(flags.compare_backend || 'local-file-hash')
+  };
+  printJsonOrHuman(result, Boolean(flags.json), 'Ueye report');
+  if (report.truth_status === 'blocked') process.exitCode = 1;
+}
+
+async function media(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return mediaUsage();
+  if (subcommand === 'proof') return mediaProof(args.slice(1));
+  console.error(`unknown media command: ${subcommand}`);
+  return mediaUsage();
+}
+
+function mediaUsage() {
+  console.log(`yam media
+
+Opt-in media generation proof helpers. Generated media can support visual direction, but it cannot verify implemented UI without implementation screenshot evidence.
+
+Usage:
+  yam media proof [--tool name] [--requested] [--attempted] [--output file] [--wait-loop] [--blocked-reason text] [--json]
+`);
+}
+
+async function mediaProof(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return mediaUsage();
+  const flags = parseSimpleFlags(args, new Set(['tool', 'requested', 'attempted', 'output', 'wait-loop', 'blocked-reason', 'next-action', 'json']));
+  const output = String(flags.output || '');
+  let outputHash = 'unknown';
+  let outputPath = '';
+  let blockedReason = String(flags.blocked_reason || '');
+  if (output) {
+    try {
+      const info = await imageFileInfo(output);
+      outputHash = info.sha256;
+      outputPath = info.path;
+    } catch (error) {
+      blockedReason = blockedReason || errorMessage(error);
+      outputPath = path.resolve(expandHome(output));
+    }
+  }
+  const proof = buildMediaGenerationProof({
+    tool_name: String(flags.tool || ''),
+    generation_requested: Boolean(flags.requested),
+    generation_attempted: Boolean(flags.attempted || output),
+    output_path: outputPath,
+    output_hash: outputHash,
+    wait_loop_checked: Boolean(flags.wait_loop),
+    blocked_reason: blockedReason,
+    next_action: String(flags.next_action || '')
+  });
+  printJsonOrHuman(proof, Boolean(flags.json), 'Media proof');
+  if (proof.truth_status === 'blocked') process.exitCode = 1;
+}
+
 function parseSimpleFlags(args = [], allowed = new Set<string>()) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
@@ -1168,7 +1396,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -1309,9 +1537,11 @@ async function proof(args = []) {
   printProofList('Evidence', summary.evidence);
   printProofList('Visual evidence', summary.visual);
   printProofList('Runtime evidence', summary.runtime);
+  printProofList('Runtime backend evidence', summary.runtimeBackendEvidence || []);
   printProofList('Visual provenance', summary.visualProvenance || []);
   printProofList('Mission patch envelope', summary.missionEnvelope || []);
   printProofList('Rollback hint', summary.rollbackHint || []);
+  printProofList('Media proof', summary.mediaProof || []);
   printProofList('Changed surfaces', summary.changed);
   printProofList('Skipped', summary.skipped);
   printProofList('Blocked', summary.blocked);
@@ -1386,6 +1616,11 @@ function buildProofSummary(parsed, artifact) {
     evidence: [...artifact.evidence, ...arrayFlag(parsed.flags.evidence)],
     visual: [...artifact.visual, ...arrayFlag(parsed.flags.visual)],
     runtime: [...artifact.runtime, ...arrayFlag(parsed.flags.runtime)],
+    runtimeBackendEvidence: [
+      ...structuredEvidenceList(artifact.runtimeBackendEvidence),
+      ...structuredEvidenceList(parsed.flags.runtime_backend_evidence),
+      ...directRuntimeBackendEvidence(parsed.flags)
+    ],
     visualProvenance: [
       ...structuredEvidenceList(artifact.visualProvenance),
       ...structuredEvidenceList(parsed.flags.visual_provenance)
@@ -1397,6 +1632,10 @@ function buildProofSummary(parsed, artifact) {
     rollbackHint: [
       ...structuredEvidenceList(artifact.rollbackHint),
       ...structuredEvidenceList(parsed.flags.rollback_hint)
+    ],
+    mediaProof: [
+      ...structuredEvidenceList(artifact.mediaProof),
+      ...structuredEvidenceList(parsed.flags.media_proof)
     ],
     cleanup: parsed.flags.cleanup || artifact.cleanup || '',
     changed: [...artifact.changed, ...arrayFlag(parsed.flags.changed)],
@@ -1448,6 +1687,9 @@ function renderProofMarkdown(summary) {
     '## Runtime evidence',
     ...renderProofMarkdownList(summary.runtime),
     '',
+    '## Runtime backend evidence',
+    ...renderProofMarkdownList(summary.runtimeBackendEvidence || []),
+    '',
     '## Visual provenance',
     ...renderProofMarkdownList(summary.visualProvenance || []),
     '',
@@ -1456,6 +1698,9 @@ function renderProofMarkdown(summary) {
     '',
     '## Rollback hint',
     ...renderProofMarkdownList(summary.rollbackHint || []),
+    '',
+    '## Media proof',
+    ...renderProofMarkdownList(summary.mediaProof || []),
     '',
     '## Changed surfaces',
     ...renderProofMarkdownList(summary.changed),
@@ -1489,7 +1734,7 @@ function renderProofMarkdownList(values) {
 function parseProofArgs(args = []) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
-  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
+  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
@@ -1497,13 +1742,13 @@ function parseProofArgs(args = []) {
       const key = rawKey.slice(2);
       if (!aliases.has(key)) continue;
       const normalizedKey = key.replace(/-/g, '_');
-      if (key === 'json' || key.startsWith('require-')) {
+      if (key === 'json' || key.startsWith('require-') || key === 'cleanup-checked') {
         flags[normalizedKey] = true;
         continue;
       }
       const value = inlineValue ?? args[index + 1] ?? '';
       if (inlineValue === undefined) index += 1;
-      if (['command', 'evidence', 'visual', 'runtime', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
+      if (['command', 'evidence', 'visual', 'runtime', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
         flags[normalizedKey] = [...arrayFlag(flags[normalizedKey]), value];
       } else {
         flags[normalizedKey] = value;
@@ -1541,9 +1786,11 @@ function emptyProofArtifact() {
     evidence: [],
     visual: [],
     runtime: [],
+    runtimeBackendEvidence: [],
     visualProvenance: [],
     missionEnvelope: [],
     rollbackHint: [],
+    mediaProof: [],
     cleanup: '',
     changed: [],
     skipped: [],
@@ -1566,9 +1813,11 @@ async function parseProofJson(file, empty) {
       evidence: arrayFlag(data.evidence),
       visual: arrayFlag(data.visual || data.visualEvidence),
       runtime: arrayFlag(data.runtime || data.runtimeEvidence),
+      runtimeBackendEvidence: structuredEvidenceList(data.runtimeBackendEvidence || data.runtime_backend_evidence),
       visualProvenance: structuredEvidenceList(data.visualProvenance || data.visual_provenance),
       missionEnvelope: structuredEvidenceList(data.missionEnvelope || data.mission_envelope),
       rollbackHint: structuredEvidenceList(data.rollbackHint || data.rollback_hint),
+      mediaProof: structuredEvidenceList(data.mediaProof || data.media_proof),
       cleanup: String(data.cleanup || data.cleanupStatus || ''),
       changed: arrayFlag(data.changed || data.files),
       skipped: arrayFlag(data.skipped),
@@ -1594,9 +1843,11 @@ async function parseProofMarkdown(file, empty) {
     evidence: readProofList(text, 'Evidence'),
     visual: readProofList(text, 'Visual evidence'),
     runtime: firstProofList(text, ['Runtime evidence', 'Processes', 'tmux']),
+    runtimeBackendEvidence: readProofList(text, 'Runtime backend evidence'),
     visualProvenance: readProofList(text, 'Visual provenance'),
     missionEnvelope: readProofList(text, 'Mission patch envelope'),
     rollbackHint: readProofList(text, 'Rollback hint'),
+    mediaProof: readProofList(text, 'Media proof'),
     cleanup: readProofField(text, 'Cleanup') || readProofField(text, 'Cleanup status'),
     changed: firstProofList(text, ['Changed surfaces', 'Files']),
     skipped: readProofList(text, 'Skipped'),
@@ -1647,6 +1898,18 @@ function structuredEvidenceList(value) {
   return arrayFlag(value).map((item) => formatStructuredEvidence(item)).filter(Boolean);
 }
 
+function directRuntimeBackendEvidence(flags) {
+  if (!flags.runtime_backend && !flags.runtime_claim && !flags.runtime_evidence_id && !flags.runtime_command && !flags.runtime_note && !flags.cleanup_checked) return [];
+  return [JSON.stringify(buildRuntimeBackendEvidence({
+    backend: flags.runtime_backend,
+    claim: flags.runtime_claim,
+    evidence_id: flags.runtime_evidence_id,
+    command: flags.runtime_command,
+    cleanup_checked: Boolean(flags.cleanup_checked),
+    note: flags.runtime_note
+  }))];
+}
+
 function formatStructuredEvidence(value) {
   if (!value) return '';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -1664,6 +1927,12 @@ function formatStructuredEvidence(value) {
     if (data.schema === 'yam.rollback-hint.v1' || data.touched_files || data.safe_revert_note) {
       return JSON.stringify(buildRollbackHint(data));
     }
+    if (data.schema === 'yam.runtime-backend-evidence.v1' || data.backend || data.evidence_id) {
+      return JSON.stringify(buildRuntimeBackendEvidence(data));
+    }
+    if (data.schema === 'yam.media-generation-proof.v1' || data.generation_requested || data.output_hash) {
+      return JSON.stringify(buildMediaGenerationProof(data));
+    }
     return JSON.stringify(data);
   } catch {
     return text;
@@ -1672,7 +1941,7 @@ function formatStructuredEvidence(value) {
 
 function hasProofEvidence(parsed) {
   const flags = parsed.flags || {};
-  return ['command', 'evidence', 'visual', 'runtime', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup);
+  return ['command', 'evidence', 'visual', 'runtime', 'runtime_backend_evidence', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'media_proof', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup || flags.runtime_backend || flags.runtime_claim);
 }
 
 function printProofList(label, values) {
@@ -1924,7 +2193,8 @@ async function detectProject(targetDir = process.cwd(), { quiet = false } = {}) 
       lint: null,
       test: null,
       build: null
-    }
+    },
+    frameworkChecklist: null
   };
   if (!result.packageJson) {
     if (!quiet) {
@@ -1942,6 +2212,7 @@ async function detectProject(targetDir = process.cwd(), { quiet = false } = {}) 
   result.commands.lint = runCommand(result.packageManager, pickScript(scripts, ['lint']));
   result.commands.test = runCommand(result.packageManager, pickScript(scripts, ['test', 'spec']));
   result.commands.build = runCommand(result.packageManager, pickScript(scripts, ['build']));
+  result.frameworkChecklist = await detectFrameworkChecklist(dir, pkg);
 
   if (!quiet) printDetection(result);
   return result;
@@ -1960,6 +2231,13 @@ function printDetection(result) {
   console.log(`- $quick: ${result.commands.typecheck || result.commands.lint || result.commands.test || result.commands.build || 'Level 0 read/inspect; no command detected'}`);
   console.log(`- $ueye: ${result.commands.typecheck || result.commands.build || 'Browser/screenshot check; no command detected'}`);
   console.log(`- $deep: ${[result.commands.typecheck, result.commands.lint, result.commands.test, result.commands.build].filter(Boolean).join(' && ') || `No command detected; define in ${PROJECT_PACK}`}`);
+  if (result.frameworkChecklist?.detected) {
+    console.log('');
+    console.log(`Framework checklist: ${result.frameworkChecklist.framework}`);
+    for (const check of result.frameworkChecklist.checks) {
+      console.log(`- ${check.id}: ${check.label} (${check.route})`);
+    }
+  }
 }
 
 function budget(routeArg = '') {
@@ -2365,6 +2643,7 @@ async function main() {
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
+  if (command === 'media') return media(process.argv.slice(3));
   if (command === 'release') return release(process.argv.slice(3));
   if (command === 'safety') return safety(process.argv.slice(3));
   if (command === 'memory') return memory(process.argv.slice(3));
@@ -2378,7 +2657,7 @@ async function main() {
   }
   if (command === 'list') return list();
   if (command === 'verify') return verify();
-  if (command === 'doctor') return doctor();
+  if (command === 'doctor') return doctor(process.argv.slice(3));
   if (command === 'examples') return examples();
   if (command === 'path') return showPath();
   if (command === 'init-project') return initProject(process.argv[3]);

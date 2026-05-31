@@ -44,6 +44,8 @@ Opt-in visual evidence helpers:
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
+yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
 ```
 
@@ -146,6 +148,8 @@ yam proof --route ueye --truth verified --visual "reference image only"
 yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --json
+yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam proof --route deep --truth proven --require-runtime --runtime "mock server fixture"
 yam proof write /path/to/project --route deep --truth partial --command "npm run build: pass"
