@@ -2,7 +2,7 @@
 
 All notable changes to yam-flow are documented here.
 
-## Unreleased
+## v0.1.4 - 2026-06-03
 
 ### Added
 
