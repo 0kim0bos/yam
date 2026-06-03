@@ -53,4 +53,23 @@ Doctor scan:
 - Runtime/cleanup:
 - Truth status:
 - Fix-first:
+- Diagnostic next action:
 ```
+
+## Structured Diagnostic Next Action
+
+Use this shape for doctor or release diagnostics that need a concrete follow-up:
+
+- `status`: pass / needs_action / blocked / skipped
+- `severity`: P0 / P1 / P2 / P3
+- `owner_route`: quick / ueye / question / scout / deep / mission
+- `priority`: fix_first / next / later / none
+- `fix_first`: true / false
+- `blocks_release`: true / false
+- `observation`
+- `evidence`
+- `next_action.kind`: read_file / run_command / inspect_ui / update_docs / ask_user / none
+- `next_action.command` or `next_action.files`, when relevant
+- `truth_status`
+
+Keep it singular. If there are several issues, list the fix-first item that most affects the next run.

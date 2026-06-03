@@ -16,7 +16,7 @@
     "node": ">=18"
   },
   "bin": {
-    "yam": "dist/bin/yam.js"
+    "yam": "./dist/bin/yam.js"
   },
   "types": "dist/lib/trust-kernel.d.ts",
   "exports": {
@@ -27,6 +27,7 @@
   },
   "files": [
     "AGENTS.md",
+    "CHANGELOG.md",
     "COMMANDS.md",
     "DECISIONS.md",
     "LICENSE",

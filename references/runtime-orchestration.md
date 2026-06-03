@@ -41,10 +41,34 @@ Runtime proof should include:
 - Goal.
 - Steps run.
 - Commands/processes started.
-- PIDs, ports, sessions, or panes when available.
+- PID, port, URL, session, pane, screenshot id, started_at, stopped_at, and exit_code when available.
 - Checks before and after.
 - Cleanup result.
 - Truth status: proven, verified, partial, fixture_only, fixture_instrumented_real, integration_optional, real_required_missing, skipped, blocked, assumed.
+
+## Runtime Evidence Mini
+
+Use the mini shape when a final report, release report, or doctor scan needs runtime evidence without a full runtime proof artifact.
+
+Minimum fields:
+
+- `kind`: `runtime_evidence_mini`
+- `route`: `deep` or `mission`
+- `required`: true / false
+- `command` or check name
+- `target`: URL, port, process, or service
+- `pid`, `port`, `url`, `exit_code`, `screenshot_id`, `started_at`, `stopped_at`
+- `process`: session, pane, or `unknown` when process detail is unavailable
+- `observation`: before and after notes
+- `cleanup`: status and evidence
+- `truth_status`
+- `next_action`: one concrete follow-up when status is not fully proven
+
+Truth caps:
+
+- Missing process/target evidence cannot support `proven`.
+- Missing cleanup evidence cannot support a cleanup-complete claim.
+- Optional runtime checks may be `integration_optional`; required but unavailable runtime checks should be `real_required_missing`, `blocked`, or `partial`.
 
 ## Cleanup Rule
 

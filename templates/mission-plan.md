@@ -36,6 +36,18 @@ Patch envelope:
 - verification_hint:
 - truth_status: verified / partial / skipped / blocked / assumed
 
+Patch queue lite:
+- status: pending / applied / verified / reverted / blocked
+- lane_id:
+- depends_on:
+- assigned_scope:
+- changed_files:
+- verification_hint:
+- rollback_hint:
+- truth_status:
+- next_action:
+- --out optional persistence path:
+
 Rollback hint:
 - touched_files:
 - generated_files:

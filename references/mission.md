@@ -49,6 +49,31 @@ Use a small envelope when a real mission lane changes code:
 
 This is only a record shape. It is not a queue, lock manager, or parallel apply engine.
 
+Patch queue lite:
+
+Use this only when two or more real mission lanes produce patches, apply order matters, or rollback needs a clearer handoff.
+Persist it with `--out` only when a later run needs to resume or audit the queue. Otherwise keep it in the report.
+
+Each item records:
+
+- `status`: pending / applied / verified / reverted / blocked
+- `lane_id`
+- `depends_on`: lane ids that must land first, or empty
+- `assigned_scope`
+- `changed_files`
+- `verification_hint`
+- `rollback_hint`
+- `truth_status`
+- `next_action`
+
+Keep it lite:
+
+- No automatic merge engine.
+- No persistent locks.
+- No required queue file for single-pass missions.
+- No parallel apply worker.
+- No broad runtime orchestration unless mission evidence already needs it.
+
 Rollback hint:
 
 Record:

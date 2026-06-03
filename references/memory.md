@@ -2,7 +2,7 @@
 
 `yam memory` is an opt-in, project-local memory layer.
 
-It keeps only the lightest useful parts from heavier harness patterns:
+It keeps only the lightest useful parts from heavier workflow patterns:
 
 - Sparse records, one file per durable claim, and deliberate forgetting instead of injecting every old claim.
 - Wrongness memory for repeated mistakes, wrong decisions, stale assumptions, and overconfident claims.

@@ -4,10 +4,10 @@ Use current docs proof only when stale knowledge is a realistic risk.
 
 ## Require Current Docs Proof
 
-Use Context7, official docs, or primary sources when the task depends on current behavior for:
+Use official docs or primary sources when the task depends on current behavior for:
 
 - modern SDK/API syntax
-- cloud services such as Supabase, Vercel, OpenAI, Stripe, or auth providers
+- cloud services, model APIs, payment providers, or auth providers
 - framework version behavior, migration, deprecation, or breaking changes
 - CLI flags, deployment behavior, pricing/limits, security rules, or platform integrations
 - user wording such as latest, current, recently changed, new version, official docs, migration, or upgrade
@@ -27,7 +27,7 @@ Do not force current-docs proof for:
 Use one concise line:
 
 ```text
-Current-docs proof: Context7/official docs checked for <SDK/service>; result applied to <decision>.
+Current-docs proof: official docs checked for <SDK/service>; result applied to <decision>.
 ```
 
 Or:

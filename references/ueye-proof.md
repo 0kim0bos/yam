@@ -29,9 +29,10 @@ yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --js
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
 ```
 
-- `capture` uses a Playwright install from the current project when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
+- `capture` uses a project-local capture backend when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
 - `compare` is local-only and dependency-free. It records hashes, dimensions, comparison result, and visual provenance. Different screenshots stay `partial`; exact file matches can be `verified`.
 - `report` records the Ueye run as reference sources, implementation sources, comparison result, design quality, blocked reason, next action, and truth status.
+- `report` may include continuity fields when a previous review or screenshot is being rechecked.
 - Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
 
 ### Media Generation Proof
@@ -54,10 +55,10 @@ Record:
 
 ### Browser Preference
 
-- Prefer the Codex in-app Browser plugin for local pages, localhost, file URLs, and ordinary visual QA.
-- Do not silently switch to the user's Chrome browser when the in-app Browser cannot capture or inspect.
-- Use Chrome only when the user explicitly asks for it, or when the task requires existing Chrome cookies, sessions, extensions, or profile state.
-- If the in-app Browser is unavailable and Chrome was not explicitly requested or required, cap the visual claim at `partial` or `blocked`.
+- Prefer the in-app browser for local pages, localhost, file URLs, and ordinary visual QA.
+- Do not silently switch to a profile-dependent browser when the in-app browser cannot capture or inspect.
+- Use a profile-dependent browser only when the user explicitly asks for it, or when the task requires existing cookies, sessions, extensions, or profile state.
+- If the in-app browser is unavailable and a profile-dependent browser was not explicitly requested or required, cap the visual claim at `partial` or `blocked`.
 
 ### Visual Evidence Inventory
 
@@ -92,6 +93,8 @@ Record these fields when a reference or screenshot materially affects the claim:
 - `source_hash`
 - `reference_id`
 - `screenshot_id`
+- `viewport`
+- `state`
 - `local_only`
 - `redacted`
 - `operator_provided`
@@ -159,6 +162,32 @@ Dimensions:
 
 Report findings as P0-P3. Keep P2/P3 short unless the user requested a full polish pass.
 For each relevant design dimension, use `pass`, `needs-polish`, or `fails`.
+
+### Review Continuity And Comparison Report
+
+Use this when a Ueye task continues a previous visual review, rechecks a fix, or compares two review runs.
+
+Minimum fields:
+
+- `previous_report_id` or `previous_report_path`
+- `previous_screenshot_id`, when available
+- `previous_source_hash`, when available
+- `current_report_id` or `current_source_path`
+- `current_screenshot_id`, when available
+- `current_source_hash`, when available
+- `viewport`
+- `state`
+- `changed_surface`
+- `comparison_result`: improved / regressed / unchanged / not-verified
+- `regression`: true / false / not-verified
+- `resolved_findings`
+- `new_findings`
+- `still_open_findings`
+- `design_quality`
+- `truth_status`
+- `next_action`
+
+Do not claim continuity from memory alone. Link it to a previous report, screenshot, source path/hash, or an explicit user-provided prior finding.
 
 ## Truth Caps
 

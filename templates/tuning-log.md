@@ -25,7 +25,17 @@ Use this to tune route wording from real use.
 - Seconds:
 - Budget result:
 
-## Fix To Harness
+## Benchmark Optimization Loop Lite
+
+- Baseline command: yam measure <route> --files  --commands  --report-lines  --seconds
+- Baseline result:
+- One route wording or doc change:
+- Rerun command:
+- Rerun result:
+- Decision: keep / revert / retry once / stop
+- Stop condition:
+
+## Fix To yam
 
 - Skill to edit:
 - Proposed wording:

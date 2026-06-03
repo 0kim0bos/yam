@@ -141,6 +141,9 @@ Usage:
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye report [--reference ref.png] [--actual screenshot.png] [--json]
   yam media proof [--requested] [--attempted] [--output file] [--json]
+  yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--json]
+  yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
+  yam benchmark report [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--json]
   yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
@@ -430,27 +433,97 @@ async function buildDoctorReport() {
   const verifyIssues = await verify({ quiet: true });
   if (verifyIssues > 0) issues.push(`verify reported ${verifyIssues} issue(s)`);
   const globalHook = await readJsonOrDefault(path.join(os.homedir(), '.codex', 'hooks.json'), {});
+  const nextActionDetails = doctorNextActionDetails(issues);
   return {
     schema: 'yam.doctor.v1',
     generatedAt: new Date().toISOString(),
     ok: issues.length === 0,
     issues,
-    nextActions: doctorNextActions(issues),
+    nextActions: nextActionDetails.map((action) => action.next_action),
+    nextActionDetails,
     yamLiteHook: hookConfigHasYamLite(globalHook) ? 'enabled' : 'disabled'
   };
 }
 
 function doctorNextActions(issues = []) {
+  return doctorNextActionDetails(issues).map((action) => action.next_action);
+}
+
+function doctorNextActionDetails(issues = []) {
   const actions = [];
   for (const issue of issues) {
-    if (/missing source skill/i.test(issue)) actions.push('run from a complete yam-flow checkout or reinstall the published package');
-    else if (/missing truth matrix/i.test(issue)) actions.push('restore references/truth-matrix.md before publishing');
-    else if (/unexpected local hooks/i.test(issue)) actions.push('remove project hooks unless this repo is intentionally dogfooding them');
-    else if (/unexpected .*automation/i.test(issue)) actions.push('remove stale yam/timeto automations before claiming clean install state');
-    else if (/legacy|retired/i.test(issue)) actions.push('run `yam install` to replace old skill entries');
-    else if (/verify reported/i.test(issue)) actions.push('run `npm run verify` and fix the reported package boundary or metadata issue');
+    if (/missing source skill/i.test(issue)) actions.push(nextActionDetail('restore-skill-source', 'warning', issue, 'run from a complete yam-flow checkout or reinstall the published package', 'npm install -g yam-flow@latest && yam install'));
+    else if (/missing truth matrix/i.test(issue)) actions.push(nextActionDetail('restore-truth-matrix', 'warning', issue, 'restore references/truth-matrix.md before publishing', 'git checkout -- references/truth-matrix.md'));
+    else if (/unexpected local hooks/i.test(issue)) actions.push(nextActionDetail('remove-project-hook', 'warning', issue, 'remove project hooks unless this repo is intentionally dogfooding them', 'inspect .codex/hooks.json and remove only intentional stale hooks'));
+    else if (/unexpected .*automation/i.test(issue)) actions.push(nextActionDetail('remove-stale-automation', 'warning', issue, 'remove stale yam/timeto automations before claiming clean install state', 'inspect ~/.codex/automations and remove stale entries manually'));
+    else if (/legacy|retired/i.test(issue)) actions.push(nextActionDetail('replace-old-skills', 'warning', issue, 'run `yam install` to replace old skill entries', 'yam install'));
+    else if (/verify reported/i.test(issue)) actions.push(nextActionDetail('run-verify', 'error', issue, 'run `npm run verify` and fix the reported package boundary or metadata issue', 'npm run verify'));
   }
-  return [...new Set(actions)];
+  return uniqueNextActionDetails(actions);
+}
+
+function nextActionDetail(id, severity, reason, nextAction, command = '') {
+  const priority = priorityForSeverity(severity);
+  const ownerRoute = ownerRouteForAction(id, reason, command);
+  return {
+    id,
+    severity,
+    priority,
+    owner_route: ownerRoute,
+    reason,
+    next_action: nextAction,
+    command,
+    tool_intent: toolIntentForCommand(command),
+    fix_first: priority === 'P0' || priority === 'P1',
+    blocks_release: priority === 'P0',
+    truth_status: 'partial'
+  };
+}
+
+function priorityForSeverity(severity = '') {
+  if (/error|danger|block/i.test(String(severity))) return 'P0';
+  if (/warn/i.test(String(severity))) return 'P1';
+  if (/info/i.test(String(severity))) return 'P2';
+  return 'P3';
+}
+
+function ownerRouteForAction(id = '', reason = '', command = '') {
+  const text = `${id} ${reason} ${command}`;
+  if (/visual|ueye|screenshot|browser/i.test(text)) return '$ueye';
+  if (/release|publish|package|registry|dist|version/i.test(text)) return '$deep';
+  if (/database|supabase|destructive|production|migration/i.test(text)) return '$deep';
+  if (/mission|subagent|team|lane/i.test(text)) return '$mission';
+  if (/research|docs|current/i.test(text)) return '$scout';
+  return '$quick';
+}
+
+function toolIntentForCommand(command = '') {
+  const text = String(command || '').toLowerCase();
+  if (!text) return 'read_only';
+  if (/(publish|registry|release|npm pack|npm publish)/i.test(text)) return 'publish';
+  if (/(rm |delete|drop|truncate|reset|migrate|push|deploy|write|commit|add |install)/i.test(text)) return 'destructive';
+  if (/(dev|server|tmux|playwright|browser|screenshot|runtime|port|pid)/i.test(text)) return 'runtime';
+  if (/(ueye|visual|image|screen)/i.test(text)) return 'visual';
+  if (/(build|typecheck|lint|test|verify|doctor|status|pack)/i.test(text)) return 'read_only';
+  return 'write';
+}
+
+function normalizeToolIntent(value = '') {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['read_only', 'write', 'destructive', 'runtime', 'visual', 'publish'].includes(text)) return text;
+  return 'read_only';
+}
+
+function uniqueNextActionDetails(actions = []) {
+  const seen = new Set<string>();
+  const unique = [];
+  for (const action of actions) {
+    const key = `${action.id}:${action.next_action}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(action);
+  }
+  return unique;
 }
 
 async function tools(args = []) {
@@ -531,6 +604,13 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     ...safety.hits,
     ...sqlScan.findings.map((finding) => ({ level: finding.level, reason: `${finding.file}: ${finding.reason}` }))
   ];
+  const nextActionDetails = toolsDoctorNextActionDetails({
+    pack,
+    rows,
+    riskNotes,
+    frameworkChecklist,
+    commands: detection.packageJson ? detection.commands : {}
+  });
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -544,13 +624,8 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     frameworkChecklist,
     sqlScan,
     riskNotes,
-    nextActions: toolsDoctorNextActions({
-      pack,
-      rows,
-      riskNotes,
-      frameworkChecklist,
-      commands: detection.packageJson ? detection.commands : {}
-    }),
+    nextActions: nextActionDetails.map((action) => action.next_action),
+    nextActionDetails,
     routeRecommendations: {
       dbSupabase: safety.hits.length || sqlScan.findings.length ? '$deep required before claiming safe' : '$deep when destructive or production mutation appears',
       currentDocs: 'use current-docs proof only when version/freshness matters',
@@ -723,14 +798,18 @@ function checklistRow(id, label, route) {
   return { id, label, route };
 }
 
-function toolsDoctorNextActions({ pack, rows, riskNotes, frameworkChecklist, commands }) {
+function toolsDoctorNextActions(input) {
+  return toolsDoctorNextActionDetails(input).map((action) => action.next_action);
+}
+
+function toolsDoctorNextActionDetails({ pack, rows, riskNotes, frameworkChecklist, commands }) {
   const actions = [];
-  if (!pack) actions.push('create or refresh yam.project.md so route choices reuse local project context');
-  if (rows.some((row) => row.name === 'Yam skills' && row.status !== 'ready')) actions.push('run `yam install` and restart Codex before relying on installed skills');
-  if (riskNotes.some((note) => note.level === 'danger')) actions.push('use $deep before claiming destructive database or production write safety');
-  if (frameworkChecklist?.detected && !commands?.build && !commands?.typecheck) actions.push('add or document a small build/typecheck command for implementation verification');
-  if (frameworkChecklist?.uiLike) actions.push('for Ueye verified claims, record reference, actual screenshot, and comparison result');
-  return [...new Set(actions)];
+  if (!pack) actions.push(nextActionDetail('project-pack', 'info', 'project pack missing', 'create or refresh yam.project.md so route choices reuse local project context', 'yam init-project .'));
+  if (rows.some((row) => row.name === 'Yam skills' && row.status !== 'ready')) actions.push(nextActionDetail('install-skills', 'warning', 'skill install state is incomplete', 'run `yam install` and restart Codex before relying on installed skills', 'yam install'));
+  if (riskNotes.some((note) => note.level === 'danger')) actions.push(nextActionDetail('deep-safety', 'error', 'destructive database or production write signal detected', 'use $deep before claiming destructive database or production write safety', 'yam safety "<command or SQL>"'));
+  if (frameworkChecklist?.detected && !commands?.build && !commands?.typecheck) actions.push(nextActionDetail('verification-command', 'warning', 'build/typecheck command not detected', 'add or document a small build/typecheck command for implementation verification', 'yam pack .'));
+  if (frameworkChecklist?.uiLike) actions.push(nextActionDetail('ueye-evidence', 'info', 'UI-like project detected', 'for Ueye verified claims, record reference, actual screenshot, and comparison result', 'yam ueye report --reference ref.png --actual shot.png --json'));
+  return uniqueNextActionDetails(actions);
 }
 
 async function scanSqlFiles(rootDir, { maxFiles = 30, maxBytes = 200000, maxDepth = 5 } = {}) {
@@ -1062,9 +1141,22 @@ async function release(args = []) {
     console.log(`- ${check.id}: ${check.status} (${check.duration_ms}ms)`);
     if (check.note) console.log(`  ${check.note}`);
   }
+  if (report.provenance) {
+    console.log(`- Git commit: ${report.provenance.git_commit || 'unknown'}`);
+    console.log(`- Git dirty: ${report.provenance.git_dirty ? 'yes' : 'no'}`);
+    console.log(`- Dist freshness: ${report.freshness.dist}`);
+  }
+  if (report.tarball) {
+    console.log(`- Tarball: ${report.tarball.tarball_name || report.tarball.status}`);
+    if (report.tarball.file_count !== undefined) console.log(`- Tarball files: ${report.tarball.file_count}`);
+  }
   if (report.failed.length) {
     console.log('- Failed:');
     for (const id of report.failed) console.log(`  - ${id}`);
+  }
+  if (report.next_actions?.length) {
+    console.log('- Next actions:');
+    for (const action of report.next_actions) console.log(`  - ${action.next_action}`);
   }
   if (!report.ok) process.exitCode = 1;
 }
@@ -1080,6 +1172,10 @@ function runReleaseReport() {
     ['dist_freshness', ['npm', ['run', 'dist:freshness']]]
   ].map(([id, command]) => runReleaseCheck(id, command));
   const failed = checks.filter((check) => check.status !== 'passed').map((check) => check.id);
+  const provenance = releaseProvenance(checks);
+  const tarball = releaseTarballProvenance();
+  const freshness = releaseFreshness(checks, provenance, tarball);
+  const nextActions = releaseNextActions(checks, provenance, tarball);
   return {
     schema: 'yam.release-report.v1',
     generated_at: startedAt,
@@ -1088,8 +1184,115 @@ function runReleaseReport() {
     ok: failed.length === 0,
     truth_status: failed.length === 0 ? 'verified' : 'blocked',
     checks,
-    failed
+    failed,
+    provenance,
+    tarball,
+    freshness,
+    next_actions: nextActions
   };
+}
+
+function releaseProvenance(checks = []) {
+  const gitCommit = runReadOnlyCommand('git', ['rev-parse', '--short', 'HEAD']);
+  const gitStatus = runReadOnlyCommand('git', ['status', '--short']);
+  const distChanged = runReadOnlyCommand('git', ['diff', '--name-only', '--', 'dist']);
+  const packageFiles = checks.find((check) => check.id === 'package_boundary')?.status === 'passed' ? 'checked' : 'not-verified';
+  return {
+    schema: 'yam.release-provenance.v1',
+    package_name: PACKAGE_JSON.name,
+    version: VERSION,
+    git_commit: gitCommit.trim(),
+    git_dirty: Boolean(gitStatus.trim()),
+    git_status_lines: gitStatus.trim().split(/\r?\n/).filter(Boolean).slice(0, 20),
+    dist_changed_files: distChanged.trim().split(/\r?\n/).filter(Boolean).slice(0, 20),
+    package_files: packageFiles,
+    generated_at: new Date().toISOString(),
+    truth_status: gitCommit.trim() && packageFiles === 'checked' ? 'partial' : 'assumed'
+  };
+}
+
+function releaseTarballProvenance() {
+  const result = spawnSync('npm', ['pack', '--json', '--dry-run', '--ignore-scripts'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, npm_config_cache: path.join(os.tmpdir(), 'yam-npm-cache') },
+    timeout: 120000
+  });
+  if (result.status !== 0) {
+    return {
+      schema: 'yam.release-tarball-provenance.v1',
+      status: 'blocked',
+      reason: summarizeCheckOutput([result.stdout, result.stderr, result.error?.message].filter(Boolean).join('\n')),
+      truth_status: 'blocked'
+    };
+  }
+  try {
+    const data = JSON.parse(String(result.stdout || '[]'))[0] || {};
+    return {
+      schema: 'yam.release-tarball-provenance.v1',
+      status: 'checked',
+      tarball_name: String(data.filename || ''),
+      package_size: Number(data.size || data.packageSize || 0),
+      unpacked_size: Number(data.unpackedSize || 0),
+      file_count: Array.isArray(data.files) ? data.files.length : Number(data.entryCount || 0),
+      integrity: String(data.integrity || ''),
+      shasum: String(data.shasum || ''),
+      truth_status: data.filename ? 'verified' : 'partial'
+    };
+  } catch (error) {
+    return {
+      schema: 'yam.release-tarball-provenance.v1',
+      status: 'blocked',
+      reason: `could not parse npm pack output: ${errorMessage(error)}`,
+      truth_status: 'blocked'
+    };
+  }
+}
+
+function releaseFreshness(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}) {
+  const checkStatus = (id) => checks.find((check) => check.id === id)?.status || 'not-run';
+  const dist = checkStatus('dist_freshness') === 'passed' && !provenance.dist_changed_files?.length ? 'fresh' : 'needs-check';
+  const registry = checkStatus('registry_status') === 'passed' ? 'publishable-version' : 'not-verified';
+  const boundary = checkStatus('package_boundary') === 'passed' ? 'checked' : 'not-verified';
+  const smoke = checkStatus('cli_smoke') === 'passed' ? 'checked' : 'not-verified';
+  const tarballStatus = tarball.status === 'checked' ? 'checked' : 'not-verified';
+  return {
+    schema: 'yam.release-freshness.v1',
+    dist,
+    registry,
+    package_boundary: boundary,
+    cli_smoke: smoke,
+    tarball: tarballStatus,
+    truth_status: [dist, registry, boundary, smoke, tarballStatus].every((value) => !/not-verified|needs-check/.test(value)) ? 'verified' : 'partial'
+  };
+}
+
+function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}) {
+  const actions = [];
+  for (const check of checks) {
+    if (check.status === 'passed') continue;
+    actions.push(nextActionDetail(`release-${check.id}`, check.status === 'blocked' ? 'error' : 'warning', check.note || `${check.id} did not pass`, `fix ${check.id} before publishing`, check.command));
+  }
+  if (provenance.git_dirty) {
+    actions.push(nextActionDetail('release-git-dirty', 'warning', 'working tree has uncommitted changes', 'commit or intentionally keep local-only changes before tagging a release', 'git status --short'));
+  }
+  if (provenance.dist_changed_files?.length) {
+    actions.push(nextActionDetail('release-dist-drift', 'warning', 'dist has unstaged or uncommitted differences', 'run build and commit generated dist only if this package publishes dist', 'npm run build'));
+  }
+  if (tarball.status !== 'checked') {
+    actions.push(nextActionDetail('release-tarball-provenance', 'error', tarball.reason || 'tarball provenance was not produced', 'run npm pack dry-run before publishing', 'npm pack --dry-run'));
+  }
+  return uniqueNextActionDetails(actions);
+}
+
+function runReadOnlyCommand(command, args = []) {
+  const result = spawnSync(command, args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30000
+  });
+  if (result.status !== 0) return '';
+  return String(result.stdout || '');
 }
 
 function runReleaseCheck(id, commandSpec) {
@@ -1145,12 +1348,12 @@ Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/c
 Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
   compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
-  report produces a proof-ready Ueye visual run report without requiring a new capture.
+  report produces a proof-ready Ueye visual run report and continuity/comparison record without requiring a new capture.
 `);
 }
 
@@ -1273,13 +1476,15 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
   const implementationSources = [];
   let comparisonResult = 'not-verified';
   let blockedReason = String(flags.blocked_reason || '');
+  const reviewSessionId = String(flags.review_session_id || `ueye-${timestampId()}`);
+  const previousReport = await readPreviousUeyeReport(flags.previous_report);
 
   try {
     if (reference) {
@@ -1288,7 +1493,7 @@ async function ueyeReport(args = []) {
         source_kind: 'reference_image',
         source_path: info.path,
         source_hash: info.sha256,
-        reference_id: path.basename(info.path),
+        reference_id: String(flags.reference_id || path.basename(info.path)),
         local_only: true,
         operator_provided: true,
         comparison_result: 'reference-recorded',
@@ -1301,7 +1506,8 @@ async function ueyeReport(args = []) {
         source_kind: 'implementation_screenshot',
         source_path: info.path,
         source_hash: info.sha256,
-        screenshot_id: path.basename(info.path),
+        reference_id: String(flags.reference_id || referenceSources[0]?.reference_id || ''),
+        screenshot_id: String(flags.current_screenshot_id || flags.screenshot_id || path.basename(info.path)),
         local_only: true,
         operator_provided: false,
         comparison_result: 'implementation-recorded',
@@ -1323,15 +1529,127 @@ async function ueyeReport(args = []) {
     comparison_result: comparisonResult,
     design_quality: String(flags.design_quality || 'not-checked'),
     blocked_reason: blockedReason,
-    next_action: String(flags.next_action || '')
+    next_action: String(flags.next_visual_action || flags.next_action || '')
+  });
+  const comparisonReport = buildUeyeComparisonReport({
+    reviewSessionId,
+    previousReport,
+    referenceSources,
+    implementationSources,
+    comparisonResult,
+    designQuality: String(flags.design_quality || 'not-checked'),
+    similar: arrayFlag(flags.similar),
+    different: arrayFlag(flags.different),
+    missing: arrayFlag(flags.missing),
+    notes: arrayFlag(flags.comparison_notes),
+    resolved: arrayFlag(flags.resolved),
+    newFindings: arrayFlag(flags.new_finding),
+    stillOpen: arrayFlag(flags.still_open),
+    regressions: arrayFlag(flags.regression),
+    previousScreenshotId: String(flags.previous_screenshot_id || previousReport?.screenshot_id || ''),
+    currentScreenshotId: String(flags.current_screenshot_id || flags.screenshot_id || implementationSources[0]?.screenshot_id || ''),
+    viewport: String(flags.viewport || ''),
+    state: String(flags.state || 'unknown'),
+    nextAction: report.next_action,
+    truthStatus: report.truth_status
   });
   const result = {
     ...report,
+    review_session_id: reviewSessionId,
+    tool_intent: 'visual',
     capture_backend: String(flags.capture_backend || 'not-recorded'),
-    compare_backend: String(flags.compare_backend || 'local-file-hash')
+    compare_backend: String(flags.compare_backend || 'local-file-hash'),
+    continuity: comparisonReport.continuity,
+    comparison_report: comparisonReport
   };
   printJsonOrHuman(result, Boolean(flags.json), 'Ueye report');
   if (report.truth_status === 'blocked') process.exitCode = 1;
+}
+
+async function readPreviousUeyeReport(file = '') {
+  const target = String(file || '');
+  if (!target) return null;
+  try {
+    const data = await readJson(path.resolve(expandHome(target)));
+    return {
+      path: path.resolve(expandHome(target)),
+      review_session_id: data.review_session_id || data.comparison_report?.review_session_id || '',
+      screenshot_id: data.comparison_report?.current_screenshot_id || data.current_screenshot_id || data.screenshot_id || '',
+      truth_status: data.truth_status || data.comparison_report?.truth_status || 'partial',
+      comparison_result: data.comparison_result || data.comparison_report?.comparison_result || 'not-verified'
+    };
+  } catch (error) {
+    return {
+      path: path.resolve(expandHome(target)),
+      blocked_reason: errorMessage(error),
+      truth_status: 'blocked',
+      comparison_result: 'not-verified'
+    };
+  }
+}
+
+function buildUeyeComparisonReport({
+  reviewSessionId,
+  previousReport,
+  referenceSources,
+  implementationSources,
+  comparisonResult,
+  designQuality,
+  similar,
+  different,
+  missing,
+  notes,
+  resolved,
+  newFindings,
+  stillOpen,
+  regressions,
+  previousScreenshotId,
+  currentScreenshotId,
+  viewport,
+  state,
+  nextAction,
+  truthStatus
+}) {
+  const hasReference = referenceSources.length > 0;
+  const hasImplementation = implementationSources.length > 0;
+  const continuityTruth = previousReport?.blocked_reason ? 'blocked' : previousReport ? 'partial' : 'assumed';
+  return {
+    schema: 'yam.ueye-comparison-report.v1',
+    review_session_id: reviewSessionId,
+    previous_report: previousReport,
+    continuity: {
+      schema: 'yam.ueye-review-continuity.v1',
+      current_review_session_id: reviewSessionId,
+      previous_review_session_id: previousReport?.review_session_id || '',
+      previous_report_path: previousReport?.path || '',
+      previous_screenshot_id: previousScreenshotId || previousReport?.screenshot_id || '',
+      current_screenshot_id: currentScreenshotId || '',
+      carries_forward: Boolean(previousReport && !previousReport.blocked_reason),
+      truth_status: continuityTruth
+    },
+    evidence_summary: {
+      has_reference: hasReference,
+      has_implementation_screenshot: hasImplementation,
+      reference_count: referenceSources.length,
+      implementation_count: implementationSources.length
+    },
+    comparison_result: comparisonResult,
+    design_quality: designQuality,
+    similar,
+    different,
+    missing,
+    resolved,
+    new_findings: newFindings,
+    still_open: stillOpen,
+    regressions,
+    previous_screenshot_id: previousScreenshotId || previousReport?.screenshot_id || '',
+    current_screenshot_id: currentScreenshotId || '',
+    viewport,
+    state,
+    notes,
+    next_action: nextAction || (truthStatus === 'verified' ? 'no action required' : 'capture or provide implementation screenshot, then compare again'),
+    truth_status: truthStatus
+  };
 }
 
 async function media(args = []) {
@@ -1383,6 +1701,227 @@ async function mediaProof(args = []) {
   if (proof.truth_status === 'blocked') process.exitCode = 1;
 }
 
+async function runtime(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return runtimeUsage();
+  if (subcommand === 'evidence') return runtimeEvidence(args.slice(1));
+  console.error(`unknown runtime command: ${subcommand}`);
+  return runtimeUsage();
+}
+
+function runtimeUsage() {
+  console.log(`yam runtime
+
+Usage:
+  yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--evidence-id id] [--command text] [--pid n] [--port n] [--url URL] [--exit-code n] [--screenshot-id id] [--cleanup-checked] [--note text] [--json]
+
+Notes:
+  Records a small runtime evidence shape. It does not start, stop, or inspect processes by itself.
+`);
+}
+
+async function runtimeEvidence(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return runtimeUsage();
+  const flags = parseSimpleFlags(args, new Set(['backend', 'claim', 'evidence-id', 'command', 'pid', 'port', 'url', 'exit-code', 'screenshot-id', 'started-at', 'stopped-at', 'cleanup-checked', 'note', 'truth', 'intent', 'json']));
+  const evidence = buildRuntimeBackendEvidence({
+    backend: flags.backend,
+    claim: flags.claim,
+    evidence_id: String(flags.evidence_id || `runtime-${timestampId()}`),
+    command: String(flags.command || ''),
+    cleanup_checked: Boolean(flags.cleanup_checked),
+    note: String(flags.note || ''),
+    truth_status: isTruthStatus(flags.truth) ? flags.truth : undefined
+  });
+  const runtimeDetails = runtimeEvidenceDetails(flags);
+  if (!isTruthStatus(flags.truth) && evidence.truth_status === 'verified' && !runtimeDetailsHasVerification(runtimeDetails)) {
+    evidence.truth_status = 'partial';
+  }
+  const result = {
+    ...evidence,
+    runtime_details: runtimeDetails,
+    tool_intent: normalizeToolIntent(flags.intent || 'runtime'),
+    next_action: runtimeEvidenceNextAction(evidence)
+  };
+  printJsonOrHuman(result, Boolean(flags.json), 'Runtime evidence');
+  if (result.truth_status === 'blocked' || result.truth_status === 'real_required_missing') process.exitCode = 1;
+}
+
+function runtimeEvidenceDetails(flags: AnyRecord = {}) {
+  return {
+    schema: 'yam.runtime-details.v1',
+    pid: numberOrNull(flags.pid),
+    port: numberOrNull(flags.port),
+    url: String(flags.url || ''),
+    exit_code: numberOrNull(flags.exit_code),
+    screenshot_id: String(flags.screenshot_id || ''),
+    started_at: String(flags.started_at || ''),
+    stopped_at: String(flags.stopped_at || '')
+  };
+}
+
+function runtimeDetailsHasVerification(details: AnyRecord = {}) {
+  return Boolean(details.url || details.screenshot_id || details.pid !== null || details.port !== null || details.exit_code !== null || details.started_at || details.stopped_at);
+}
+
+function runtimeEvidenceNextAction(evidence) {
+  if (evidence.truth_status === 'proven' || evidence.truth_status === 'verified') return 'attach this evidence to `yam proof` when making a runtime claim';
+  if (evidence.claim === 'cleanup_verified' && !evidence.cleanup_checked) return 'rerun with --cleanup-checked only after process exit or intentional persistence is confirmed';
+  if (evidence.backend === 'none' || evidence.backend === 'unknown') return 'record the actual runtime backend before claiming runtime verification';
+  return 'add command output, screenshot id, pid/session id, or cleanup proof before upgrading the claim';
+}
+
+async function mission(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return missionUsage();
+  if (subcommand === 'queue' || subcommand === 'patch') return missionQueue(args.slice(1));
+  console.error(`unknown mission command: ${subcommand}`);
+  return missionUsage();
+}
+
+function missionUsage() {
+  console.log(`yam mission
+
+Usage:
+  yam mission queue [--lane-id id] [--agent-id id] [--status pending|applied|verified|blocked|reverted] [--scope text] [--changed file] [--depends-on lane] [--generated file] [--verification-hint text] [--rollback-hint text] [--before-check text] [--out file] [--truth status] [--json]
+
+Notes:
+  Produces a patch queue item for mission handoff/review. It does not run workers; persistence is opt-in with --out.
+`);
+}
+
+async function missionQueue(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return missionUsage();
+  const flags = parseSimpleFlags(args, new Set(['lane-id', 'agent-id', 'status', 'scope', 'changed', 'generated', 'depends-on', 'verification-hint', 'rollback-hint', 'before-check', 'safe-revert-note', 'truth', 'intent', 'out', 'json']));
+  const changedFiles = arrayFlag(flags.changed);
+  const generatedFiles = arrayFlag(flags.generated);
+  const laneId = String(flags.lane_id || flags.agent_id || `lane-${timestampId()}`);
+  const status = normalizeMissionQueueStatus(flags.status || 'pending');
+  const rollback = buildRollbackHint({
+    touched_files: changedFiles,
+    generated_files: generatedFiles,
+    before_check: String(flags.before_check || ''),
+    safe_revert_note: String(flags.safe_revert_note || flags.rollback_hint || '')
+  });
+  const envelope = buildMissionPatchEnvelope({
+    agent_id: String(flags.agent_id || `agent-${timestampId()}`),
+    assigned_scope: String(flags.scope || ''),
+    changed_files: changedFiles,
+    verification_hint: String(flags.verification_hint || ''),
+    rollback_hint: rollback,
+    truth_status: isTruthStatus(flags.truth) ? flags.truth : changedFiles.length ? 'partial' : 'assumed'
+  });
+  const item = {
+    schema: 'yam.mission-patch-queue-item.v1',
+    lane_id: laneId,
+    status,
+    depends_on: arrayFlag(flags.depends_on),
+    tool_intent: normalizeToolIntent(flags.intent || (changedFiles.length || generatedFiles.length ? 'write' : 'read_only')),
+    patch_envelope: envelope,
+    next_action: missionQueueNextAction(envelope, status)
+  };
+  const result = {
+    schema: 'yam.mission-patch-queue-lite.v1',
+    generated_at: new Date().toISOString(),
+    persistence: flags.out ? 'written' : 'not-persisted',
+    out: flags.out ? path.resolve(expandHome(flags.out)) : '',
+    items: [item],
+    queue_depth: 1,
+    next_action: item.next_action,
+    truth_status: envelope.truth_status
+  };
+  if (flags.out) {
+    const target = path.resolve(expandHome(flags.out));
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await fsp.writeFile(target, `${JSON.stringify(result, null, 2)}\n`);
+  }
+  printJsonOrHuman(result, Boolean(flags.json), 'Mission patch queue');
+}
+
+function normalizeMissionQueueStatus(value = '') {
+  const text = String(value || '').toLowerCase();
+  if (['pending', 'applied', 'verified', 'blocked', 'reverted'].includes(text)) return text;
+  return 'pending';
+}
+
+function missionQueueNextAction(envelope, status = 'pending') {
+  if (status === 'blocked') return 'resolve or document the blocker before applying dependent mission lanes';
+  if (status === 'reverted') return 'rerun the before-check or verification hint before continuing dependent work';
+  if (!envelope.assigned_scope) return 'add --scope so the patch can be reviewed against an assigned boundary';
+  if (!envelope.changed_files.length) return 'add at least one --changed file when this represents code-changing work';
+  if (!envelope.verification_hint) return 'add --verification-hint so reviewers know the smallest honest check';
+  if (!envelope.rollback_hint.safe_revert_note && !envelope.rollback_hint.before_check) return 'add rollback or before-check detail before using this for risky work';
+  return 'attach this envelope to the mission proof summary and cross-check changed files';
+}
+
+async function benchmark(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return benchmarkUsage();
+  if (subcommand === 'report') return benchmarkReport(args.slice(1));
+  console.error(`unknown benchmark command: ${subcommand}`);
+  return benchmarkUsage();
+}
+
+function benchmarkUsage() {
+  console.log(`yam benchmark
+
+Usage:
+  yam benchmark report [--label text] [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--next-action text] [--json]
+
+Notes:
+  Records a small optimization loop result. It does not run benchmarks by itself.
+`);
+}
+
+async function benchmarkReport(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return benchmarkUsage();
+  const flags = parseSimpleFlags(args, new Set(['label', 'baseline', 'current', 'unit', 'target', 'next-action', 'rollback-hint', 'intent', 'json']));
+  const baseline = numberOrNull(flags.baseline);
+  const current = numberOrNull(flags.current);
+  const target = String(flags.target || 'lower').toLowerCase() === 'higher' ? 'higher' : 'lower';
+  const hasNumbers = baseline !== null && current !== null;
+  const delta = hasNumbers ? current - baseline : null;
+  const percent = hasNumbers && baseline !== 0 ? (delta / baseline) * 100 : null;
+  const status = benchmarkStatus({ baseline, current, target });
+  const result = {
+    schema: 'yam.benchmark-report.v1',
+    generated_at: new Date().toISOString(),
+    label: String(flags.label || 'unnamed'),
+    baseline,
+    current,
+    unit: String(flags.unit || ''),
+    target,
+    delta,
+    percent,
+    status,
+    tool_intent: normalizeToolIntent(flags.intent || 'read_only'),
+    rollback_hint: String(flags.rollback_hint || (status === 'regressed' ? 'inspect the optimization patch and revert the touched surface if the regression is confirmed' : 'no rollback action recorded')),
+    next_action: String(flags.next_action || benchmarkNextAction(status)),
+    truth_status: hasNumbers ? 'verified' : 'partial'
+  };
+  printJsonOrHuman(result, Boolean(flags.json), 'Benchmark report');
+  if (status === 'regressed') process.exitCode = 1;
+}
+
+function numberOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function benchmarkStatus({ baseline, current, target }) {
+  if (baseline === null || current === null) return 'needs-baseline';
+  if (current === baseline) return 'unchanged';
+  if (target === 'higher') return current > baseline ? 'improved' : 'regressed';
+  return current < baseline ? 'improved' : 'regressed';
+}
+
+function benchmarkNextAction(status) {
+  if (status === 'improved') return 'record the measurement source and keep the smallest relevant regression check';
+  if (status === 'regressed') return 'treat this as a fix-first item before continuing planned optimization';
+  if (status === 'unchanged') return 'keep the change only if it improves clarity or enables the next measured step';
+  return 'capture baseline and current values before claiming optimization impact';
+}
+
 function parseSimpleFlags(args = [], allowed = new Set<string>()) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
@@ -1402,7 +1941,11 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     }
     const value = inlineValue ?? args[index + 1] ?? '';
     if (inlineValue === undefined) index += 1;
-    flags[normalizedKey] = value;
+    if (flags[normalizedKey] !== undefined) {
+      flags[normalizedKey] = [...arrayFlag(flags[normalizedKey]), value];
+    } else {
+      flags[normalizedKey] = value;
+    }
   }
   flags._ = positionals;
   return flags;
@@ -2644,6 +3187,9 @@ async function main() {
   if (command === 'proof') return proof(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'media') return media(process.argv.slice(3));
+  if (command === 'runtime') return runtime(process.argv.slice(3));
+  if (command === 'mission') return mission(process.argv.slice(3));
+  if (command === 'benchmark') return benchmark(process.argv.slice(3));
   if (command === 'release') return release(process.argv.slice(3));
   if (command === 'safety') return safety(process.argv.slice(3));
   if (command === 'memory') return memory(process.argv.slice(3));

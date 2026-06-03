@@ -10,6 +10,7 @@ Include these when they are useful and keep them short:
 - What verification ran.
 - What was not checked.
 - Truth status, when verification or runtime claims matter.
+- Structured diagnostic next action, when a check found a concrete next step.
 - Remaining tasks.
 - Fix-first items before planned tasks.
 
@@ -59,3 +60,23 @@ For `$deep` and `$mission`, include evidence, remaining risks, remaining tasks, 
 Do not pad the final answer when there are no meaningful remaining tasks or fix-first items.
 
 When budget drift matters, include or run `yam measure <route>` with approximate files, commands, report lines, and seconds.
+
+## Diagnostic Next Action
+
+When a report says something needs attention, include one concrete next action instead of a vague warning.
+
+Compact shape:
+
+```text
+Diagnostic next action:
+- severity:
+- owner route:
+- priority:
+- fix first:
+- blocks release:
+- evidence:
+- next action:
+- truth status:
+```
+
+Use `none` when there is no meaningful next action.

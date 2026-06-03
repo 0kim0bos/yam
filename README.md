@@ -178,10 +178,25 @@ Publishing still requires confirming the final npm package name and account acce
 - visual evidence caps
 - Ueye visual run reports
 - runtime backend evidence
+- runtime evidence mini summaries
+- mission patch queue lite records
+- release report JSON
+- structured diagnostic next actions
 - media generation proof caps
 - DB/Supabase safety signals
 
 It is implemented locally in `src/lib/trust-kernel.ts` and kept route-scoped. It is not an always-on release gate.
+
+## Flow Artifact Shapes
+
+These shapes keep reports machine-readable without turning normal work into a heavy gate.
+
+- Runtime evidence mini: compact route, command/process, observation, cleanup, truth status, and next action fields for `$deep` or `$mission` runtime claims.
+- Patch queue lite: `$mission` lane records with pending/applied/verified/reverted/blocked state, changed files, verification hint, rollback hint, truth status, and next action.
+- Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, and final truth status.
+- Benchmark optimization loop lite: use `yam measure <route>` and `yam template tuning` to record baseline, one route wording change, rerun result, keep/revert decision, and stop condition.
+- Structured diagnostic next action: every doctor/release diagnostic should say what was observed, what evidence supports it, what to do next, owner route, severity, and truth status.
+- Ueye review continuity/comparison report: `$ueye` run reports can link a previous review, current evidence, comparison delta, design quality result, and next action.
 
 ## Ueye Capture And Compare
 
@@ -197,7 +212,7 @@ yam ueye report --reference ./reference.png --actual .yam/screens/home.png --des
 
 `compare` is local-only and dependency-free. It records file hashes, dimensions, comparison result, and proof-ready visual provenance. Exact image matches can be `verified`; different screenshots stay `partial` so visual parity is not overclaimed.
 
-`report` gathers reference sources, implementation screenshots, comparison result, design quality judgment, and next action into one compact proof-ready JSON object.
+`report` gathers reference sources, implementation screenshots, comparison result, continuity fields, design quality judgment, and next action into one compact proof-ready JSON object.
 
 Generated media can guide visual direction, but it cannot prove the implemented UI by itself:
 

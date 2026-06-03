@@ -4,7 +4,7 @@
 
 Implemented:
 
-- Skills-first harness.
+- Skills-first workflow.
 - Six routes: quick, ueye, question, scout, deep, mission.
 - Shared references.
 - Local CLI: list, status, verify, doctor, examples, path, install, uninstall.
@@ -54,7 +54,7 @@ Tasks:
 
 ### 4. Token Budget Reporter
 
-Goal: keep the harness honest about context usage.
+Goal: keep the workflow honest about context usage.
 
 Tasks:
 
@@ -275,7 +275,7 @@ Tasks:
 ### 15. Lite Hook / Progressive Tool Trust Layer
 
 Goal: keep beginner momentum while creating a path toward professional proof-first work.
-The hook stays light, but the harness direction does not. `yam` should support a depth ladder: direction fit first, focused proof for ordinary work, strong proof for risky work, and real team proof for `$mission`.
+The hook stays light, but the `yam` direction does not. `yam` should support a depth ladder: direction fit first, focused proof for ordinary work, strong proof for risky work, and real team proof for `$mission`.
 
 Kept:
 
@@ -325,7 +325,7 @@ Rules:
 
 #### Mission Patch Queue Lite
 
-Status: next candidate for `$mission` only.
+Status: documented lite shape for `$mission` only; implementation remains route-scoped.
 
 Trigger:
 
@@ -381,7 +381,7 @@ Status: later.
 Trigger:
 
 - Tool intent labels are no longer enough.
-- The harness starts coordinating multiple external tools inside one route.
+- The workflow starts coordinating multiple external tools inside one route.
 - Write or destructive actions could run near read-only checks.
 - Parallel tool execution becomes common and needs ordering.
 - A mission needs deterministic tool sequence proof.

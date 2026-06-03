@@ -44,7 +44,7 @@ Opt-in visual evidence helpers:
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --review-session-id pricing-card-v1 --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
 ```
@@ -133,6 +133,7 @@ yam memory summary /path/to/project
 ```bash
 yam budget quick
 yam measure quick --files 3 --commands 1 --report-lines 5 --seconds 40
+yam template tuning
 ```
 
 ## Tool Doctor / Proof / Safety
@@ -150,6 +151,9 @@ yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
+yam runtime evidence --backend terminal --claim observed --evidence-id dev-server-1 --command "npm run dev" --json
+yam mission queue --agent-id implementer --scope "checkout form" --changed src/checkout.tsx --verification-hint "npm run typecheck" --rollback-hint "revert checkout form patch if typecheck or smoke fails" --json
+yam benchmark report --label "render time" --baseline 100 --current 86 --unit ms --target lower --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam proof --route deep --truth proven --require-runtime --runtime "mock server fixture"
 yam proof write /path/to/project --route deep --truth partial --command "npm run build: pass"
@@ -162,6 +166,29 @@ Release reporting intentionally runs the release checks and returns a machine-re
 ```bash
 yam release report --json
 ```
+
+## Flow Artifact Shapes
+
+Use existing templates and JSON outputs for compact support records:
+
+```bash
+yam template proof
+yam template mission
+yam template tuning
+yam tools doctor /path/to/project --json
+yam release report --json
+yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-checked --json
+yam mission queue --agent-id reviewer --scope "changed files review" --changed src/bin/yam.ts --verification-hint "npm run typecheck" --json
+yam benchmark report --label "bundle size" --baseline 120 --current 118 --unit kB --target lower --json
+```
+
+Supported report shapes:
+
+- Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
+- Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
+- Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
+- Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
+- Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.
 
 ## Lite Hook
 

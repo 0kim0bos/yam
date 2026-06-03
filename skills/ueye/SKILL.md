@@ -37,8 +37,9 @@ Do not use for:
 - Design quality judgment belongs after implementation/review: compare to the reference first, then judge whether the result is good design.
 - Keep Ueye as one route: start fast, then opt into `yam ueye capture` and `yam ueye compare` only when a `verified` visual claim needs real screen evidence.
 - Use `yam ueye report` when reference, implementation screenshot, comparison result, design quality, and next action should be recorded as one compact run report.
+- For follow-up visual reviews, keep continuity explicit: previous report/source, current report/source, comparison delta, resolved findings, new findings, and next action.
 - Generated media can guide direction, but it cannot verify the implemented screen without implementation screenshot evidence.
-- Prefer the Codex in-app Browser plugin for interactive visual checks. Do not switch to the user's Chrome browser unless the user explicitly asks for Chrome or the task requires existing Chrome cookies, sessions, extensions, or profile state.
+- Prefer the in-app browser for interactive visual checks. Do not switch to a profile-dependent browser unless the user explicitly asks or the task requires existing cookies, sessions, extensions, or profile state.
 
 ## Workflow
 
@@ -56,11 +57,12 @@ Do not use for:
 6. Implement the smallest coherent design improvement when implementation is requested.
 7. Check default, loading, error, empty, disabled, hover/focus, and mobile states when relevant.
 8. Run browser/screenshot verification when feasible.
-   - Prefer the Codex in-app Browser plugin for local pages, localhost, file URLs, and ordinary visual QA.
-   - Do not silently use Chrome as a fallback. If the in-app Browser cannot capture or inspect, report the visual cap as `partial` or `blocked`.
-   - Use `yam ueye capture --url URL --out path.png` when a local Playwright install is available and the claim needs real browser evidence.
+   - Prefer the in-app browser for local pages, localhost, file URLs, and ordinary visual QA.
+   - Do not silently use a profile-dependent browser as a fallback. If the in-app browser cannot capture or inspect, report the visual cap as `partial` or `blocked`.
+   - Use `yam ueye capture --url URL --out path.png` when a project-local capture backend is available and the claim needs real browser evidence.
    - Use `yam ueye compare --reference ref.png --actual shot.png` when reference fidelity needs a proof-ready local comparison record.
    - Use `yam ueye report --reference ref.png --actual shot.png --design-quality needs-polish --json` to preserve the run-level visual provenance and next action.
+   - When continuing a prior review, include previous/current report or screenshot identifiers and mark the comparison as improved, regressed, unchanged, or not-verified.
 9. Compare reference and implementation when reference fidelity was requested:
    - matched, similar, different, not-applicable, or not-verified.
    - Separate "faithful to reference" from "good design."
@@ -98,7 +100,9 @@ Use these artifacts for reference-led implementation or serious visual review. K
 5. Design Quality Review:
    - judge whether the result is good UI/UX/design after reference comparison.
    - use pass, needs-polish, or fails for each relevant design dimension.
-6. Media Generation Proof, when generated images are part of the task:
+6. Review Continuity and Comparison Report, when this is a follow-up review:
+   - record previous source/report, current source/report, comparison delta, resolved findings, new findings, still-open findings, truth status, and next action.
+7. Media Generation Proof, when generated images are part of the task:
    - record whether generation was requested, attempted, blocked, or produced an output.
    - use `yam media proof --requested --attempted --output path.png --wait-loop --json` when a generated image materially affects the design direction.
    - never use generated media proof as a substitute for implemented screen evidence.
@@ -142,6 +146,7 @@ Report:
 - Source evidence used.
 - Reference Read Proof and reference comparison result when a reference was used.
 - Design Quality Review result when implementation or serious visual review was requested.
+- Review continuity/comparison result when this continues a prior Ueye run.
 - P0-P3 issues or confirmation that no blockers were found.
 - States/viewports checked.
 - Truth status and visual verification cap.

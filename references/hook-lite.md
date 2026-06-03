@@ -14,7 +14,7 @@ Allowed:
 - Remind the agent not to overclaim verification, cleanup, or visual evidence.
 - Suggest `$quick`, `$ueye`, `$question`, `$scout`, `$deep`, or `$mission` based on obvious prompt signals.
 - Mention a project pack or memory summary when present.
-- Warn when conflicting proof-harness surfaces are active in the current project.
+- Warn when conflicting proof surfaces are active in the current project.
 
 Not allowed:
 

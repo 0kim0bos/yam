@@ -34,6 +34,8 @@
 | source_hash | unknown |
 | reference_id |  |
 | screenshot_id |  |
+| viewport |  |
+| state |  |
 | local_only | true / false |
 | redacted | true / false |
 | operator_provided | true / false |
@@ -66,6 +68,26 @@
 | Brand and mood fit | not-verified |  |
 
 Status values: matched / similar / different / not-verified / not-applicable.
+
+## Review Continuity
+
+| Field | Value |
+| --- | --- |
+| previous_report_id/path |  |
+| previous_screenshot_id |  |
+| previous_source_hash | unknown |
+| current_report_id/path |  |
+| current_screenshot_id |  |
+| current_source_hash | unknown |
+| viewport |  |
+| state |  |
+| changed_surface |  |
+| continuity_result | improved / regressed / unchanged / not-verified |
+| regression | true / false / not-verified |
+| resolved_findings |  |
+| new_findings |  |
+| still_open_findings |  |
+| next_action |  |
 
 ## Design Quality Review
 
@@ -123,3 +145,25 @@ Result values: pass / needs-polish / fails.
 ## Truth Status
 
 - verified / partial / skipped / blocked / assumed:
+
+## Review Report JSON
+
+```json
+{
+  "kind": "ueye_review_report",
+  "previous_report_id": "",
+  "previous_screenshot_id": "",
+  "current_report_id": "",
+  "current_screenshot_id": "",
+  "viewport": "",
+  "state": "",
+  "comparison_result": "not-verified",
+  "regression": "not-verified",
+  "resolved_findings": [],
+  "new_findings": [],
+  "still_open": [],
+  "design_quality": "needs-polish",
+  "truth_status": "partial",
+  "next_action": ""
+}
+```

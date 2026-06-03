@@ -65,6 +65,7 @@ Use these when the task depends on visual truth, reference matching, or design q
 2. Reference Read Proof.
 3. Reference vs Implementation Matrix.
 4. Design Quality Review.
+5. Review Continuity and Comparison Report.
 
 Default bound:
 
@@ -145,6 +146,26 @@ Review dimensions:
 For each relevant dimension, record `pass`, `needs-polish`, or `fails`.
 Keep actionable findings in P0-P3 order. Prefer fixing P0/P1 and cheap local P2 issues before broad polish.
 
+### Review Continuity and Comparison Report
+
+Use when a screen has more than one visual pass, a reference needs follow-up, or a previous Ueye report should stay connected to the next one.
+
+Record:
+
+- `review_session_id` for the current pass.
+- previous report path or previous session id when available.
+- reference sources and implementation screenshot sources.
+- comparison result.
+- previous and current screenshot ids when available.
+- viewport and state.
+- similar, different, and missing items.
+- resolved findings, new findings, still-open findings, and regression status.
+- design quality result.
+- next visual action.
+- truth status.
+
+Use `yam ueye report --previous-report previous.json --review-session-id current-pass --similar "..." --different "..." --missing "..." --json` when you need a compact continuity record.
+
 ## P0-P3 Ledger
 
 - P0: blocker, unusable, impossible to complete primary workflow, severe accessibility or responsive failure.
@@ -162,8 +183,9 @@ Keep actionable findings in P0-P3 order. Prefer fixing P0/P1 and cheap local P2 
 6. Screenshot/browser recheck when feasible.
 7. Reference vs Implementation Matrix when reference fidelity matters.
 8. Design Quality Review.
-9. P0/P1 closeout.
-10. Truth status.
+9. Review Continuity and Comparison Report when the work spans multiple passes.
+10. P0/P1 closeout.
+11. Truth status.
 
 ## Truth Caps
 

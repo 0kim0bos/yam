@@ -44,7 +44,7 @@
 - UI changes:
 - Feature changes:
 - Risky changes:
-- Public/release changes: scan for external harness/tool names, comparison wording, and origin-credit wording; remove those hits unless the user explicitly approves keeping them.
+- Public/release changes: scan for external tool names, comparison wording, and attribution wording; remove those hits unless the user explicitly approves keeping them.
 
 ## Known Risks
 
@@ -62,7 +62,7 @@
 
 - Do not:
 - Avoid:
-- Do not leave external harness/tool/project comparison, attribution, or origin-credit language in public-facing source, docs, npm metadata, release notes, or GitHub repository text.
+- Do not leave external tool/project comparison or attribution language in public-facing source, docs, npm metadata, release notes, or GitHub repository text.
 
 ## MD Management
 

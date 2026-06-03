@@ -25,13 +25,13 @@ Then depth increases by route:
 
 ## Surfaces To Wrap
 
-- Codex CLI/App readiness.
-- Browser and Computer Use availability.
+- Local CLI/app readiness.
+- Browser and screen-control availability.
 - tmux and long-running process lifecycle.
 - Subagent/team availability for `$mission`.
 - imagegen or screenshot evidence for `$ueye`.
-- Context7 or official docs for current package/API questions.
-- codex-lb or provider routing health when configured.
+- Current official docs for package/API questions.
+- provider routing health when configured.
 - DB/Supabase safety for destructive or migration work.
 - Research, QA, wiki/context, proof, and release-gate workflows.
 
@@ -66,7 +66,7 @@ On demand:
 - Tool readiness checks.
 - Hook status and trust reporting.
 - DB/Supabase destructive-operation gate thinking.
-- Computer Use and screenshot evidence caps.
+- Screen-control and screenshot evidence caps.
 - tmux/process cleanup truth.
 - Source-intelligence proof for current docs.
 - Destructive DB/Supabase command detection and production-write caution.
@@ -92,7 +92,7 @@ On demand:
 - Always-on hook enforcement.
 - Release gates for normal coding.
 - Mandatory generated image review for every UI task.
-- Broad MCP/tool scans before small work.
+- Broad connector/tool scans before small work.
 - Provider config mutation without explicit user approval.
 
 ## Implemented Shape
@@ -106,14 +106,26 @@ On demand:
 - suggest route and proof level
 - do not install, configure, or mutate
 
+Tool intent labels stay advisory and route-scoped:
+
+- `read_only`: inspect, list, or report.
+- `write`: edit workspace files or local generated artifacts.
+- `destructive`: delete, reset, overwrite, publish irreversible data, or mutate production-like state.
+- `runtime`: start, stop, probe, or depend on a live process.
+- `visual`: capture, compare, or inspect screen evidence.
+- `publish`: package, release, push, deploy, or expose artifacts.
+
 `yam proof` should summarize what actually ran:
 
 - command evidence
 - browser/screenshot evidence
 - visual provenance for reference-based UI work
 - mission patch envelopes for real team lanes
+- runtime evidence mini for route-level runtime claims
+- patch queue lite when mission lane apply/verify order matters
 - rollback hints for risky changes
 - runtime/tmux/process cleanup evidence
+- structured diagnostic next action
 - truth status
 - skipped/blocked/assumed items
 
@@ -125,4 +137,86 @@ On demand:
 - registry status
 - CLI smoke
 - dist freshness
+- release tarball provenance: package name/version, tarball path, sha256, generated_at, source commit/tree state, included files summary
+- diagnostics with structured next action
 - final truth status
+
+## Compact Artifact Contracts
+
+Runtime evidence mini:
+
+```json
+{
+  "kind": "runtime_evidence_mini",
+  "route": "deep",
+  "required": true,
+  "command": "npm run dev",
+  "target": "http://localhost:3000",
+  "pid": "unknown",
+  "port": "3000",
+  "url": "http://localhost:3000",
+  "exit_code": null,
+  "screenshot_id": "",
+  "started_at": "",
+  "stopped_at": "",
+  "process": {
+    "session": "",
+    "pane": ""
+  },
+  "observation": {
+    "before": "",
+    "after": ""
+  },
+  "cleanup": {
+    "status": "checked_stopped",
+    "evidence": ""
+  },
+  "truth_status": "partial",
+  "next_action": {
+    "kind": "run_check",
+    "summary": ""
+  }
+}
+```
+
+Patch queue lite:
+
+```json
+{
+  "kind": "patch_queue_lite",
+  "items": [
+    {
+      "status": "pending",
+      "lane_id": "",
+      "depends_on": [],
+      "assigned_scope": "",
+      "changed_files": [],
+      "verification_hint": "",
+      "rollback_hint": "",
+      "truth_status": "partial",
+      "next_action": ""
+    }
+  ]
+}
+```
+
+Structured diagnostic next action:
+
+```json
+{
+  "status": "needs_action",
+  "severity": "P2",
+  "owner_route": "quick",
+  "priority": "fix_first",
+  "fix_first": true,
+  "blocks_release": false,
+  "observation": "",
+  "evidence": "",
+  "next_action": {
+    "kind": "run_command",
+    "command": "",
+    "reason": ""
+  },
+  "truth_status": "partial"
+}
+```

@@ -8,7 +8,7 @@ description: Very-light Q&A route. Use when the user invokes $question or asks a
 Use for:
 - Simple conceptual explanations.
 - "What is X?" or "Can I do Y?" questions.
-- Local harness/project usage questions.
+- Local workflow/project usage questions.
 - Clarifying a decision that does not need fresh source gathering.
 
 Do not use for:
