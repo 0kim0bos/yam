@@ -44,7 +44,7 @@ Opt-in visual evidence helpers:
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --review-session-id pricing-card-v1 --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
 ```
@@ -149,7 +149,7 @@ yam proof --route ueye --truth verified --visual "reference image only"
 yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam runtime evidence --backend terminal --claim observed --evidence-id dev-server-1 --command "npm run dev" --json
 yam mission queue --agent-id implementer --scope "checkout form" --changed src/checkout.tsx --verification-hint "npm run typecheck" --rollback-hint "revert checkout form patch if typecheck or smoke fails" --json

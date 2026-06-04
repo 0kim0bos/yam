@@ -129,7 +129,7 @@ yam proof --route ueye --truth verified --visual "reference image only"
 yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --provider-context local --execution-surface in-app-browser --app-surface codex-app --browser-surface in-app-browser --preserved-state --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam release report --json
@@ -177,6 +177,7 @@ Publishing still requires confirming the final npm package name and account acce
 - runtime truth matrix
 - visual evidence caps
 - Ueye visual run reports
+- Ueye surface context metadata
 - runtime backend evidence
 - runtime evidence mini summaries
 - mission patch queue lite records
@@ -197,6 +198,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Benchmark optimization loop lite: use `yam measure <route>` and `yam template tuning` to record baseline, one route wording change, rerun result, keep/revert decision, and stop condition.
 - Structured diagnostic next action: every doctor/release diagnostic should say what was observed, what evidence supports it, what to do next, owner route, severity, and truth status.
 - Ueye review continuity/comparison report: `$ueye` run reports can link a previous review, current evidence, comparison delta, design quality result, and next action.
+- Ueye surface context: `$ueye` run reports can record provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL/state, and evidence id.
 
 ## Ueye Capture And Compare
 
@@ -205,14 +207,14 @@ These shapes keep reports machine-readable without turning normal work into a he
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
 `capture` uses a Playwright install from the current project when present, then falls back to the package context. It does not install browsers or add runtime dependencies by itself. If capture is unavailable, the visual claim stays `partial` or `blocked` until a real screenshot is supplied.
 
 `compare` is local-only and dependency-free. It records file hashes, dimensions, comparison result, and proof-ready visual provenance. Exact image matches can be `verified`; different screenshots stay `partial` so visual parity is not overclaimed.
 
-`report` gathers reference sources, implementation screenshots, comparison result, continuity fields, design quality judgment, and next action into one compact proof-ready JSON object.
+`report` gathers reference sources, implementation screenshots, comparison result, continuity fields, design quality judgment, surface context, and next action into one compact proof-ready JSON object.
 
 Generated media can guide visual direction, but it cannot prove the implemented UI by itself:
 

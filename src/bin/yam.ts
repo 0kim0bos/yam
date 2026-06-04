@@ -16,6 +16,7 @@ import {
   buildRuntimeBackendEvidence,
   buildUeyeVisualProvenance,
   buildUeyeRunReport,
+  buildUeyeSurfaceContext,
   buildYamCompletionProof,
   detectDbSafetyText as detectTrustDbSafetyText,
   isTruthStatus
@@ -139,7 +140,7 @@ Usage:
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--provider-context local] [--execution-surface in-app-browser] [--json]
   yam media proof [--requested] [--attempted] [--output file] [--json]
   yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--json]
   yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
@@ -808,7 +809,7 @@ function toolsDoctorNextActionDetails({ pack, rows, riskNotes, frameworkChecklis
   if (rows.some((row) => row.name === 'Yam skills' && row.status !== 'ready')) actions.push(nextActionDetail('install-skills', 'warning', 'skill install state is incomplete', 'run `yam install` and restart Codex before relying on installed skills', 'yam install'));
   if (riskNotes.some((note) => note.level === 'danger')) actions.push(nextActionDetail('deep-safety', 'error', 'destructive database or production write signal detected', 'use $deep before claiming destructive database or production write safety', 'yam safety "<command or SQL>"'));
   if (frameworkChecklist?.detected && !commands?.build && !commands?.typecheck) actions.push(nextActionDetail('verification-command', 'warning', 'build/typecheck command not detected', 'add or document a small build/typecheck command for implementation verification', 'yam pack .'));
-  if (frameworkChecklist?.uiLike) actions.push(nextActionDetail('ueye-evidence', 'info', 'UI-like project detected', 'for Ueye verified claims, record reference, actual screenshot, and comparison result', 'yam ueye report --reference ref.png --actual shot.png --json'));
+  if (frameworkChecklist?.uiLike) actions.push(nextActionDetail('ueye-evidence', 'info', 'UI-like project detected', 'for Ueye verified claims, record reference, actual screenshot, comparison result, and surface context', 'yam ueye report --reference ref.png --actual shot.png --provider-context local --execution-surface in-app-browser --json'));
   return uniqueNextActionDetails(actions);
 }
 
@@ -1348,7 +1349,7 @@ Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/c
 Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
@@ -1359,7 +1360,7 @@ Notes:
 
 async function ueyeCapture(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['url', 'out', 'viewport', 'wait-until', 'timeout', 'full-page', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['url', 'out', 'viewport', 'wait-until', 'timeout', 'full-page', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'evidence-id', 'screenshot-id', 'json']));
   const url = String(flags.url || '');
   const out = String(flags.out || '');
   if (!url || !out) {
@@ -1384,6 +1385,24 @@ async function ueyeCapture(args = []) {
     await page.goto(url, { waitUntil, timeout });
     await page.screenshot({ path: target, fullPage: Boolean(flags.full_page) });
     const info = await imageFileInfo(target);
+    const surfaceContext = buildUeyeSurfaceContext({
+      provider_context: String(flags.provider_context || 'local-playwright'),
+      provider_badge: String(flags.provider_badge || flags.provider_context || 'local-playwright'),
+      execution_surface: String(flags.execution_surface || 'browser-capture'),
+      app_surface: String(flags.app_surface || 'local-project'),
+      browser_surface: String(flags.browser_surface || 'playwright'),
+      control_mode: String(flags.control_mode || 'automated-capture'),
+      route: 'ueye',
+      mode: 'capture',
+      url,
+      viewport: `${viewport.width}x${viewport.height}`,
+      screenshot_id: String(flags.screenshot_id || path.basename(target)),
+      evidence_id: String(flags.evidence_id || `ueye-capture-${timestampId()}`),
+      preserved_state: Boolean(flags.preserved_state),
+      preserved_url: String(flags.preserved_url || url),
+      local_only: true,
+      truth_status: 'verified'
+    });
     const result = {
       schema: 'yam.ueye-capture.v1',
       status: 'verified',
@@ -1393,6 +1412,7 @@ async function ueyeCapture(args = []) {
       full_page: Boolean(flags.full_page),
       sha256: info.sha256,
       dimensions: info.dimensions,
+      surface_context: surfaceContext,
       visual_evidence: `browser screenshot captured: ${target} (${info.dimensions}, sha256:${info.sha256})`
     };
     printJsonOrHuman(result, Boolean(flags.json), 'Ueye capture');
@@ -1415,7 +1435,7 @@ async function ueyeCapture(args = []) {
 
 async function ueyeCompare(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'json', 'reference-id', 'screenshot-id']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'json', 'reference-id', 'screenshot-id', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'viewport', 'evidence-id']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   if (!reference || !actual) {
@@ -1436,12 +1456,35 @@ async function ueyeCompare(args = []) {
     const sameDimensions = referenceInfo.dimensions === actualInfo.dimensions;
     const comparisonResult = exactMatch ? 'matched' : 'different';
     const truthStatus = exactMatch ? 'verified' : 'partial';
+    const surfaceContext = buildUeyeSurfaceContext({
+      provider_context: String(flags.provider_context || 'local-file'),
+      provider_badge: String(flags.provider_badge || flags.provider_context || 'local-file'),
+      execution_surface: String(flags.execution_surface || 'local-file-compare'),
+      app_surface: String(flags.app_surface || 'local-project'),
+      browser_surface: String(flags.browser_surface || 'not-used'),
+      control_mode: String(flags.control_mode || 'local-compare'),
+      route: 'ueye',
+      mode: 'compare',
+      url: String(flags.url || ''),
+      viewport: String(flags.viewport || ''),
+      screenshot_id: String(flags.screenshot_id || path.basename(actualPath)),
+      evidence_id: String(flags.evidence_id || `ueye-compare-${timestampId()}`),
+      preserved_state: Boolean(flags.preserved_state),
+      preserved_url: String(flags.preserved_url || flags.url || ''),
+      local_only: true,
+      truth_status: truthStatus
+    });
     const provenance = buildUeyeVisualProvenance({
       source_kind: 'implementation_screenshot',
       source_path: actualPath,
       source_hash: actualInfo.sha256,
       reference_id: String(flags.reference_id || path.basename(referencePath)),
       screenshot_id: String(flags.screenshot_id || path.basename(actualPath)),
+      provider_context: surfaceContext.provider_context,
+      provider_badge: surfaceContext.provider_badge,
+      execution_surface: surfaceContext.execution_surface,
+      app_surface: surfaceContext.app_surface,
+      browser_surface: surfaceContext.browser_surface,
       local_only: true,
       redacted: false,
       operator_provided: false,
@@ -1456,6 +1499,7 @@ async function ueyeCompare(args = []) {
       same_dimensions: sameDimensions,
       reference: referenceInfo,
       actual: actualInfo,
+      surface_context: surfaceContext,
       visual_evidence: `browser/local screenshot comparison executed: reference=${referencePath}, actual=${actualPath}, result=${comparisonResult}`,
       visual_provenance: provenance,
       proof_hint: `yam proof --route ueye --truth ${truthStatus} --visual "browser/local screenshot comparison executed: ${comparisonResult}" --visual-provenance '${JSON.stringify(provenance)}' --require-visual`
@@ -1476,7 +1520,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -1485,6 +1529,24 @@ async function ueyeReport(args = []) {
   let blockedReason = String(flags.blocked_reason || '');
   const reviewSessionId = String(flags.review_session_id || `ueye-${timestampId()}`);
   const previousReport = await readPreviousUeyeReport(flags.previous_report);
+  const surfaceContext = buildUeyeSurfaceContext({
+    provider_context: String(flags.provider_context || 'not-recorded'),
+    provider_badge: String(flags.provider_badge || flags.provider_context || 'not-recorded'),
+    execution_surface: String(flags.execution_surface || flags.capture_backend || 'not-recorded'),
+    app_surface: String(flags.app_surface || 'not-recorded'),
+    browser_surface: String(flags.browser_surface || flags.capture_backend || 'not-recorded'),
+    control_mode: String(flags.control_mode || 'not-recorded'),
+    route: 'ueye',
+    mode: 'report',
+    url: String(flags.url || flags.preserved_url || ''),
+    viewport: String(flags.viewport || ''),
+    screenshot_id: String(flags.current_screenshot_id || flags.screenshot_id || ''),
+    evidence_id: String(flags.evidence_id || reviewSessionId),
+    preserved_state: Boolean(flags.preserved_state),
+    preserved_url: String(flags.preserved_url || flags.url || ''),
+    local_only: true,
+    truth_status: actual ? 'partial' : 'assumed'
+  });
 
   try {
     if (reference) {
@@ -1494,6 +1556,11 @@ async function ueyeReport(args = []) {
         source_path: info.path,
         source_hash: info.sha256,
         reference_id: String(flags.reference_id || path.basename(info.path)),
+        provider_context: surfaceContext.provider_context,
+        provider_badge: surfaceContext.provider_badge,
+        execution_surface: surfaceContext.execution_surface,
+        app_surface: surfaceContext.app_surface,
+        browser_surface: surfaceContext.browser_surface,
         local_only: true,
         operator_provided: true,
         comparison_result: 'reference-recorded',
@@ -1508,6 +1575,11 @@ async function ueyeReport(args = []) {
         source_hash: info.sha256,
         reference_id: String(flags.reference_id || referenceSources[0]?.reference_id || ''),
         screenshot_id: String(flags.current_screenshot_id || flags.screenshot_id || path.basename(info.path)),
+        provider_context: surfaceContext.provider_context,
+        provider_badge: surfaceContext.provider_badge,
+        execution_surface: surfaceContext.execution_surface,
+        app_surface: surfaceContext.app_surface,
+        browser_surface: surfaceContext.browser_surface,
         local_only: true,
         operator_provided: false,
         comparison_result: 'implementation-recorded',
@@ -1526,6 +1598,11 @@ async function ueyeReport(args = []) {
   const report = buildUeyeRunReport({
     reference_sources: referenceSources,
     implementation_sources: implementationSources,
+    surface_context: {
+      ...surfaceContext,
+      screenshot_id: surfaceContext.screenshot_id || String(flags.current_screenshot_id || flags.screenshot_id || implementationSources[0]?.screenshot_id || ''),
+      truth_status: blockedReason ? 'blocked' : implementationSources.length ? 'partial' : 'assumed'
+    },
     comparison_result: comparisonResult,
     design_quality: String(flags.design_quality || 'not-checked'),
     blocked_reason: blockedReason,
@@ -1536,6 +1613,7 @@ async function ueyeReport(args = []) {
     previousReport,
     referenceSources,
     implementationSources,
+    surfaceContext: report.surface_context,
     comparisonResult,
     designQuality: String(flags.design_quality || 'not-checked'),
     similar: arrayFlag(flags.similar),
@@ -1593,6 +1671,7 @@ function buildUeyeComparisonReport({
   previousReport,
   referenceSources,
   implementationSources,
+  surfaceContext,
   comparisonResult,
   designQuality,
   similar,
@@ -1633,6 +1712,7 @@ function buildUeyeComparisonReport({
       reference_count: referenceSources.length,
       implementation_count: implementationSources.length
     },
+    surface_context: surfaceContext || buildUeyeSurfaceContext(),
     comparison_result: comparisonResult,
     design_quality: designQuality,
     similar,

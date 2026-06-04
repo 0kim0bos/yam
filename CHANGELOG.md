@@ -2,6 +2,19 @@
 
 All notable changes to yam-flow are documented here.
 
+## v0.1.5 - 2026-06-04
+
+### Added
+
+- Added Ueye surface context metadata for provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL, preserved state, and evidence id.
+- Added surface context output to `yam ueye capture`, `yam ueye compare`, and `yam ueye report` so visual evidence can say where and how it was observed.
+- Added provider and execution surface fields to Ueye visual provenance records.
+
+### Improved
+
+- Strengthened `yam ueye report` for fast UI state preservation without making capture or compare an always-on gate.
+- Updated Ueye docs and templates so visual proof can distinguish source files, local screenshots, in-app browser checks, and other execution surfaces.
+
 ## v0.1.4 - 2026-06-03
 
 ### Added

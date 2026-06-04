@@ -56,10 +56,35 @@ export interface UeyeVisualProvenance {
   source_hash: string;
   reference_id: string;
   screenshot_id: string;
+  provider_context: string;
+  provider_badge: string;
+  execution_surface: string;
+  app_surface: string;
+  browser_surface: string;
   local_only: boolean;
   redacted: boolean;
   operator_provided: boolean;
   comparison_result: string;
+  truth_status: TruthStatus;
+}
+
+export interface UeyeSurfaceContext {
+  schema: 'yam.ueye-surface-context.v1';
+  provider_context: string;
+  provider_badge: string;
+  execution_surface: string;
+  app_surface: string;
+  browser_surface: string;
+  control_mode: string;
+  route: string;
+  mode: string;
+  url: string;
+  viewport: string;
+  screenshot_id: string;
+  evidence_id: string;
+  preserved_state: boolean;
+  preserved_url: string;
+  local_only: boolean;
   truth_status: TruthStatus;
 }
 
@@ -96,6 +121,7 @@ export interface UeyeRunReport {
   schema: 'yam.ueye-run-report.v1';
   reference_sources: UeyeVisualProvenance[];
   implementation_sources: UeyeVisualProvenance[];
+  surface_context: UeyeSurfaceContext;
   comparison_result: string;
   design_quality: string;
   blocked_reason: string;
@@ -201,11 +227,38 @@ export function buildUeyeVisualProvenance(input: Partial<UeyeVisualProvenance> =
     source_hash: String(input.source_hash || 'unknown'),
     reference_id: String(input.reference_id || ''),
     screenshot_id: String(input.screenshot_id || ''),
+    provider_context: String(input.provider_context || 'not-recorded'),
+    provider_badge: String(input.provider_badge || 'not-recorded'),
+    execution_surface: String(input.execution_surface || 'not-recorded'),
+    app_surface: String(input.app_surface || 'not-recorded'),
+    browser_surface: String(input.browser_surface || 'not-recorded'),
     local_only: Boolean(input.local_only),
     redacted: Boolean(input.redacted),
     operator_provided: Boolean(input.operator_provided),
     comparison_result: String(input.comparison_result || 'not-verified'),
     truth_status: truth
+  };
+}
+
+export function buildUeyeSurfaceContext(input: Partial<UeyeSurfaceContext> = {}): UeyeSurfaceContext {
+  return {
+    schema: 'yam.ueye-surface-context.v1',
+    provider_context: String(input.provider_context || 'not-recorded'),
+    provider_badge: String(input.provider_badge || input.provider_context || 'not-recorded'),
+    execution_surface: String(input.execution_surface || 'not-recorded'),
+    app_surface: String(input.app_surface || 'not-recorded'),
+    browser_surface: String(input.browser_surface || 'not-recorded'),
+    control_mode: String(input.control_mode || 'not-recorded'),
+    route: String(input.route || 'ueye'),
+    mode: String(input.mode || 'report'),
+    url: String(input.url || ''),
+    viewport: String(input.viewport || ''),
+    screenshot_id: String(input.screenshot_id || ''),
+    evidence_id: String(input.evidence_id || ''),
+    preserved_state: Boolean(input.preserved_state),
+    preserved_url: String(input.preserved_url || ''),
+    local_only: input.local_only !== undefined ? Boolean(input.local_only) : true,
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : 'partial'
   };
 }
 
@@ -268,6 +321,10 @@ export function buildUeyeRunReport(input: Partial<UeyeRunReport> = {}): UeyeRunR
     schema: 'yam.ueye-run-report.v1',
     reference_sources: references,
     implementation_sources: implementations,
+    surface_context: buildUeyeSurfaceContext({
+      ...input.surface_context,
+      truth_status: isTruthStatus(input.surface_context?.truth_status) ? input.surface_context?.truth_status : derivedTruth
+    }),
     comparison_result: comparisonResult,
     design_quality: String(input.design_quality || 'not-checked'),
     blocked_reason: blockedReason,

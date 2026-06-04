@@ -38,6 +38,7 @@ Do not use for:
 - Keep Ueye as one route: start fast, then opt into `yam ueye capture` and `yam ueye compare` only when a `verified` visual claim needs real screen evidence.
 - Use `yam ueye report` when reference, implementation screenshot, comparison result, design quality, and next action should be recorded as one compact run report.
 - For follow-up visual reviews, keep continuity explicit: previous report/source, current report/source, comparison delta, resolved findings, new findings, and next action.
+- Record surface context when it matters: provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL/state, and evidence id.
 - Generated media can guide direction, but it cannot verify the implemented screen without implementation screenshot evidence.
 - Prefer the in-app browser for interactive visual checks. Do not switch to a profile-dependent browser unless the user explicitly asks or the task requires existing cookies, sessions, extensions, or profile state.
 
@@ -61,7 +62,7 @@ Do not use for:
    - Do not silently use a profile-dependent browser as a fallback. If the in-app browser cannot capture or inspect, report the visual cap as `partial` or `blocked`.
    - Use `yam ueye capture --url URL --out path.png` when a project-local capture backend is available and the claim needs real browser evidence.
    - Use `yam ueye compare --reference ref.png --actual shot.png` when reference fidelity needs a proof-ready local comparison record.
-   - Use `yam ueye report --reference ref.png --actual shot.png --design-quality needs-polish --json` to preserve the run-level visual provenance and next action.
+   - Use `yam ueye report --reference ref.png --actual shot.png --design-quality needs-polish --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --json` to preserve the run-level visual provenance, surface context, and next action.
    - When continuing a prior review, include previous/current report or screenshot identifiers and mark the comparison as improved, regressed, unchanged, or not-verified.
 9. Compare reference and implementation when reference fidelity was requested:
    - matched, similar, different, not-applicable, or not-verified.
@@ -91,18 +92,21 @@ Use these artifacts for reference-led implementation or serious visual review. K
 2. Visual Provenance:
    - source kind, path, hash, reference id, screenshot id, redaction/locality flags, operator-provided flag, comparison result, and truth status.
    - use this to prove the route from reference reading to implementation recheck.
-3. Reference Read Proof:
+3. Surface Context:
+   - provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL/state, evidence id, and truth status.
+   - use this to explain where and how visual evidence was observed without forcing capture for every Ueye run.
+4. Reference Read Proof:
    - concrete observations from the reference before implementation.
    - no implementation claim should depend on an unrecorded reference observation.
-4. Reference vs Implementation Matrix:
+5. Reference vs Implementation Matrix:
    - compare the implemented result against the reference by aspect.
    - record matched, similar, different, not-applicable, or not-verified.
-5. Design Quality Review:
+6. Design Quality Review:
    - judge whether the result is good UI/UX/design after reference comparison.
    - use pass, needs-polish, or fails for each relevant design dimension.
-6. Review Continuity and Comparison Report, when this is a follow-up review:
+7. Review Continuity and Comparison Report, when this is a follow-up review:
    - record previous source/report, current source/report, comparison delta, resolved findings, new findings, still-open findings, truth status, and next action.
-7. Media Generation Proof, when generated images are part of the task:
+8. Media Generation Proof, when generated images are part of the task:
    - record whether generation was requested, attempted, blocked, or produced an output.
    - use `yam media proof --requested --attempted --output path.png --wait-loop --json` when a generated image materially affects the design direction.
    - never use generated media proof as a substitute for implemented screen evidence.

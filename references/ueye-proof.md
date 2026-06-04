@@ -26,12 +26,12 @@ Ueye is one route. It should not split into separate lite/deep skills. Use these
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
 - `capture` uses a project-local capture backend when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
 - `compare` is local-only and dependency-free. It records hashes, dimensions, comparison result, and visual provenance. Different screenshots stay `partial`; exact file matches can be `verified`.
-- `report` records the Ueye run as reference sources, implementation sources, comparison result, design quality, blocked reason, next action, and truth status.
+- `report` records the Ueye run as reference sources, implementation sources, comparison result, surface context, design quality, blocked reason, next action, and truth status.
 - `report` may include continuity fields when a previous review or screenshot is being rechecked.
 - Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
 
@@ -93,6 +93,11 @@ Record these fields when a reference or screenshot materially affects the claim:
 - `source_hash`
 - `reference_id`
 - `screenshot_id`
+- `provider_context`
+- `provider_badge`
+- `execution_surface`
+- `app_surface`
+- `browser_surface`
 - `viewport`
 - `state`
 - `local_only`
@@ -102,6 +107,28 @@ Record these fields when a reference or screenshot materially affects the claim:
 - `truth_status`
 
 Use `unknown` for missing hashes and `not-verified` for comparisons that were not actually rechecked. Do not upgrade a visual claim only because a reference was supplied.
+
+### Surface Context
+
+Purpose: preserve where and how a visual claim was observed without turning Ueye into an always-on capture gate.
+
+Record these fields when they affect the visual claim:
+
+- `provider_context`
+- `provider_badge`
+- `execution_surface`
+- `app_surface`
+- `browser_surface`
+- `control_mode`
+- `url`
+- `viewport`
+- `screenshot_id`
+- `evidence_id`
+- `preserved_state`
+- `preserved_url`
+- `truth_status`
+
+Use `not-recorded` when the field was not observed. Prefer `partial` over `verified` when surface context exists but no actual implementation screenshot was captured or supplied.
 
 ### Reference Read Proof
 

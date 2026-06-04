@@ -42,6 +42,24 @@
 | comparison_result | matched / similar / different / not-verified / not-applicable |
 | truth_status | verified / partial / skipped / blocked / assumed |
 
+## Surface Context
+
+| Field | Value |
+| --- | --- |
+| provider_context | not-recorded |
+| provider_badge | not-recorded |
+| execution_surface | not-recorded |
+| app_surface | not-recorded |
+| browser_surface | not-recorded |
+| control_mode | not-recorded |
+| url |  |
+| viewport |  |
+| screenshot_id |  |
+| evidence_id |  |
+| preserved_state | true / false |
+| preserved_url |  |
+| truth_status | verified / partial / skipped / blocked / assumed |
+
 ## Reference Read Proof
 
 - Layout:
@@ -155,6 +173,17 @@ Result values: pass / needs-polish / fails.
   "previous_screenshot_id": "",
   "current_report_id": "",
   "current_screenshot_id": "",
+  "surface_context": {
+    "provider_context": "not-recorded",
+    "provider_badge": "not-recorded",
+    "execution_surface": "not-recorded",
+    "app_surface": "not-recorded",
+    "browser_surface": "not-recorded",
+    "control_mode": "not-recorded",
+    "preserved_state": false,
+    "preserved_url": "",
+    "truth_status": "partial"
+  },
   "viewport": "",
   "state": "",
   "comparison_result": "not-verified",

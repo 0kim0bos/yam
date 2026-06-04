@@ -164,7 +164,23 @@ Record:
 - next visual action.
 - truth status.
 
-Use `yam ueye report --previous-report previous.json --review-session-id current-pass --similar "..." --different "..." --missing "..." --json` when you need a compact continuity record.
+Use `yam ueye report --previous-report previous.json --review-session-id current-pass --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "..." --different "..." --missing "..." --json` when you need a compact continuity record.
+
+### Surface Context
+
+Use surface context when a Ueye claim depends on preserving the current app/browser state or explaining where visual evidence came from.
+
+Fields:
+
+- provider context and badge.
+- execution surface.
+- app surface.
+- browser surface.
+- control mode.
+- preserved URL/state.
+- evidence id.
+
+Keep this metadata descriptive. It should support honest visual claims, not force a heavy browser workflow for every Ueye run.
 
 ## P0-P3 Ledger
 
