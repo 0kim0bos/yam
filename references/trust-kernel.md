@@ -11,6 +11,7 @@ This is the small trust kernel that keeps `yam` honest without turning every tas
 - fake versus real evidence distinction
 - runtime truth matrix idea
 - visual evidence caps
+- Ueye design completion gate
 - DB/Supabase destructive-signal detection
 
 ## Rejected
@@ -38,6 +39,7 @@ The module provides:
 - fake/real policy
 - runtime truth matrix
 - completion proof object creation
+- Ueye design completion gate creation
 
 ## Policy
 
@@ -51,5 +53,6 @@ For example:
 - Mock/fixture evidence cannot become real runtime `proven`.
 - Required runtime evidence that is missing becomes `real_required_missing`.
 - Cleanup claims require cleanup evidence.
+- Ueye `done` claims require a passing design completion gate or stay capped at `partial` or `blocked`.
 
 This keeps the trust layer progressive and route-scoped.

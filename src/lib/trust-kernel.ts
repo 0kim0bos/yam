@@ -88,6 +88,30 @@ export interface UeyeSurfaceContext {
   truth_status: TruthStatus;
 }
 
+export interface UeyeDesignGateCheck {
+  id: string;
+  label: string;
+  status: 'pass' | 'fail' | 'warning' | 'not_checked';
+  required: boolean;
+  next_action: string;
+}
+
+export interface UeyeDesignCompletionGate {
+  schema: 'yam.ueye-design-completion-gate.v1';
+  mode: 'fast' | 'strict';
+  completion_claim: 'draft' | 'needs-polish' | 'done';
+  ready_to_claim_done: boolean;
+  design_score: number | null;
+  min_design_score: number;
+  checks: UeyeDesignGateCheck[];
+  p0: string[];
+  p1: string[];
+  warnings: string[];
+  blockers: string[];
+  next_action: string;
+  truth_status: TruthStatus;
+}
+
 export interface RollbackHint {
   schema: 'yam.rollback-hint.v1';
   touched_files: string[];
@@ -122,11 +146,16 @@ export interface UeyeRunReport {
   reference_sources: UeyeVisualProvenance[];
   implementation_sources: UeyeVisualProvenance[];
   surface_context: UeyeSurfaceContext;
+  design_completion_gate: UeyeDesignCompletionGate;
   comparison_result: string;
   design_quality: string;
   blocked_reason: string;
   next_action: string;
   truth_status: TruthStatus;
+}
+
+export interface UeyeRunReportInput extends Partial<Omit<UeyeRunReport, 'design_completion_gate'>> {
+  design_completion_gate?: Partial<UeyeDesignCompletionGate> & Record<string, unknown>;
 }
 
 export interface MediaGenerationProof {
@@ -171,6 +200,7 @@ export interface ProofSummary {
   rollbackHint?: unknown;
   runtimeBackendEvidence?: unknown;
   mediaProof?: unknown;
+  designCompletion?: unknown;
 }
 
 export interface ProofOptions {
@@ -206,6 +236,7 @@ export interface YamCompletionProof {
   rollbackHint: string[];
   runtimeBackendEvidence: string[];
   mediaProof: string[];
+  designCompletion: string[];
   cleanup: unknown;
   changed: string[];
   skipped: string[];
@@ -262,6 +293,94 @@ export function buildUeyeSurfaceContext(input: Partial<UeyeSurfaceContext> = {})
   };
 }
 
+export function buildUeyeDesignCompletionGate(input: Partial<UeyeDesignCompletionGate> & Record<string, unknown> = {}): UeyeDesignCompletionGate {
+  const completionClaim = normalizeUeyeCompletionClaim(input.completion_claim);
+  const mode = String(input.mode || '').toLowerCase() === 'strict' || completionClaim === 'done' ? 'strict' : 'fast';
+  const designScore = numberOrNull(input.design_score);
+  const minDesignScore = numberOrNull(input.min_design_score) ?? 8;
+  const p0 = asList(input.p0);
+  const p1 = asList(input.p1);
+  const hasReference = Boolean(input.has_reference);
+  const hasImplementation = Boolean(input.has_implementation_screenshot);
+  const comparisonResult = String(input.comparison_result || 'not-verified');
+  const designQuality = String(input.design_quality || 'not-checked');
+  const blockedReason = String(input.blocked_reason || '');
+  const strictOrDone = mode === 'strict' || completionClaim === 'done';
+  const checks: UeyeDesignGateCheck[] = [
+    designGateCheck('direction_lock', 'Design direction and target screen were locked before judging completion', Boolean(input.direction_locked) ? 'pass' : 'not_checked', strictOrDone, 'record the target screen and design direction before claiming done'),
+    designGateCheck('reference_read', 'Reference read proof exists when reference is used', !hasReference ? 'not_checked' : Boolean(input.reference_read) ? 'pass' : 'fail', hasReference && strictOrDone, 'record concrete reference observations before claiming reference-led work is done'),
+    designGateCheck('implementation_screenshot', 'Real implementation screenshot or screen evidence exists', hasImplementation ? 'pass' : 'fail', strictOrDone, 'capture or provide implementation screenshot before claiming done'),
+    designGateCheck('reference_comparison', 'Reference comparison is recorded when reference is used', !hasReference ? 'not_checked' : ['matched', 'similar', 'not-applicable'].includes(comparisonResult) ? 'pass' : 'fail', hasReference, 'compare against the reference or mark the difference as intentional before claiming done'),
+    designGateCheck('design_quality', 'Design quality result is pass', designQuality === 'pass' ? 'pass' : designQuality === 'needs-polish' ? 'warning' : 'fail', strictOrDone, 'resolve design quality issues or keep the result as needs-polish/partial'),
+    designGateCheck('p0_clear', 'No P0 visual blockers remain', p0.length ? 'fail' : 'pass', true, 'fix P0 blockers before any done claim'),
+    designGateCheck('p1_clear', 'No P1 major visual issues remain', p1.length ? 'fail' : 'pass', strictOrDone, 'fix or explicitly defer P1 issues before claiming done'),
+    designGateCheck('cta_affordance', 'Primary CTA and interaction affordances were checked', Boolean(input.cta_checked) ? 'pass' : 'not_checked', strictOrDone, 'check primary CTA clarity and interaction affordances before claiming done'),
+    designGateCheck('state_coverage', 'Primary UI states were checked', Boolean(input.states_checked) ? 'pass' : 'not_checked', strictOrDone, 'check default/loading/error/empty/disabled states or keep completion partial'),
+    designGateCheck('mobile_coverage', 'Mobile/responsive behavior was checked', Boolean(input.mobile_checked || input.responsive_checked) ? 'pass' : 'not_checked', strictOrDone, 'check mobile/responsive behavior before claiming done'),
+    designGateCheck('accessibility_visuals', 'Contrast/accessibility-relevant visuals were checked', Boolean(input.contrast_checked || input.accessibility_checked) ? 'pass' : 'not_checked', strictOrDone, 'check contrast/accessibility-relevant visuals before claiming done')
+  ];
+  if (designScore !== null || strictOrDone) {
+    checks.push(designGateCheck('design_score', `Design score is at least ${minDesignScore}`, designScore !== null && designScore >= minDesignScore ? 'pass' : designScore === null ? 'not_checked' : 'fail', false, `record --design-score ${minDesignScore} or higher when using score-based completion`));
+  }
+  const blockers = [
+    ...p0.map((item) => `P0: ${item}`),
+    ...(blockedReason ? [blockedReason] : []),
+    ...checks
+      .filter((check) => check.required && check.status !== 'pass')
+      .map((check) => `${check.id}: ${check.next_action}`)
+  ];
+  const warnings = [
+    ...p1.map((item) => `P1: ${item}`),
+    ...checks
+      .filter((check) => !check.required && ['fail', 'warning', 'not_checked'].includes(check.status))
+      .map((check) => `${check.id}: ${check.next_action}`)
+  ];
+  const ready = completionClaim === 'done' && blockers.length === 0;
+  const truth: TruthStatus = blockers.some((item) => item.startsWith('P0:')) || blockedReason ? 'blocked'
+    : ready ? 'verified'
+      : strictOrDone ? 'partial'
+        : hasImplementation ? 'partial'
+          : 'assumed';
+  return {
+    schema: 'yam.ueye-design-completion-gate.v1',
+    mode,
+    completion_claim: completionClaim,
+    ready_to_claim_done: ready,
+    design_score: designScore,
+    min_design_score: minDesignScore,
+    checks,
+    p0,
+    p1,
+    warnings,
+    blockers,
+    next_action: blockers[0] || (ready ? 'done claim is supported by the recorded design gate' : warnings[0] || 'keep the Ueye result as draft or needs-polish until a done claim is needed'),
+    truth_status: truth
+  };
+}
+
+function normalizeUeyeCompletionClaim(value: unknown = ''): UeyeDesignCompletionGate['completion_claim'] {
+  const text = String(value || '').toLowerCase();
+  if (text === 'done' || text === 'complete' || text === 'completed') return 'done';
+  if (text === 'needs-polish' || text === 'needs_polish' || text === 'polish') return 'needs-polish';
+  return 'draft';
+}
+
+function designGateCheck(id: string, label: string, status: UeyeDesignGateCheck['status'], required: boolean, nextAction: string): UeyeDesignGateCheck {
+  return {
+    id,
+    label,
+    status,
+    required,
+    next_action: nextAction
+  };
+}
+
+function numberOrNull(value: unknown = null): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function buildRollbackHint(input: Partial<RollbackHint> = {}): RollbackHint {
   return {
     schema: 'yam.rollback-hint.v1',
@@ -302,7 +421,7 @@ export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidenc
   };
 }
 
-export function buildUeyeRunReport(input: Partial<UeyeRunReport> = {}): UeyeRunReport {
+export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunReport {
   const references = Array.isArray(input.reference_sources)
     ? input.reference_sources.map((item) => buildUeyeVisualProvenance(item))
     : [];
@@ -317,19 +436,30 @@ export function buildUeyeRunReport(input: Partial<UeyeRunReport> = {}): UeyeRunR
       : comparisonResult === 'matched' && hasImplementation ? 'verified'
         : hasImplementation ? 'partial'
           : 'partial';
+  const gate = buildUeyeDesignCompletionGate({
+    ...input.design_completion_gate,
+    has_reference: references.length > 0,
+    has_implementation_screenshot: hasImplementation,
+    comparison_result: comparisonResult,
+    design_quality: String(input.design_quality || 'not-checked'),
+    blocked_reason: blockedReason
+  });
+  const shouldApplyDesignGate = gate.mode === 'strict' || gate.completion_claim === 'done' || gate.blockers.length > 0;
+  const finalTruth = shouldApplyDesignGate ? weakestTruth(derivedTruth, gate.truth_status) : derivedTruth;
   return {
     schema: 'yam.ueye-run-report.v1',
     reference_sources: references,
     implementation_sources: implementations,
     surface_context: buildUeyeSurfaceContext({
       ...input.surface_context,
-      truth_status: isTruthStatus(input.surface_context?.truth_status) ? input.surface_context?.truth_status : derivedTruth
+      truth_status: isTruthStatus(input.surface_context?.truth_status) ? input.surface_context?.truth_status : finalTruth
     }),
+    design_completion_gate: gate,
     comparison_result: comparisonResult,
     design_quality: String(input.design_quality || 'not-checked'),
     blocked_reason: blockedReason,
-    next_action: String(input.next_action || (derivedTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
-    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : derivedTruth
+    next_action: String(input.next_action || gate.blockers[0] || (finalTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : finalTruth
   };
 }
 
@@ -444,6 +574,9 @@ export function classifyEvidenceTruth(summary: ProofSummary = {}, options: Proof
   for (const media of asList(summary.mediaProof)) {
     rows.push(evidenceRow('evidence', media, readStructuredTruth(media, 'partial')));
   }
+  for (const designCompletion of asList(summary.designCompletion)) {
+    rows.push(evidenceRow('visual', designCompletion, readStructuredTruth(designCompletion, 'partial')));
+  }
   for (const runtime of asList(summary.runtime)) {
     rows.push(evidenceRow('runtime', runtime, classifyRuntimeEvidence(runtime, options)));
   }
@@ -472,6 +605,14 @@ export function applyProofTruthCaps(summary: ProofSummary = {}, options: ProofOp
   if (options.requireVisual && !hasRealVisualProof(evidenceRows)) {
     cappedTruth = weakestTruth(cappedTruth, 'partial');
     unverified.push('real_visual_evidence_missing');
+  }
+  const designCompletionTruth = designCompletionCap(summary.designCompletion);
+  if (designCompletionTruth) {
+    cappedTruth = weakestTruth(cappedTruth, designCompletionTruth);
+    if (designCompletionTruth === 'blocked') blockers.push('ueye_design_completion_blocked');
+    if (!['verified', 'proven'].includes(designCompletionTruth)) {
+      unverified.push('ueye_design_completion_not_verified');
+    }
   }
   if (requested !== cappedTruth) {
     caps.push(`requested ${requested} capped to ${cappedTruth} by evidence`);
@@ -532,6 +673,7 @@ export function buildYamCompletionProof(summary: ProofSummary = {}, options: Pro
     rollbackHint: asList(summary.rollbackHint),
     runtimeBackendEvidence: asList(summary.runtimeBackendEvidence),
     mediaProof: asList(summary.mediaProof),
+    designCompletion: asList(summary.designCompletion),
     cleanup: summary.cleanup || '',
     changed: asList(summary.changed),
     skipped: asList(summary.skipped),
@@ -599,6 +741,12 @@ function readStructuredTruth(value: unknown = '', fallback: TruthStatus = 'parti
   } catch {
     return fallback;
   }
+}
+
+function designCompletionCap(value: unknown = ''): TruthStatus | null {
+  const items = asList(value);
+  if (!items.length) return null;
+  return items.reduce<TruthStatus>((weakest, item) => weakestTruth(weakest, readStructuredTruth(item, 'partial')), 'proven');
 }
 
 function strongestSupportedTruth(rows: EvidenceRow[] = []): TruthStatus {

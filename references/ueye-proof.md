@@ -26,7 +26,7 @@ Ueye is one route. It should not split into separate lite/deep skills. Use these
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality needs-polish --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
 - `capture` uses a project-local capture backend when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
@@ -190,6 +190,55 @@ Dimensions:
 Report findings as P0-P3. Keep P2/P3 short unless the user requested a full polish pass.
 For each relevant design dimension, use `pass`, `needs-polish`, or `fails`.
 
+### Design Completion Gate
+
+Purpose: prevent Ueye from declaring visual work complete before the design evidence supports that claim.
+
+Use when the output says the UI is done, complete, polished, final, or verified.
+
+Minimum fields:
+
+- `completion_claim`: draft / needs-polish / done
+- `mode`: fast / strict
+- `ready_to_claim_done`
+- `design_score`, when used
+- `min_design_score`
+- `checks`
+- `p0`
+- `p1`
+- `warnings`
+- `blockers`
+- `next_action`
+- `truth_status`
+
+Required for a done claim when relevant:
+
+- direction locked
+- reference read proof for reference-led work
+- implementation screenshot or source-screen evidence
+- reference comparison for reference-led work
+- design quality pass
+- no P0 blockers
+- no unresolved P1 issues unless explicitly deferred
+- CTA affordance checked
+- primary states checked
+- mobile/responsive behavior checked
+- contrast/accessibility-relevant visuals checked
+
+Example:
+
+```bash
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --json
+```
+
+Attach to proof when needed:
+
+```bash
+yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
+```
+
+The design completion gate is a completion judgment. Keep actual source-screen proof in visual evidence, visual provenance, or a Ueye run report. Do not use self-reported gate fields to pretend a missing screenshot was captured.
+
 ### Review Continuity And Comparison Report
 
 Use this when a Ueye task continues a previous visual review, rechecks a fix, or compares two review runs.
@@ -222,3 +271,4 @@ Do not claim continuity from memory alone. Link it to a previous report, screens
 - Reference-only evidence can support direction, not implementation proof.
 - Generated-only evidence can support ideation or annotation, not implemented-screen verification.
 - Missing screenshots, unavailable browser, or text-only review should cap the result at `partial`, `blocked`, or `assumed`.
+- A done claim with a missing or failing design completion gate should cap the result at `partial` or `blocked`.

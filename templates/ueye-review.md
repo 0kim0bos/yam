@@ -123,6 +123,36 @@ Status values: matched / similar / different / not-verified / not-applicable.
 
 Result values: pass / needs-polish / fails.
 
+## Design Completion Gate
+
+| Field | Value |
+| --- | --- |
+| completion_claim | draft / needs-polish / done |
+| mode | fast / strict |
+| ready_to_claim_done | true / false |
+| design_score |  |
+| min_design_score | 8 |
+| direction_locked | true / false |
+| reference_read | true / false / not-applicable |
+| implementation_screenshot | pass / fail / not_checked |
+| reference_comparison | matched / similar / different / not-verified / not-applicable |
+| design_quality | pass / needs-polish / fails / not-checked |
+| p0_clear | pass / fail |
+| p1_clear | pass / fail / deferred |
+| cta_checked | true / false |
+| states_checked | true / false |
+| mobile_checked | true / false |
+| contrast_accessibility_checked | true / false |
+| truth_status | verified / partial / skipped / blocked / assumed |
+
+### Design Gate Blockers
+
+- None.
+
+### Design Gate Warnings
+
+- None.
+
 ## P0-P3 Issues
 
 ### P0 Blockers
@@ -182,6 +212,18 @@ Result values: pass / needs-polish / fails.
     "control_mode": "not-recorded",
     "preserved_state": false,
     "preserved_url": "",
+    "truth_status": "partial"
+  },
+  "design_completion_gate": {
+    "completion_claim": "needs-polish",
+    "mode": "fast",
+    "ready_to_claim_done": false,
+    "design_score": null,
+    "min_design_score": 8,
+    "p0": [],
+    "p1": [],
+    "blockers": [],
+    "warnings": [],
     "truth_status": "partial"
   },
   "viewport": "",

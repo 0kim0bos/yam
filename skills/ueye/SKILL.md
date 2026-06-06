@@ -41,6 +41,9 @@ Do not use for:
 - Record surface context when it matters: provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL/state, and evidence id.
 - Generated media can guide direction, but it cannot verify the implemented screen without implementation screenshot evidence.
 - Prefer the in-app browser for interactive visual checks. Do not switch to a profile-dependent browser unless the user explicitly asks or the task requires existing cookies, sessions, extensions, or profile state.
+- Ueye owns the design completion gate. Do not rely on a separate code-risk route to catch sloppy visual completion.
+- Draft or needs-polish work may stay fast; a `done` claim requires recorded design gate evidence.
+- Do not claim a Ueye result is done when implementation evidence, design quality, P0/P1 status, state coverage, mobile/responsive behavior, contrast/accessibility visuals, CTA affordance, or reference-read/comparison evidence is missing where relevant.
 
 ## Workflow
 
@@ -78,8 +81,17 @@ Do not use for:
    - accessibility
    - brand or mood fit
    - mark each relevant dimension as pass, needs-polish, or fails.
-11. Produce a P0-P3 visual issue ledger and fix path.
-12. Recheck changed/high-risk screens after fixes when feasible.
+11. Run the Design Completion Gate before any "done" claim:
+   - direction locked
+   - reference read proof exists when reference-led
+   - implementation screenshot or source-screen evidence exists
+   - reference comparison is recorded when reference-led
+   - design quality is pass
+   - P0 is empty
+   - P1 is fixed or explicitly deferred
+   - CTA, states, mobile/responsive behavior, and contrast/accessibility visuals were checked
+12. Produce a P0-P3 visual issue ledger and fix path.
+13. Recheck changed/high-risk screens after fixes when feasible.
 
 ## Required Ueye Artifacts
 
@@ -106,7 +118,11 @@ Use these artifacts for reference-led implementation or serious visual review. K
    - use pass, needs-polish, or fails for each relevant design dimension.
 7. Review Continuity and Comparison Report, when this is a follow-up review:
    - record previous source/report, current source/report, comparison delta, resolved findings, new findings, still-open findings, truth status, and next action.
-8. Media Generation Proof, when generated images are part of the task:
+8. Design Completion Gate, when implementation or review is claimed done:
+   - record completion claim, design score when used, P0/P1 status, gate checks, blockers, warnings, next action, and truth status.
+   - use `yam ueye report --completion-claim done --design-quality pass --direction-locked --states-checked --mobile-checked --contrast-checked --cta-checked --json` when a compact proof-ready gate is needed.
+   - if the gate is partial or blocked, report the Ueye result as partial or blocked instead of complete.
+9. Media Generation Proof, when generated images are part of the task:
    - record whether generation was requested, attempted, blocked, or produced an output.
    - use `yam media proof --requested --attempted --output path.png --wait-loop --json` when a generated image materially affects the design direction.
    - never use generated media proof as a substitute for implemented screen evidence.
@@ -120,6 +136,7 @@ Use these artifacts for reference-led implementation or serious visual review. K
 - Inspect 1-3 primary images by default; expand only for P0/P1 risk, responsive breakage, or user-requested deep visual QA.
 - Keep source-screen inventory to the 5 most important rows by default.
 - Screenshot unavailable: cap the result at `partial` or `blocked`.
+- Completion gate missing for a `done` claim: cap the result at `partial` or `blocked`.
 - Text-only review: cap the result at `partial`.
 - Mock or invented screenshots: cap the result at `partial` and mark the source.
 - Browser unavailable but source files reviewed: report implementation verification separately from visual verification.

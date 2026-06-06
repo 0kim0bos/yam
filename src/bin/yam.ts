@@ -14,6 +14,7 @@ import {
   buildMissionPatchEnvelope,
   buildRollbackHint,
   buildRuntimeBackendEvidence,
+  buildUeyeDesignCompletionGate,
   buildUeyeVisualProvenance,
   buildUeyeRunReport,
   buildUeyeSurfaceContext,
@@ -1349,12 +1350,12 @@ Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/c
 Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
   compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
-  report produces a proof-ready Ueye visual run report and continuity/comparison record without requiring a new capture.
+  report produces a proof-ready Ueye visual run report, design completion gate, and continuity/comparison record without requiring a new capture.
 `);
 }
 
@@ -1520,7 +1521,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -1586,7 +1587,9 @@ async function ueyeReport(args = []) {
         truth_status: 'partial'
       }));
     }
-    if (reference && actual && referenceSources[0]?.source_hash === implementationSources[0]?.source_hash) {
+    if (flags.comparison_result) {
+      comparisonResult = normalizeUeyeComparisonResult(flags.comparison_result);
+    } else if (reference && actual && referenceSources[0]?.source_hash === implementationSources[0]?.source_hash) {
       comparisonResult = 'matched';
     } else if (reference && actual) {
       comparisonResult = 'different';
@@ -1605,6 +1608,22 @@ async function ueyeReport(args = []) {
     },
     comparison_result: comparisonResult,
     design_quality: String(flags.design_quality || 'not-checked'),
+    design_completion_gate: {
+      mode: flags.strict || flags.gate_mode === 'strict' ? 'strict' : 'fast',
+      completion_claim: flags.completion_claim || flags.completion_status || 'draft',
+      design_score: numberOrNull(flags.design_score),
+      min_design_score: numberOrNull(flags.min_design_score) ?? 8,
+      p0: [...arrayFlag(flags.p0), ...arrayFlag(flags.open_p0)],
+      p1: [...arrayFlag(flags.p1), ...arrayFlag(flags.open_p1)],
+      states_checked: Boolean(flags.states_checked),
+      mobile_checked: Boolean(flags.mobile_checked),
+      responsive_checked: Boolean(flags.responsive_checked),
+      contrast_checked: Boolean(flags.contrast_checked),
+      accessibility_checked: Boolean(flags.accessibility_checked),
+      cta_checked: Boolean(flags.cta_checked),
+      direction_locked: Boolean(flags.direction_locked),
+      reference_read: Boolean(flags.reference_read)
+    },
     blocked_reason: blockedReason,
     next_action: String(flags.next_visual_action || flags.next_action || '')
   });
@@ -1614,6 +1633,7 @@ async function ueyeReport(args = []) {
     referenceSources,
     implementationSources,
     surfaceContext: report.surface_context,
+    designCompletionGate: report.design_completion_gate,
     comparisonResult,
     designQuality: String(flags.design_quality || 'not-checked'),
     similar: arrayFlag(flags.similar),
@@ -1672,6 +1692,7 @@ function buildUeyeComparisonReport({
   referenceSources,
   implementationSources,
   surfaceContext,
+  designCompletionGate,
   comparisonResult,
   designQuality,
   similar,
@@ -1713,6 +1734,7 @@ function buildUeyeComparisonReport({
       implementation_count: implementationSources.length
     },
     surface_context: surfaceContext || buildUeyeSurfaceContext(),
+    design_completion_gate: designCompletionGate || null,
     comparison_result: comparisonResult,
     design_quality: designQuality,
     similar,
@@ -1730,6 +1752,12 @@ function buildUeyeComparisonReport({
     next_action: nextAction || (truthStatus === 'verified' ? 'no action required' : 'capture or provide implementation screenshot, then compare again'),
     truth_status: truthStatus
   };
+}
+
+function normalizeUeyeComparisonResult(value = '') {
+  const text = String(value || '').toLowerCase();
+  if (['matched', 'similar', 'different', 'not-verified', 'not-applicable'].includes(text)) return text;
+  return 'not-verified';
 }
 
 async function media(args = []) {
@@ -2015,7 +2043,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -2165,6 +2193,7 @@ async function proof(args = []) {
   printProofList('Mission patch envelope', summary.missionEnvelope || []);
   printProofList('Rollback hint', summary.rollbackHint || []);
   printProofList('Media proof', summary.mediaProof || []);
+  printProofList('Design completion', summary.designCompletion || []);
   printProofList('Changed surfaces', summary.changed);
   printProofList('Skipped', summary.skipped);
   printProofList('Blocked', summary.blocked);
@@ -2260,6 +2289,10 @@ function buildProofSummary(parsed, artifact) {
       ...structuredEvidenceList(artifact.mediaProof),
       ...structuredEvidenceList(parsed.flags.media_proof)
     ],
+    designCompletion: [
+      ...structuredEvidenceList(artifact.designCompletion),
+      ...structuredEvidenceList(parsed.flags.design_completion)
+    ],
     cleanup: parsed.flags.cleanup || artifact.cleanup || '',
     changed: [...artifact.changed, ...arrayFlag(parsed.flags.changed)],
     skipped: [...artifact.skipped, ...arrayFlag(parsed.flags.skipped)],
@@ -2325,6 +2358,9 @@ function renderProofMarkdown(summary) {
     '## Media proof',
     ...renderProofMarkdownList(summary.mediaProof || []),
     '',
+    '## Design completion',
+    ...renderProofMarkdownList(summary.designCompletion || []),
+    '',
     '## Changed surfaces',
     ...renderProofMarkdownList(summary.changed),
     '',
@@ -2357,7 +2393,7 @@ function renderProofMarkdownList(values) {
 function parseProofArgs(args = []) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
-  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
+  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
@@ -2371,7 +2407,7 @@ function parseProofArgs(args = []) {
       }
       const value = inlineValue ?? args[index + 1] ?? '';
       if (inlineValue === undefined) index += 1;
-      if (['command', 'evidence', 'visual', 'runtime', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
+      if (['command', 'evidence', 'visual', 'runtime', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
         flags[normalizedKey] = [...arrayFlag(flags[normalizedKey]), value];
       } else {
         flags[normalizedKey] = value;
@@ -2414,6 +2450,7 @@ function emptyProofArtifact() {
     missionEnvelope: [],
     rollbackHint: [],
     mediaProof: [],
+    designCompletion: [],
     cleanup: '',
     changed: [],
     skipped: [],
@@ -2441,6 +2478,7 @@ async function parseProofJson(file, empty) {
       missionEnvelope: structuredEvidenceList(data.missionEnvelope || data.mission_envelope),
       rollbackHint: structuredEvidenceList(data.rollbackHint || data.rollback_hint),
       mediaProof: structuredEvidenceList(data.mediaProof || data.media_proof),
+      designCompletion: structuredEvidenceList(data.designCompletion || data.design_completion),
       cleanup: String(data.cleanup || data.cleanupStatus || ''),
       changed: arrayFlag(data.changed || data.files),
       skipped: arrayFlag(data.skipped),
@@ -2471,6 +2509,7 @@ async function parseProofMarkdown(file, empty) {
     missionEnvelope: readProofList(text, 'Mission patch envelope'),
     rollbackHint: readProofList(text, 'Rollback hint'),
     mediaProof: readProofList(text, 'Media proof'),
+    designCompletion: readProofList(text, 'Design completion'),
     cleanup: readProofField(text, 'Cleanup') || readProofField(text, 'Cleanup status'),
     changed: firstProofList(text, ['Changed surfaces', 'Files']),
     skipped: readProofList(text, 'Skipped'),
@@ -2556,6 +2595,9 @@ function formatStructuredEvidence(value) {
     if (data.schema === 'yam.media-generation-proof.v1' || data.generation_requested || data.output_hash) {
       return JSON.stringify(buildMediaGenerationProof(data));
     }
+    if (data.schema === 'yam.ueye-design-completion-gate.v1' || data.completion_claim || data.ready_to_claim_done !== undefined) {
+      return JSON.stringify(buildUeyeDesignCompletionGate(data));
+    }
     return JSON.stringify(data);
   } catch {
     return text;
@@ -2564,7 +2606,7 @@ function formatStructuredEvidence(value) {
 
 function hasProofEvidence(parsed) {
   const flags = parsed.flags || {};
-  return ['command', 'evidence', 'visual', 'runtime', 'runtime_backend_evidence', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'media_proof', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup || flags.runtime_backend || flags.runtime_claim);
+  return ['command', 'evidence', 'visual', 'runtime', 'runtime_backend_evidence', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'media_proof', 'design_completion', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup || flags.runtime_backend || flags.runtime_claim);
 }
 
 function printProofList(label, values) {

@@ -32,8 +32,11 @@ try {
   execFileSync(bin, ['ueye', 'compare', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'report', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'report', '--review-session-id', 'smoke', '--similar', 'reference inventory recorded', '--resolved', 'primary visual note', '--new-finding', 'mobile state missing', '--still-open', 'actual screenshot needed', '--viewport', '1440x900', '--state', 'default', '--json'], { stdio: 'ignore' });
+  execFileSync(bin, ['ueye', 'report', '--completion-claim', 'done', '--design-quality', 'not-checked', '--json'], { stdio: 'ignore' });
+  expectFailure(() => execFileSync(bin, ['ueye', 'report', '--completion-claim', 'done', '--design-quality', 'pass', '--p0', 'primary CTA is clipped', '--json'], { stdio: 'ignore' }), 'Ueye P0 completion gate should fail');
   execFileSync(bin, ['media', 'proof', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['media', 'proof', '--json'], { stdio: 'ignore' });
+  execFileSync(bin, ['proof', '--route', 'ueye', '--truth', 'verified', '--visual', 'implementation screenshot evidence recorded', '--design-completion', '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['runtime', 'evidence', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['runtime', 'evidence', '--backend', 'terminal', '--claim', 'observed', '--evidence-id', 'smoke-runtime', '--pid', '123', '--port', '3000', '--url', 'http://localhost:3000', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['mission', 'queue', '--help'], { stdio: 'ignore' });
@@ -44,4 +47,13 @@ try {
 } finally {
   rmSync(prefix, { recursive: true, force: true });
   rmSync(join(root, tarball), { force: true });
+}
+
+function expectFailure(fn, label) {
+  try {
+    fn();
+  } catch {
+    return;
+  }
+  throw new Error(label);
 }

@@ -66,6 +66,7 @@ Use these when the task depends on visual truth, reference matching, or design q
 3. Reference vs Implementation Matrix.
 4. Design Quality Review.
 5. Review Continuity and Comparison Report.
+6. Design Completion Gate.
 
 Default bound:
 
@@ -146,6 +147,27 @@ Review dimensions:
 For each relevant dimension, record `pass`, `needs-polish`, or `fails`.
 Keep actionable findings in P0-P3 order. Prefer fixing P0/P1 and cheap local P2 issues before broad polish.
 
+### Design Completion Gate
+
+Use before claiming a Ueye implementation or serious review is done. This is the design-side completion check, not a separate route.
+
+Record:
+
+- `completion_claim`: draft, needs-polish, or done.
+- `mode`: fast or strict.
+- `design_score`, when score-based completion is useful.
+- P0 and P1 open findings.
+- Whether direction, reference read proof, implementation evidence, comparison, design quality, CTA affordance, state coverage, mobile/responsive behavior, and contrast/accessibility visuals were checked.
+- blockers, warnings, next action, and truth status.
+
+Gate behavior:
+
+- Draft and needs-polish can stay fast.
+- `done` automatically behaves as strict.
+- P0 or blocked reason should return blocked.
+- Missing required checks for a done claim should cap truth at partial.
+- Only claim done when the gate says `ready_to_claim_done: true`.
+
 ### Review Continuity and Comparison Report
 
 Use when a screen has more than one visual pass, a reference needs follow-up, or a previous Ueye report should stay connected to the next one.
@@ -199,9 +221,10 @@ Keep this metadata descriptive. It should support honest visual claims, not forc
 6. Screenshot/browser recheck when feasible.
 7. Reference vs Implementation Matrix when reference fidelity matters.
 8. Design Quality Review.
-9. Review Continuity and Comparison Report when the work spans multiple passes.
-10. P0/P1 closeout.
-11. Truth status.
+9. Design Completion Gate before any done claim.
+10. Review Continuity and Comparison Report when the work spans multiple passes.
+11. P0/P1 closeout.
+12. Truth status.
 
 ## Truth Caps
 
@@ -210,3 +233,4 @@ Keep this metadata descriptive. It should support honest visual claims, not forc
 - Blocked: requested visual claim cannot be inspected.
 - Assumed: implementation follows code patterns but visual result was not observed.
 - Reference-only or generated-only evidence cannot upgrade a result to full visual verification.
+- A done claim without a passing design completion gate cannot upgrade beyond partial or blocked.
