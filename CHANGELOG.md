@@ -2,6 +2,21 @@
 
 All notable changes to yam-flow are documented here.
 
+## v0.1.6 - 2026-06-07
+
+### Added
+
+- Added the Ueye Design Completion Gate so Ueye can own design/UI/UX completion quality instead of relying on a separate code-risk route to catch unfinished visual work.
+- Added `yam ueye report --completion-claim`, `--strict`, `--design-score`, P0/P1, CTA, state, mobile/responsive, contrast/accessibility, direction, and reference-read gate fields.
+- Added `yam proof --design-completion` so design completion evidence can cap proof truth status when a Ueye done claim is not supported.
+- Added design completion sections to Ueye review and comparison templates.
+
+### Improved
+
+- Ueye `done` claims now cap to partial or blocked when implementation evidence, design quality, P0/P1 status, state coverage, mobile/responsive checks, contrast/accessibility checks, CTA checks, or reference-read/comparison evidence is missing where relevant.
+- Ueye report JSON now includes `design_completion_gate` in both the main run report and comparison report.
+- Expanded CLI smoke coverage for Ueye completion gate success, partial, and blocked paths.
+
 ## v0.1.5 - 2026-06-04
 
 ### Added
