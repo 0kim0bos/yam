@@ -1,6 +1,6 @@
 # Scout
 
-`scout` is practical investigation and judgment, not academic research.
+`scout` is broad practical investigation and judgment. It gives the user wider sight before implementation, then compresses the result into a decision.
 
 Use for:
 
@@ -12,15 +12,19 @@ Use for:
 - Third-party judgment before implementation.
 - Objective and subjective evaluation together.
 - Macro, realistic, and future-facing direction checks.
+- Security-centered direction checks.
+- Reference scans that find useful patterns to rework into yam style.
 
 Default behavior:
 
-- Define the question narrowly.
+- Define the decision clearly.
 - Prefer official or primary sources.
-- Gather 3-7 high-signal references by default.
+- Gather 3-7 high-signal references for focused scouting, or more when the user asks for a wide scan.
 - Use current docs proof only for modern SDK/API/cloud-service behavior where stale knowledge is plausible.
 - Summarize options and recommendation.
 - Separate fact, inference, opinion, and recommendation.
+- Keep source boundaries clear: cite what was read and do not present reference-derived judgment as direct verification.
+- Put security before convenience: auth, payment, DB, secrets, permissions, deployment, supply chain, and public release get called out early.
 - Do not change code unless the user asks.
 
 Judgment format:
@@ -30,6 +34,8 @@ Judgment format:
 - Macro view: category direction and broad movement.
 - Realistic view: what can be done soon with the current project and skill level.
 - Future view: second-order effects, durability, and what may age well or badly.
+- Security view: sensitive surfaces, safer defaults, failure modes, and what a non-specialist might miss.
+- Rework view: what ideas should be adapted into yam style and what should be rejected.
 
 Escalate:
 

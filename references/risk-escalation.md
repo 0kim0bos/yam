@@ -2,12 +2,16 @@
 
 Escalate by recommendation, not silent mode switching.
 
+Security is the first lens. Before convenience, speed, or visual polish, look for sensitive surfaces a non-specialist may miss.
+
 Recommend `$deep` when work touches:
 
 - DB schema or data mutation.
 - Supabase destructive commands, migrations, production writes, RLS, or policy changes.
 - Auth, payment, billing, permissions.
 - Security-sensitive code.
+- Secret handling, environment variables, tokens, and credentials.
+- Dependency, package, install, release, or supply-chain changes.
 - Deployment or release configuration.
 - Broad refactor or many files.
 - Failing verification.

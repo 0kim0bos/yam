@@ -7,9 +7,12 @@ Every `yam` route should end with a compact handoff that helps the next run avoi
 Include these when they are useful and keep them short:
 
 - What changed or what was found.
+- Change insight for non-specialists: what the touched code does, how it changed, and why it matters.
 - What verification ran.
 - What was not checked.
 - Truth status, when verification or runtime claims matter.
+- Security notes when auth, payment, DB, secrets, permissions, deployment, dependency, or public-release surfaces are relevant.
+- Source boundaries when reference material shaped the decision.
 - Structured diagnostic next action, when a check found a concrete next step.
 - Remaining tasks.
 - Fix-first items before planned tasks.
@@ -57,7 +60,7 @@ For `$ueye`, include source evidence, states/viewports checked, and P0-P3 issues
 
 For `$deep` and `$mission`, include evidence, remaining risks, remaining tasks, and fix-first items.
 
-Do not pad the final answer when there are no meaningful remaining tasks or fix-first items.
+Do not pad the final answer when there are no meaningful remaining tasks or fix-first items, but say so plainly when the user expects a handoff.
 
 When budget drift matters, include or run `yam measure <route>` with approximate files, commands, report lines, and seconds.
 

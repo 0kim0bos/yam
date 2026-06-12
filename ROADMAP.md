@@ -97,7 +97,7 @@ Tasks:
 
 ### 8. Scout / Research Workflow
 
-Goal: give yam a research lane that is evidence-bound, lightweight, and decision-oriented.
+Goal: give yam a research lane that is broad enough to create better judgment, evidence-bound enough to stay honest, and compressed enough to remain usable.
 
 Research reference points:
 
@@ -115,7 +115,7 @@ Tasks:
   - macro view: broad direction and category movement
   - realistic view: near-term feasibility and cost
   - future view: second-order effects and durable bets
-- Keep source count bounded by default; heavy research remains opt-in. Done.
+- Match source count to the decision: focused scouts use a few high-signal sources, broad scouts may use more. Done.
 - Avoid making research a default gate for implementation. Done.
 
 ### 9. Question Workflow

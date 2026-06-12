@@ -4,7 +4,7 @@
 
 ```text
 Direction before execution.
-Start fast.
+Start with momentum.
 Deepen deliberately.
 Basic direction fit and honest verification always.
 Honest by design.
@@ -12,6 +12,9 @@ Heavy proof when risk or user intent calls for it.
 Token-aware by default.
 Context-reuse first.
 End with remaining tasks and fix-first items.
+Security-first project guidance.
+Useful change insight for non-specialists.
+Reference-led judgment with clear source boundaries.
 ```
 
 ## Routes
@@ -34,9 +37,12 @@ See `ROADMAP.md` for remaining implementation stages.
 - No automatic proof loops.
 - No automatic tmux.
 - No false completion claims: verification, cleanup, and visual checks must match actual evidence.
-- `yam` is not lightweight-only; it is progressive: quick entry, stronger proof as scope/risk grows.
+- `yam` is not lightweight-only; it is progressive: fast direction, broader judgment when useful, stronger proof as scope/risk grows.
 - Every route should check project direction and use an honest verification level.
 - Small work stays small, but serious work is allowed to become serious.
+- Security-sensitive work is never treated as ordinary polish.
+- Useful reports explain what the changed code does, how it changed, and why the change matters.
+- Research and reference scans should keep source boundaries clear, then rework good ideas into yam style.
 - Token economy is part of quality.
 - Project packs prevent re-reading and re-planning from scratch.
 - Memory is opt-in, project-local, and sparse.
@@ -175,6 +181,7 @@ Publishing still requires confirming the final npm package name and account acce
 - completion proof shape
 - truth caps
 - fake versus real distinction
+- security-first risk signals
 - runtime truth matrix
 - visual evidence caps
 - Ueye visual run reports
@@ -185,6 +192,8 @@ Publishing still requires confirming the final npm package name and account acce
 - mission patch queue lite records
 - release report JSON
 - structured diagnostic next actions
+- change insight reporting
+- reference source boundary notes
 - media generation proof caps
 - DB/Supabase safety signals
 

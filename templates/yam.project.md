@@ -46,6 +46,20 @@
 - Risky changes:
 - Public/release changes: scan for external tool names, comparison wording, and attribution wording; remove those hits unless the user explicitly approves keeping them.
 
+## Security Policy
+
+- Sensitive surfaces:
+- Secrets/env handling:
+- Auth/payment/DB policy:
+- Deployment/release policy:
+- Package/dependency policy:
+
+## Report Policy
+
+- Explain changed code in plain language:
+- Always include remaining tasks or useful improvements:
+- Preserve source boundaries for research/proof notes:
+
 ## Known Risks
 
 - Auth/payment/DB/security:

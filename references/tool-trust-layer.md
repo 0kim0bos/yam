@@ -2,8 +2,8 @@
 
 `yam` should grow a proof-first trust layer, but not a proof-first cage.
 
-The goal is to help a beginner start small and then move toward professional implementation with evidence, without making every step feel like a release gate.
-This is not a lightweight-only direction. `yam-lite` is light; `yam` is progressive.
+The goal is to help a non-specialist start with momentum and then move toward professional implementation with evidence, wider judgment, security-first guidance, and useful change insight.
+This is not a lightweight-only direction. `yam-lite` is light; `yam` is progressive and is allowed to become deeper as the user's knowledge and project risk grow.
 
 ## Depth Ladder
 
@@ -13,6 +13,9 @@ Every route carries a basic contract:
 - use context packs or memory before broad re-reading
 - verify only what was actually checked
 - report remaining tasks and fix-first issues when useful
+- explain what changed in plain language when code or behavior changes
+- treat security as the first project lens
+- preserve source boundaries when outside references shaped the judgment
 
 Then depth increases by route:
 
@@ -70,6 +73,7 @@ On demand:
 - tmux/process cleanup truth.
 - Source-intelligence proof for current docs.
 - Destructive DB/Supabase command detection and production-write caution.
+- Security-first risk surfacing for non-specialists.
 - Fake-vs-real and runtime truth matrix checks, reduced to local route-scoped helpers.
 - Feature/release inventory as an optional doctor, not a default gate.
 
@@ -85,6 +89,14 @@ On demand:
 - Real preview/screenshot evidence.
 - Compact design direction.
 - P0 visual gates for design-heavy work.
+
+## Change Insight Inputs
+
+- What the touched code or artifact is responsible for.
+- What changed in behavior, contract, UI, or safety posture.
+- Why the change matters to the product or user.
+- What remains uncertain or unverified.
+- What should be fixed first before the next planned task.
 
 ## Reject
 
