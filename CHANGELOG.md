@@ -2,6 +2,36 @@
 
 All notable changes to yam-flow are documented here.
 
+## v0.1.7 - 2026-06-12
+
+### Added
+
+- Added `yam context pressure [dir] [--json]` to explain when project context is becoming stale, broad, or confusing enough to summarize, refresh the project pack, narrow scope, or deepen the route.
+- Added `yam cleanup scan [dir] [--json]` as a read-only advisory cleanup report for active hooks, project-local skill folders, competing instruction surfaces, old install traces, and stale proof/runtime artifacts.
+- Added `contextPressure` and `realProbe` sections to `yam tools doctor --json` so readiness reports show local availability without starting browsers, servers, databases, or long-running processes.
+- Added `publishBlockerEvidence` to `yam release report --json` to classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball/package-boundary failures into beginner-readable next actions.
+- Added `yam ueye preflight [dir] [--json]` for pre-work UI/design quality checks before screenshots are available.
+- Added optional Ueye report fields: `--preflight-id`, `--p0-risk`, and `--quality-gate-note`.
+- Added stronger runtime cleanup evidence fields for `started_at`, `stopped_at`, `exit_code`, `pid`, `port`, `cleanup_method`, `cleanup_observed`, and `left_running_intentionally`.
+
+### Improved
+
+- Runtime cleanup claims no longer become `proven` from `--cleanup-checked` alone; observed cleanup plus exit/closure evidence is required.
+- Ueye preflight can identify likely P0/P1 design risks while keeping completion truth capped until real implementation screenshot/comparison evidence exists.
+- Release reports now turn likely npm publish blockers into safe next actions instead of leaving beginners with only raw npm logs.
+- CLI smoke coverage now asserts JSON schemas and truth caps for context pressure, cleanup scan, tools doctor, Ueye preflight/report, and runtime cleanup evidence.
+
+### Verification
+
+- `npm run typecheck`
+- `npm run forbidden-names:check`
+- `npm run verify:self`
+- `npm run cli-smoke`
+- `npm run dist:freshness`
+- `npm run package-boundary:check`
+- `npm_config_cache=/private/tmp/yam-npm-cache npm pack --dry-run`
+- `node ./dist/bin/yam.js release report --json`
+
 ## v0.1.6 - 2026-06-07
 
 ### Added
