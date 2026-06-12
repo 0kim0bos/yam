@@ -42,9 +42,10 @@ yam template ueye-comparison
 Opt-in visual evidence helpers:
 
 ```bash
+yam ueye preflight /path/to/project --json
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
@@ -116,6 +117,7 @@ Use the CLI to create and inspect the small project direction file.
 ```bash
 yam init-project /path/to/project
 yam pack /path/to/project
+yam context pressure /path/to/project
 yam template mission
 ```
 
@@ -144,6 +146,8 @@ Read-only readiness and evidence helpers. These do not install, deploy, query da
 ```bash
 yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
+yam context pressure /path/to/project --json
+yam cleanup scan /path/to/project --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -153,7 +157,8 @@ yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --js
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --design-quality pass --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --json
 yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
-yam runtime evidence --backend terminal --claim observed --evidence-id dev-server-1 --command "npm run dev" --json
+yam runtime evidence --backend terminal --claim observed --evidence-id dev-server-1 --command "npm run dev" --pid 123 --port 3000 --json
+yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "process exit checked" --json
 yam mission queue --agent-id implementer --scope "checkout form" --changed src/checkout.tsx --verification-hint "npm run typecheck" --rollback-hint "revert checkout form patch if typecheck or smoke fails" --json
 yam benchmark report --label "render time" --baseline 100 --current 86 --unit ms --target lower --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
@@ -179,7 +184,7 @@ yam template mission
 yam template tuning
 yam tools doctor /path/to/project --json
 yam release report --json
-yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-checked --json
+yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "exit observed" --json
 yam mission queue --agent-id reviewer --scope "changed files review" --changed src/bin/yam.ts --verification-hint "npm run typecheck" --json
 yam benchmark report --label "bundle size" --baseline 120 --current 118 --unit kB --target lower --json
 ```
@@ -191,6 +196,8 @@ Supported report shapes:
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
 - Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.
+- Context pressure: project pack age/size, memory summary, dirty scope, scripts, instruction surfaces, and route hint.
+- Cleanup scan: advisory-only list of confusing surfaces with destructive=false.
 
 ## Lite Hook
 

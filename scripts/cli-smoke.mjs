@@ -27,11 +27,23 @@ try {
   execFileSync(bin, ['doctor'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['list'], { stdio: 'ignore' });
+  const contextPressure = JSON.parse(execFileSync(bin, ['context', 'pressure', root, '--json'], { encoding: 'utf8' }));
+  assert(contextPressure.schema === 'yam.context-pressure.v1', 'context pressure schema missing');
+  const cleanupScan = JSON.parse(execFileSync(bin, ['cleanup', 'scan', root, '--json'], { encoding: 'utf8' }));
+  assert(cleanupScan.schema === 'yam.cleanup-scan.v1', 'cleanup scan schema missing');
+  const toolsDoctor = JSON.parse(execFileSync(bin, ['tools', 'doctor', root, '--json'], { encoding: 'utf8' }));
+  assert(toolsDoctor.contextPressure?.schema === 'yam.context-pressure.v1', 'tools doctor missing contextPressure');
+  assert(toolsDoctor.realProbe?.schema === 'yam.real-probe.v1', 'tools doctor missing realProbe');
   execFileSync(bin, ['ueye', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'capture', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['ueye', 'compare', '--help'], { stdio: 'ignore' });
+  const ueyePreflight = JSON.parse(execFileSync(bin, ['ueye', 'preflight', root, '--json'], { encoding: 'utf8' }));
+  assert(ueyePreflight.schema === 'yam.ueye-preflight.v1', 'ueye preflight schema missing');
   execFileSync(bin, ['ueye', 'report', '--help'], { stdio: 'ignore' });
-  execFileSync(bin, ['ueye', 'report', '--review-session-id', 'smoke', '--similar', 'reference inventory recorded', '--resolved', 'primary visual note', '--new-finding', 'mobile state missing', '--still-open', 'actual screenshot needed', '--viewport', '1440x900', '--state', 'default', '--json'], { stdio: 'ignore' });
+  const ueyeReport = JSON.parse(execFileSync(bin, ['ueye', 'report', '--review-session-id', 'smoke', '--preflight-id', ueyePreflight.preflight_id, '--quality-gate-note', 'capture before verified claim', '--similar', 'reference inventory recorded', '--resolved', 'primary visual note', '--new-finding', 'mobile state missing', '--still-open', 'actual screenshot needed', '--viewport', '1440x900', '--state', 'default', '--json'], { encoding: 'utf8' }));
+  assert(ueyeReport.preflight?.preflight_id === ueyePreflight.preflight_id, 'ueye report missing preflight id');
+  const p0RiskReport = spawnFailureJson(bin, ['ueye', 'report', '--preflight-id', ueyePreflight.preflight_id, '--p0-risk', 'mobile CTA may clip', '--json']);
+  assert(p0RiskReport.truth_status === 'blocked', 'ueye p0-risk should block completion truth');
   execFileSync(bin, ['ueye', 'report', '--completion-claim', 'done', '--design-quality', 'not-checked', '--json'], { stdio: 'ignore' });
   expectFailure(() => execFileSync(bin, ['ueye', 'report', '--completion-claim', 'done', '--design-quality', 'pass', '--p0', 'primary CTA is clipped', '--json'], { stdio: 'ignore' }), 'Ueye P0 completion gate should fail');
   execFileSync(bin, ['media', 'proof', '--help'], { stdio: 'ignore' });
@@ -39,6 +51,10 @@ try {
   execFileSync(bin, ['proof', '--route', 'ueye', '--truth', 'verified', '--visual', 'implementation screenshot evidence recorded', '--design-completion', '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['runtime', 'evidence', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['runtime', 'evidence', '--backend', 'terminal', '--claim', 'observed', '--evidence-id', 'smoke-runtime', '--pid', '123', '--port', '3000', '--url', 'http://localhost:3000', '--json'], { stdio: 'ignore' });
+  const cleanupMissing = spawnFailureJson(bin, ['runtime', 'evidence', '--backend', 'terminal', '--claim', 'cleanup-verified', '--cleanup-checked', '--json']);
+  assert(cleanupMissing.truth_status === 'real_required_missing', 'cleanup without observed evidence should be capped');
+  const cleanupProven = JSON.parse(execFileSync(bin, ['runtime', 'evidence', '--backend', 'terminal', '--claim', 'cleanup-verified', '--cleanup-observed', '--exit-code', '0', '--cleanup-method', 'process exit checked', '--json'], { encoding: 'utf8' }));
+  assert(cleanupProven.truth_status === 'proven', 'cleanup observed with exit evidence should be proven');
   execFileSync(bin, ['mission', 'queue', '--help'], { stdio: 'ignore' });
   execFileSync(bin, ['mission', 'queue', '--lane-id', 'smoke-lane', '--status', 'applied', '--agent-id', 'smoke-agent', '--scope', 'cli smoke', '--changed', 'src/bin/yam.ts', '--depends-on', 'setup', '--verification-hint', 'cli smoke', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['benchmark', 'report', '--help'], { stdio: 'ignore' });
@@ -56,4 +72,17 @@ function expectFailure(fn, label) {
     return;
   }
   throw new Error(label);
+}
+
+function spawnFailureJson(bin, args) {
+  try {
+    execFileSync(bin, args, { encoding: 'utf8' });
+  } catch (error) {
+    return JSON.parse(String(error.stdout || '{}'));
+  }
+  throw new Error(`Expected failure for ${args.join(' ')}`);
+}
+
+function assert(condition, label) {
+  if (!condition) throw new Error(label);
 }

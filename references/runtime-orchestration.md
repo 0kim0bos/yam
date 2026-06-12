@@ -44,6 +44,7 @@ Runtime proof should include:
 - PID, port, URL, session, pane, screenshot id, started_at, stopped_at, and exit_code when available.
 - Checks before and after.
 - Cleanup result.
+- `cleanup_method`, `cleanup_observed`, and `left_running_intentionally` when relevant.
 - Truth status: proven, verified, partial, fixture_only, fixture_instrumented_real, integration_optional, real_required_missing, skipped, blocked, assumed.
 
 ## Runtime Evidence Mini
@@ -58,6 +59,9 @@ Minimum fields:
 - `command` or check name
 - `target`: URL, port, process, or service
 - `pid`, `port`, `url`, `exit_code`, `screenshot_id`, `started_at`, `stopped_at`
+- `cleanup_method`
+- `cleanup_observed`
+- `left_running_intentionally`
 - `process`: session, pane, or `unknown` when process detail is unavailable
 - `observation`: before and after notes
 - `cleanup`: status and evidence
@@ -68,6 +72,9 @@ Truth caps:
 
 - Missing process/target evidence cannot support `proven`.
 - Missing cleanup evidence cannot support a cleanup-complete claim.
+- `cleanup_checked` alone is not enough for `proven`.
+- `cleanup_observed` plus exit, closure, or cleanup method evidence can support `proven`.
+- `left_running_intentionally` is acceptable only when explicitly recorded and reported.
 - Optional runtime checks may be `integration_optional`; required but unavailable runtime checks should be `real_required_missing`, `blocked`, or `partial`.
 
 ## Cleanup Rule

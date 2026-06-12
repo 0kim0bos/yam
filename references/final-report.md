@@ -13,6 +13,8 @@ Include these when they are useful and keep them short:
 - Truth status, when verification or runtime claims matter.
 - Security notes when auth, payment, DB, secrets, permissions, deployment, dependency, or public-release surfaces are relevant.
 - Source boundaries when reference material shaped the decision.
+- Context pressure or cleanup findings when they could affect the next run.
+- Publish blocker evidence when npm/release work fails.
 - Structured diagnostic next action, when a check found a concrete next step.
 - Remaining tasks.
 - Fix-first items before planned tasks.

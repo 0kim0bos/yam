@@ -129,13 +129,16 @@ yam verify
 yam doctor
 yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
+yam context pressure /path/to/project --json
+yam cleanup scan /path/to/project --json
 yam proof /path/to/project
 yam proof write /path/to/project --route quick --truth verified --command "npm run verify:self: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
 yam proof --route ueye --truth partial --visual-provenance '{"source_kind":"reference","source_hash":"unknown","comparison_result":"not-verified","truth_status":"partial"}'
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --app-surface codex-app --browser-surface in-app-browser --preserved-state --json
+yam ueye preflight /path/to/project --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --app-surface codex-app --browser-surface in-app-browser --preserved-state --json
 yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
@@ -192,6 +195,9 @@ Publishing still requires confirming the final npm package name and account acce
 - mission patch queue lite records
 - release report JSON
 - structured diagnostic next actions
+- context pressure summaries
+- advisory cleanup scans
+- publish blocker evidence
 - change insight reporting
 - reference source boundary notes
 - media generation proof caps
@@ -206,6 +212,9 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Runtime evidence mini: compact route, command/process, observation, cleanup, truth status, and next action fields for `$deep` or `$mission` runtime claims.
 - Patch queue lite: `$mission` lane records with pending/applied/verified/reverted/blocked state, changed files, verification hint, rollback hint, truth status, and next action.
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, and final truth status.
+- Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.
+- Context pressure: `yam context pressure` explains when project context is getting stale, broad, or confusing enough to summarize, refresh, narrow scope, or deepen route.
+- Cleanup scan: `yam cleanup scan` is read-only and advisory; it reports confusing hooks, local skill folders, stale traces, or old proof artifacts without deleting anything.
 - Benchmark optimization loop lite: use `yam measure <route>` and `yam template tuning` to record baseline, one route wording change, rerun result, keep/revert decision, and stop condition.
 - Structured diagnostic next action: every doctor/release diagnostic should say what was observed, what evidence supports it, what to do next, owner route, severity, and truth status.
 - Ueye review continuity/comparison report: `$ueye` run reports can link a previous review, current evidence, comparison delta, design quality result, and next action.
@@ -219,6 +228,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
+yam ueye preflight . --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
@@ -227,6 +237,8 @@ yam ueye report --reference ./reference.png --actual .yam/screens/home.png --com
 `compare` is local-only and dependency-free. It records file hashes, dimensions, comparison result, and proof-ready visual provenance. Exact image matches can be `verified`; different screenshots stay `partial` so visual parity is not overclaimed.
 
 `report` gathers reference sources, implementation screenshots, comparison result, continuity fields, design quality judgment, design completion gate, surface context, and next action into one compact proof-ready JSON object. Draft and needs-polish work can stay fast; `--completion-claim done` turns on the stricter design gate.
+
+`preflight` does not claim visual verification. It is a pre-work checklist for reference source, target states, mobile/responsive needs, CTA/contrast/accessibility risk, screenshot availability, and likely P0/P1 candidates.
 
 Generated media can guide visual direction, but it cannot prove the implemented UI by itself:
 

@@ -134,6 +134,8 @@ Usage:
   yam verify
   yam detect [dir]
   yam pack [dir]
+  yam context pressure [dir] [--json]
+  yam cleanup scan [dir] [--json]
   yam budget [route]
   yam measure <route> [--files n] [--commands n] [--report-lines n] [--seconds n]
   yam tools doctor [dir]
@@ -141,6 +143,7 @@ Usage:
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
+  yam ueye preflight [dir] [--json]
   yam ueye report [--reference ref.png] [--actual screenshot.png] [--provider-context local] [--execution-surface in-app-browser] [--json]
   yam media proof [--requested] [--attempted] [--output file] [--json]
   yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--json]
@@ -327,6 +330,7 @@ async function verify({ quiet = false } = {}) {
     'ui-quality.md',
     'question.md',
     'mission.md',
+    'cleanup-scan.md',
     'doctor-scan.md',
     'scout.md',
     'runtime-orchestration.md',
@@ -528,6 +532,298 @@ function uniqueNextActionDetails(actions = []) {
   return unique;
 }
 
+async function context(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return contextUsage();
+  if (subcommand === 'pressure') return contextPressure(args.slice(1));
+  console.error(`unknown context command: ${subcommand}`);
+  return contextUsage();
+}
+
+function contextUsage() {
+  console.log(`yam context
+
+Usage:
+  yam context pressure [dir] [--json]
+
+Notes:
+  Read-only context pressure scan. It explains when to summarize, refresh the project pack, narrow scope, or deepen the route.
+`);
+}
+
+async function contextPressure(args = []) {
+  const parsed = parseDirJsonArgs(args);
+  const report = await buildContextPressureReport(parsed.dir);
+  if (parsed.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  printContextPressureReport(report);
+}
+
+async function buildContextPressureReport(targetDir = process.cwd()) {
+  const dir = path.resolve(expandHome(targetDir || process.cwd()));
+  const pack = await findProjectPack(dir);
+  const memorySummary = path.join(dir, '.yam', 'memory', 'summary.md');
+  const instructionSurfaces = await findInstructionSurfaces(dir);
+  const detection = await detectProject(dir, { quiet: true });
+  const gitStatus = runReadOnlyCommandIn(dir, 'git', ['status', '--short']);
+  const dirtyFiles = gitStatus.trim().split(/\r?\n/).filter(Boolean);
+  const signals: AnyRecord = {
+    project_pack: await projectPackPressureSignal(pack),
+    memory_summary: {
+      present: await exists(memorySummary),
+      path: memorySummary
+    },
+    git: {
+      dirty_file_count: dirtyFiles.length,
+      dirty_files_sample: dirtyFiles.slice(0, 12)
+    },
+    package_scripts: detection.packageJson ? detection.commands : {},
+    instruction_surfaces: instructionSurfaces
+  };
+  const reasons = [];
+  let score = 0;
+
+  if (!signals.project_pack.present) {
+    score += 3;
+    reasons.push('project pack is missing, so direction may need rediscovery');
+  } else {
+    if (signals.project_pack.age_days > PACK_STALE_DAYS) {
+      score += 2;
+      reasons.push(`project pack is ${signals.project_pack.age_days} days old`);
+    }
+    if (signals.project_pack.words < 80) {
+      score += 1;
+      reasons.push('project pack is very short, so local direction may be thin');
+    }
+    if (signals.project_pack.words > 1200) {
+      score += 2;
+      reasons.push('project pack is long, so reuse may become expensive');
+    }
+    if (signals.project_pack.missing_sections?.length) {
+      score += 2;
+      reasons.push(`project pack is missing sections: ${signals.project_pack.missing_sections.join(', ')}`);
+    }
+  }
+  if (!signals.memory_summary.present) {
+    score += 1;
+    reasons.push('project memory summary is missing');
+  }
+  if (dirtyFiles.length >= 12) {
+    score += 3;
+    reasons.push(`${dirtyFiles.length} dirty files increase review and reporting pressure`);
+  } else if (dirtyFiles.length >= 4) {
+    score += 2;
+    reasons.push(`${dirtyFiles.length} dirty files suggest the scope is widening`);
+  } else if (dirtyFiles.length > 0) {
+    score += 1;
+    reasons.push(`${dirtyFiles.length} dirty file(s) should be kept in the final handoff`);
+  }
+  if (instructionSurfaces.issues.length) {
+    score += 3;
+    reasons.push('active hook or instruction issue can change route behavior');
+  }
+  if (instructionSurfaces.warnings.length >= 2) {
+    score += 1;
+    reasons.push('multiple instruction surfaces can make guidance harder to predict');
+  }
+  if (detection.packageJson && !detection.commands.build && !detection.commands.typecheck) {
+    score += 1;
+    reasons.push('no build/typecheck script was detected for quick implementation verification');
+  }
+
+  const pressure = score >= 7 ? 'high' : score >= 3 ? 'medium' : 'low';
+  return {
+    schema: 'yam.context-pressure.v1',
+    generated_at: new Date().toISOString(),
+    project: dir,
+    pressure,
+    score,
+    why_pressure_is_rising: reasons,
+    signals,
+    beginner_insight: contextPressureInsight(pressure),
+    recommended_next_action: pressure === 'high'
+      ? 'pause and narrow scope, refresh yam.project.md or memory summary, then choose the route deliberately'
+      : pressure === 'medium'
+        ? 'keep the task scoped and summarize important changes before expanding'
+        : 'continue with the current route and the smallest honest verification',
+    route_hint: pressure === 'high' ? '$deep or $mission when risk is real; otherwise split the task' : pressure === 'medium' ? '$quick with explicit boundaries, or $deep if verification claims grow' : '$quick or current route',
+    truth_status: 'partial'
+  };
+}
+
+async function projectPackPressureSignal(pack) {
+  if (!pack) return { present: false, path: '', age_days: null, words: 0, size_bytes: 0, missing_sections: REQUIRED_PACK_SECTIONS };
+  const text = await readText(pack).catch(() => '');
+  const stat = await fsp.stat(pack).catch(() => null);
+  return {
+    present: true,
+    path: pack,
+    age_days: stat ? Math.floor((Date.now() - stat.mtimeMs) / 86400000) : null,
+    words: countWords(text),
+    size_bytes: stat?.size || 0,
+    missing_sections: REQUIRED_PACK_SECTIONS.filter((section) => !hasHeading(text, section))
+  };
+}
+
+function contextPressureInsight(pressure) {
+  if (pressure === 'high') return 'The project has enough moving pieces that a non-specialist may lose track of what changed, what was checked, or which instruction surface is steering the agent.';
+  if (pressure === 'medium') return 'The task is still manageable, but scope or stale context may start causing repeated reading and weaker final explanations.';
+  return 'The current context looks small enough to keep momentum without heavy proof, as long as claims stay modest.';
+}
+
+function printContextPressureReport(report) {
+  console.log('yam context pressure');
+  console.log(`Project: ${report.project}`);
+  console.log(`Pressure: ${report.pressure} (score ${report.score})`);
+  console.log(`Insight: ${report.beginner_insight}`);
+  if (report.why_pressure_is_rising.length) {
+    console.log('');
+    console.log('Why pressure is rising:');
+    for (const reason of report.why_pressure_is_rising) console.log(`- ${reason}`);
+  }
+  console.log('');
+  console.log(`Next: ${report.recommended_next_action}`);
+  console.log(`Route hint: ${report.route_hint}`);
+}
+
+async function cleanup(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return cleanupUsage();
+  if (subcommand === 'scan') return cleanupScan(args.slice(1));
+  console.error(`unknown cleanup command: ${subcommand}`);
+  return cleanupUsage();
+}
+
+function cleanupUsage() {
+  console.log(`yam cleanup
+
+Usage:
+  yam cleanup scan [dir] [--json]
+
+Notes:
+  Read-only cleanup scan. It never deletes files; it only reports confusing surfaces and safe next actions.
+`);
+}
+
+async function cleanupScan(args = []) {
+  const parsed = parseDirJsonArgs(args);
+  const report = await buildCleanupScanReport(parsed.dir);
+  if (parsed.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  printCleanupScanReport(report);
+}
+
+async function buildCleanupScanReport(targetDir = process.cwd()) {
+  const dir = path.resolve(expandHome(targetDir || process.cwd()));
+  const findings = [];
+  const instructionSurfaces = await findInstructionSurfaces(dir);
+  for (const found of instructionSurfaces.found) {
+    const issue = instructionSurfaces.issues.find((item) => item.startsWith(`${found}:`));
+    const warning = instructionSurfaces.warnings.find((item) => item.startsWith(`${found}:`));
+    findings.push(cleanupFinding(issue ? 'high' : 'medium', found, issue || warning || 'instruction surface detected', 'inspect the file and keep only the instruction surface you intend to use'));
+  }
+  const projectAgents = path.join(dir, '.agents');
+  if (await exists(projectAgents)) {
+    findings.push(cleanupFinding('medium', '.agents', 'project-local skills can override or duplicate user-level skills', 'review project-local skills before assuming global yam-flow behavior'));
+  }
+  for (const hook of [path.join(dir, '.codex', 'hooks.json'), path.join(os.homedir(), '.codex', 'hooks.json')]) {
+    if (await exists(hook)) findings.push(cleanupFinding('high', hook, 'active hooks can add hidden latency or route pressure', 'disable or edit only after user approval and backup'));
+  }
+  for (const skill of [...LEGACY_SKILLS, ...RETIRED_SKILLS]) {
+    if (await exists(path.join(DEST, skill, 'SKILL.md'))) findings.push(cleanupFinding('medium', `installed skill: ${skill}`, 'old skill names can confuse route selection', 'run the explicit current installer or remove only with user approval'));
+  }
+  const legacyPackageHits = await scanLimitedTextFiles(dir, ['package.json', 'README.md', 'COMMANDS.md', 'CHANGELOG.md'], /\b(yam-harness|yam-codex)\b/i);
+  for (const hit of legacyPackageHits) {
+    findings.push(cleanupFinding('low', hit.file, `legacy package name mention: ${hit.match}`, 'update public text only if it confuses install guidance'));
+  }
+  for (const artifact of await staleYamArtifacts(dir)) {
+    findings.push(cleanupFinding('low', artifact.file, artifact.reason, 'archive or refresh only if it misleads the current work'));
+  }
+  return {
+    schema: 'yam.cleanup-scan.v1',
+    generated_at: new Date().toISOString(),
+    project: dir,
+    destructive: false,
+    findings,
+    risk_level: overallCleanupRisk(findings),
+    safe_next_action: findings.length ? 'review findings and make explicit user-approved cleanup decisions' : 'no cleanup action needed',
+    truth_status: 'partial'
+  };
+}
+
+function cleanupFinding(riskLevel, surface, whyItMatters, safeNextAction) {
+  return {
+    risk_level: riskLevel,
+    surface,
+    why_it_matters: whyItMatters,
+    safe_next_action: safeNextAction,
+    destructive: false,
+    truth_status: 'partial'
+  };
+}
+
+function overallCleanupRisk(findings = []) {
+  if (findings.some((item) => item.risk_level === 'high')) return 'high';
+  if (findings.some((item) => item.risk_level === 'medium')) return 'medium';
+  return 'low';
+}
+
+async function scanLimitedTextFiles(dir, relativeFiles = [], pattern = /$^/) {
+  const hits = [];
+  for (const relative of relativeFiles) {
+    const file = path.join(dir, relative);
+    if (!await exists(file)) continue;
+    const text = await readText(file).catch(() => '');
+    const match = text.match(pattern);
+    if (match) hits.push({ file: relative, match: match[0] });
+  }
+  return hits;
+}
+
+async function staleYamArtifacts(dir) {
+  const candidates = [
+    path.join(dir, '.yam', 'proof.json'),
+    path.join(dir, '.yam', 'proof.md'),
+    path.join(dir, '.yam', 'runtime-proof.md'),
+    path.join(dir, '.yam', 'ueye-report.json')
+  ];
+  const artifacts = [];
+  for (const file of candidates) {
+    if (!await exists(file)) continue;
+    const stat = await fsp.stat(file).catch(() => null);
+    if (stat && Date.now() - stat.mtimeMs > 14 * 86400000) {
+      artifacts.push({ file: path.relative(dir, file), reason: 'old proof/runtime artifact may be mistaken for current evidence' });
+    }
+  }
+  return artifacts;
+}
+
+function printCleanupScanReport(report) {
+  console.log('yam cleanup scan');
+  console.log(`Project: ${report.project}`);
+  console.log(`Risk level: ${report.risk_level}`);
+  console.log('Destructive: false');
+  if (!report.findings.length) {
+    console.log('No confusing cleanup surfaces found.');
+    return;
+  }
+  for (const finding of report.findings) {
+    console.log(`- ${finding.risk_level}: ${finding.surface}`);
+    console.log(`  why: ${finding.why_it_matters}`);
+    console.log(`  next: ${finding.safe_next_action}`);
+  }
+}
+
+function parseDirJsonArgs(args = []) {
+  const flags = parseSimpleFlags(args, new Set(['json']));
+  const dir = flags._?.find(looksLikeDirectoryArg) || process.cwd();
+  return { dir, json: Boolean(flags.json) };
+}
+
 async function tools(args = []) {
   const subcommand = args[0] || 'doctor';
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return toolsUsage();
@@ -588,6 +884,8 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
   const projectSurfaces = await detectProjectToolSurfaces(dir, packageInfo.pkg);
   const frameworkChecklist = await detectFrameworkChecklist(dir, packageInfo.pkg);
   const sqlScan = await scanSqlFiles(dir);
+  const contextPressure = await buildContextPressureReport(dir);
+  const realProbe = await buildRealProbeReport(dir, packageInfo.pkg, detection);
   const rows = [
     readinessRow('Codex home', await exists(codexHome) ? 'ready' : 'missing', codexHome),
     readinessRow('Yam skills', await status({ quiet: true }) === 0 ? 'ready' : 'missing', DEST),
@@ -624,6 +922,8 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     instructionSurfaces,
     projectSurfaces,
     frameworkChecklist,
+    contextPressure,
+    realProbe,
     sqlScan,
     riskNotes,
     nextActions: nextActionDetails.map((action) => action.next_action),
@@ -666,6 +966,17 @@ function printToolsDoctorReport(data) {
     for (const check of data.frameworkChecklist.checks) {
       console.log(`- ${check.id}: ${check.label} (${check.route})`);
     }
+  }
+
+  if (data.contextPressure) {
+    console.log('');
+    console.log(`Context pressure: ${data.contextPressure.pressure} (${data.contextPressure.recommended_next_action})`);
+  }
+
+  if (data.realProbe?.probes?.length) {
+    console.log('');
+    console.log(`Real probe: ${data.realProbe.readiness_truth_status}`);
+    for (const probe of data.realProbe.probes) console.log(`- ${probe.id}: ${probe.status} (${probe.truth_status})`);
   }
 
   if (data.sqlScan.filesScanned > 0) {
@@ -798,6 +1109,63 @@ async function detectFrameworkChecklist(dir, pkg = null) {
 
 function checklistRow(id, label, route) {
   return { id, label, route };
+}
+
+async function buildRealProbeReport(dir = process.cwd(), pkg: AnyRecord | null = null, detection: AnyRecord = {}) {
+  const probes = [];
+  probes.push(realProbeRow('node_version', 'observed', process.version, 'verified'));
+  const npmVersion = runReadOnlyCommandIn(dir, 'npm', ['--version']).trim();
+  probes.push(realProbeRow('npm_version', npmVersion ? 'observed' : 'not_found', npmVersion || 'npm not found or not runnable', npmVersion ? 'verified' : 'partial'));
+  probes.push(realProbeRow('yam_binary', 'observed', `${process.argv[1] || 'unknown'} @ ${VERSION}`, 'verified'));
+  const scripts = detection.packageJson ? detection.commands : {};
+  probes.push(realProbeRow('package_scripts', Object.values(scripts).some(Boolean) ? 'observed' : 'not_found', scripts, Object.values(scripts).some(Boolean) ? 'verified' : 'partial'));
+  const playwrightPath = await localPackagePath(dir, 'playwright');
+  probes.push(realProbeRow('playwright_package', playwrightPath ? 'observed' : 'not_found', playwrightPath || 'playwright package not found in project or yam package context', playwrightPath ? 'verified' : 'partial'));
+  const browserCache = await pluginCacheHas('openai-bundled/browser');
+  probes.push(realProbeRow('in_app_browser_plugin_cache', browserCache ? 'observed' : 'not_found', browserCache ? 'plugin cache present' : 'plugin cache not found locally', browserCache ? 'partial' : 'partial'));
+  const tmux = await findExecutable('tmux');
+  const zellij = await findExecutable('zellij');
+  probes.push(realProbeRow('tmux', tmux ? 'observed' : 'not_found', tmux || 'not found on PATH', tmux ? 'verified' : 'partial'));
+  probes.push(realProbeRow('zellij', zellij ? 'observed' : 'not_found', zellij || 'not found on PATH', zellij ? 'verified' : 'partial'));
+  const gitInside = runReadOnlyCommandIn(dir, 'git', ['rev-parse', '--is-inside-work-tree']).trim();
+  const gitDirty = runReadOnlyCommandIn(dir, 'git', ['status', '--short']).trim();
+  probes.push(realProbeRow('git_state', gitInside === 'true' ? 'observed' : 'not_found', {
+    inside_work_tree: gitInside === 'true',
+    dirty_file_count: gitDirty ? gitDirty.split(/\r?\n/).length : 0
+  }, gitInside === 'true' ? 'verified' : 'partial'));
+  return {
+    schema: 'yam.real-probe.v1',
+    generated_at: new Date().toISOString(),
+    project: path.resolve(dir),
+    probes,
+    readiness_truth_status: probes.some((probe) => probe.status === 'blocked') ? 'blocked' : 'partial',
+    note: 'read-only local availability probe; no browser, server, database, or process was started'
+  };
+}
+
+function realProbeRow(id, status, evidence, truthStatus = 'partial') {
+  return {
+    id,
+    status,
+    evidence,
+    truth_status: truthStatus
+  };
+}
+
+async function localPackagePath(dir, packageName) {
+  const candidates = [
+    path.join(dir, 'node_modules', packageName, 'package.json'),
+    path.join(ROOT, 'node_modules', packageName, 'package.json')
+  ];
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  try {
+    const projectRequire = createRequire(path.join(dir, 'package.json'));
+    return projectRequire.resolve(`${packageName}/package.json`);
+  } catch {
+    return '';
+  }
 }
 
 function toolsDoctorNextActions(input) {
@@ -1156,6 +1524,13 @@ async function release(args = []) {
     console.log('- Failed:');
     for (const id of report.failed) console.log(`  - ${id}`);
   }
+  if (report.publishBlockerEvidence?.length) {
+    console.log('- Publish blockers:');
+    for (const blocker of report.publishBlockerEvidence) {
+      console.log(`  - ${blocker.blocker_kind}: ${blocker.likely_cause}`);
+      console.log(`    next: ${blocker.safe_next_action}`);
+    }
+  }
   if (report.next_actions?.length) {
     console.log('- Next actions:');
     for (const action of report.next_actions) console.log(`  - ${action.next_action}`);
@@ -1177,7 +1552,8 @@ function runReleaseReport() {
   const provenance = releaseProvenance(checks);
   const tarball = releaseTarballProvenance();
   const freshness = releaseFreshness(checks, provenance, tarball);
-  const nextActions = releaseNextActions(checks, provenance, tarball);
+  const publishBlockerEvidence = publishBlockerEvidenceFromRelease(checks, tarball);
+  const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence);
   return {
     schema: 'yam.release-report.v1',
     generated_at: startedAt,
@@ -1190,6 +1566,7 @@ function runReleaseReport() {
     provenance,
     tarball,
     freshness,
+    publishBlockerEvidence,
     next_actions: nextActions
   };
 }
@@ -1269,7 +1646,7 @@ function releaseFreshness(checks = [], provenance: AnyRecord = {}, tarball: AnyR
   };
 }
 
-function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}) {
+function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = []) {
   const actions = [];
   for (const check of checks) {
     if (check.status === 'passed') continue;
@@ -1284,12 +1661,84 @@ function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: An
   if (tarball.status !== 'checked') {
     actions.push(nextActionDetail('release-tarball-provenance', 'error', tarball.reason || 'tarball provenance was not produced', 'run npm pack dry-run before publishing', 'npm pack --dry-run'));
   }
+  for (const blocker of publishBlockers) {
+    actions.push(nextActionDetail(`publish-${blocker.blocker_kind}`, blocker.truth_status === 'blocked' ? 'error' : 'warning', blocker.likely_cause, blocker.safe_next_action, 'npm publish'));
+  }
   return uniqueNextActionDetails(actions);
+}
+
+function publishBlockerEvidenceFromRelease(checks = [], tarball: AnyRecord = {}) {
+  const texts = [
+    ...checks.map((check) => `${check.id}\n${check.note || ''}`),
+    tarball.reason || ''
+  ].filter(Boolean);
+  const blockers = [];
+  for (const text of texts) {
+    const blocker = classifyPublishBlockerText(text);
+    if (blocker) blockers.push(blocker);
+  }
+  const seen = new Set<string>();
+  return blockers.filter((blocker) => {
+    if (seen.has(blocker.blocker_kind)) return false;
+    seen.add(blocker.blocker_kind);
+    return true;
+  });
+}
+
+function classifyPublishBlockerText(text = '') {
+  const value = String(text || '');
+  if (!value.trim()) return null;
+  const excerpt = summarizeCheckOutput(value);
+  if (/\b(ENEEDAUTH|E401|Unauthorized|whoami)\b/i.test(value)) {
+    return publishBlocker('auth_required', excerpt, 'npm is not logged in for this shell or token', 'run `npm login` or refresh the npm token, then rerun `npm whoami`');
+  }
+  if (/\b(OTP|one-time password|two-factor|2FA)\b/i.test(value)) {
+    return publishBlocker('otp_required', excerpt, 'npm publish requires a current two-factor authentication code', 'rerun publish with `npm publish --otp=123456` using the current authenticator code');
+  }
+  if (/\bE403\b|403\s+Forbidden|Forbidden\s+-\s+PUT|npm ERR!.*Forbidden/i.test(value)) {
+    return publishBlocker('permission_forbidden', excerpt, 'the npm account lacks publish permission or the package policy rejected the request', 'confirm package ownership with `npm owner ls <package>` and publish with the owning account');
+  }
+  if (/\bE404\b|Not Found - PUT/i.test(value)) {
+    return publishBlocker('package_or_permission_not_found', excerpt, 'npm could not publish this package name from the current account or registry context', 'check `npm config get registry`, `npm owner ls <package>`, and package name access');
+  }
+  if (/previously published|cannot publish over|already exists|You cannot publish over/i.test(value)) {
+    return publishBlocker('version_already_published', excerpt, 'npm versions are immutable once published', 'bump package.json to the next patch version before publishing');
+  }
+  if (/(EACCES|EPERM|permission denied|cache|_cacache)/i.test(value)) {
+    return publishBlocker('npm_cache_permission', excerpt, 'npm cache or filesystem permissions are blocking the command', 'retry with a user-owned cache such as `npm_config_cache=/private/tmp/yam-npm-cache npm publish`');
+  }
+  if (/(ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|registry unreachable|network timeout)/i.test(value)) {
+    return publishBlocker('registry_unreachable', excerpt, 'the npm registry or network path was unreachable', 'wait, check network/VPN, then retry the read-only registry check first');
+  }
+  if (/(tarball|package boundary|files list|npm pack)/i.test(value)) {
+    return publishBlocker('tarball_or_boundary_failure', excerpt, 'the package contents or dry-run tarball check failed', 'run `npm run package-boundary:check` and `npm pack --dry-run` before publishing');
+  }
+  return null;
+}
+
+function publishBlocker(kind, excerpt, likelyCause, safeNextAction) {
+  return {
+    blocker_kind: kind,
+    native_error_excerpt: excerpt,
+    likely_cause: likelyCause,
+    safe_next_action: safeNextAction,
+    truth_status: 'partial'
+  };
 }
 
 function runReadOnlyCommand(command, args = []) {
   const result = spawnSync(command, args, {
     cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30000
+  });
+  if (result.status !== 0) return '';
+  return String(result.stdout || '');
+}
+
+function runReadOnlyCommandIn(cwd, command, args = []) {
+  const result = spawnSync(command, args, {
+    cwd,
     encoding: 'utf8',
     timeout: 30000
   });
@@ -1337,6 +1786,7 @@ async function ueye(args = []) {
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return ueyeUsage();
   if (subcommand === 'capture') return ueyeCapture(args.slice(1));
   if (subcommand === 'compare') return ueyeCompare(args.slice(1));
+  if (subcommand === 'preflight') return ueyePreflight(args.slice(1));
   if (subcommand === 'report') return ueyeReport(args.slice(1));
   console.error(`unknown ueye command: ${subcommand}`);
   return ueyeUsage();
@@ -1350,13 +1800,80 @@ Opt-in visual evidence helpers. Ueye stays one skill: fast by default, capture/c
 Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye preflight [dir] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
   compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
   report produces a proof-ready Ueye visual run report, design completion gate, and continuity/comparison record without requiring a new capture.
 `);
+}
+
+async function ueyePreflight(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
+  const parsed = parseDirJsonArgs(args);
+  const report = await buildUeyePreflightReport(parsed.dir);
+  if (parsed.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  console.log('Ueye preflight');
+  console.log(`Project: ${report.project}`);
+  console.log(`Preflight id: ${report.preflight_id}`);
+  console.log(`Truth status: ${report.truth_status}`);
+  for (const item of report.checklist) console.log(`- ${item.status}: ${item.item} (${item.next_action})`);
+}
+
+async function buildUeyePreflightReport(targetDir = process.cwd()) {
+  const dir = path.resolve(expandHome(targetDir || process.cwd()));
+  const packageInfo = await projectPackageInfo(dir);
+  const frameworkChecklist = await detectFrameworkChecklist(dir, packageInfo.pkg);
+  const pack = await findProjectPack(dir);
+  const playwrightPath = await localPackagePath(dir, 'playwright');
+  const browserCache = await pluginCacheHas('openai-bundled/browser');
+  const uiPaths = await existingRelativePaths(dir, ['app', 'src/app', 'pages', 'src/pages', 'components', 'src/components', 'styles', 'src/styles']);
+  const screenshotAvailability = playwrightPath ? 'automated_capture_possible' : browserCache ? 'in_app_or_user_screenshot_needed' : 'user_screenshot_needed';
+  const p0p1Risks = [];
+  if (!frameworkChecklist.uiLike) p0p1Risks.push('target UI surface is not detected yet');
+  if (!browserCache && !playwrightPath) p0p1Risks.push('no local capture surface was observed');
+  if (!pack) p0p1Risks.push('project direction pack is missing');
+  return {
+    schema: 'yam.ueye-preflight.v1',
+    preflight_id: `ueye-preflight-${timestampId()}`,
+    generated_at: new Date().toISOString(),
+    project: dir,
+    detected_framework: frameworkChecklist.framework,
+    ui_paths: uiPaths,
+    reference_source_needed: true,
+    target_states_needed: ['default', 'loading', 'error', 'empty', 'mobile'],
+    mobile_responsive_check_needed: true,
+    contrast_cta_accessibility_risk: frameworkChecklist.uiLike ? 'check before done claim' : 'unknown until UI target is identified',
+    p0_p1_risk_candidates: p0p1Risks,
+    screenshot_capture_availability: screenshotAvailability,
+    preferred_surface: 'in-app-browser',
+    checklist: [
+      preflightItem('reference', 'reference source selected or user confirms no reference', 'needed', 'record reference path, screenshot, or text target before claiming design fidelity'),
+      preflightItem('states', 'primary states are listed', 'needed', 'prepare default/loading/error/empty/mobile states when the UI supports them'),
+      preflightItem('mobile', 'mobile/responsive pass planned', 'needed', 'capture or inspect a narrow viewport before verified visual claims'),
+      preflightItem('contrast_cta_accessibility', 'CTA, contrast, and accessible labels reviewed', 'needed', 'mark P0/P1 risks before saying done'),
+      preflightItem('capture', 'screenshot/capture surface available', screenshotAvailability === 'automated_capture_possible' ? 'observed' : 'partial', 'use in-app browser or user-provided screenshot if automation is unavailable')
+    ],
+    completion_cap: 'preflight cannot prove visual quality without implementation screenshot and comparison evidence',
+    truth_status: 'partial'
+  };
+}
+
+function preflightItem(id, item, status, nextAction) {
+  return { id, item, status, next_action: nextAction, truth_status: status === 'observed' ? 'verified' : 'partial' };
+}
+
+async function existingRelativePaths(dir, relativePaths = []) {
+  const found = [];
+  for (const relative of relativePaths) {
+    if (await exists(path.join(dir, relative))) found.push(relative);
+  }
+  return found;
 }
 
 async function ueyeCapture(args = []) {
@@ -1521,7 +2038,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -1613,7 +2130,7 @@ async function ueyeReport(args = []) {
       completion_claim: flags.completion_claim || flags.completion_status || 'draft',
       design_score: numberOrNull(flags.design_score),
       min_design_score: numberOrNull(flags.min_design_score) ?? 8,
-      p0: [...arrayFlag(flags.p0), ...arrayFlag(flags.open_p0)],
+      p0: [...arrayFlag(flags.p0), ...arrayFlag(flags.open_p0), ...arrayFlag(flags.p0_risk)],
       p1: [...arrayFlag(flags.p1), ...arrayFlag(flags.open_p1)],
       states_checked: Boolean(flags.states_checked),
       mobile_checked: Boolean(flags.mobile_checked),
@@ -1654,6 +2171,12 @@ async function ueyeReport(args = []) {
   const result = {
     ...report,
     review_session_id: reviewSessionId,
+    preflight: {
+      preflight_id: String(flags.preflight_id || ''),
+      p0_risks: arrayFlag(flags.p0_risk),
+      quality_gate_notes: arrayFlag(flags.quality_gate_note),
+      truth_status: flags.preflight_id || flags.p0_risk || flags.quality_gate_note ? 'partial' : 'assumed'
+    },
     tool_intent: 'visual',
     capture_backend: String(flags.capture_backend || 'not-recorded'),
     compare_backend: String(flags.compare_backend || 'local-file-hash'),
@@ -1821,7 +2344,7 @@ function runtimeUsage() {
   console.log(`yam runtime
 
 Usage:
-  yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--evidence-id id] [--command text] [--pid n] [--port n] [--url URL] [--exit-code n] [--screenshot-id id] [--cleanup-checked] [--note text] [--json]
+  yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--evidence-id id] [--command text] [--pid n] [--port n] [--url URL] [--exit-code n] [--screenshot-id id] [--started-at time] [--stopped-at time] [--cleanup-method text] [--cleanup-observed] [--left-running-intentionally] [--cleanup-checked] [--note text] [--json]
 
 Notes:
   Records a small runtime evidence shape. It does not start, stop, or inspect processes by itself.
@@ -1830,13 +2353,21 @@ Notes:
 
 async function runtimeEvidence(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return runtimeUsage();
-  const flags = parseSimpleFlags(args, new Set(['backend', 'claim', 'evidence-id', 'command', 'pid', 'port', 'url', 'exit-code', 'screenshot-id', 'started-at', 'stopped-at', 'cleanup-checked', 'note', 'truth', 'intent', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['backend', 'claim', 'evidence-id', 'command', 'pid', 'port', 'url', 'exit-code', 'screenshot-id', 'started-at', 'stopped-at', 'cleanup-method', 'cleanup-observed', 'left-running-intentionally', 'cleanup-checked', 'note', 'truth', 'intent', 'json']));
   const evidence = buildRuntimeBackendEvidence({
     backend: flags.backend,
     claim: flags.claim,
     evidence_id: String(flags.evidence_id || `runtime-${timestampId()}`),
     command: String(flags.command || ''),
     cleanup_checked: Boolean(flags.cleanup_checked),
+    started_at: String(flags.started_at || ''),
+    stopped_at: String(flags.stopped_at || ''),
+    exit_code: numberOrNull(flags.exit_code),
+    pid: numberOrNull(flags.pid),
+    port: numberOrNull(flags.port),
+    cleanup_method: String(flags.cleanup_method || ''),
+    cleanup_observed: Boolean(flags.cleanup_observed),
+    left_running_intentionally: Boolean(flags.left_running_intentionally),
     note: String(flags.note || ''),
     truth_status: isTruthStatus(flags.truth) ? flags.truth : undefined
   });
@@ -1863,17 +2394,20 @@ function runtimeEvidenceDetails(flags: AnyRecord = {}) {
     exit_code: numberOrNull(flags.exit_code),
     screenshot_id: String(flags.screenshot_id || ''),
     started_at: String(flags.started_at || ''),
-    stopped_at: String(flags.stopped_at || '')
+    stopped_at: String(flags.stopped_at || ''),
+    cleanup_method: String(flags.cleanup_method || ''),
+    cleanup_observed: Boolean(flags.cleanup_observed),
+    left_running_intentionally: Boolean(flags.left_running_intentionally)
   };
 }
 
 function runtimeDetailsHasVerification(details: AnyRecord = {}) {
-  return Boolean(details.url || details.screenshot_id || details.pid !== null || details.port !== null || details.exit_code !== null || details.started_at || details.stopped_at);
+  return Boolean(details.url || details.screenshot_id || details.pid !== null || details.port !== null || details.exit_code !== null || details.started_at || details.stopped_at || details.cleanup_method || details.cleanup_observed || details.left_running_intentionally);
 }
 
 function runtimeEvidenceNextAction(evidence) {
   if (evidence.truth_status === 'proven' || evidence.truth_status === 'verified') return 'attach this evidence to `yam proof` when making a runtime claim';
-  if (evidence.claim === 'cleanup_verified' && !evidence.cleanup_checked) return 'rerun with --cleanup-checked only after process exit or intentional persistence is confirmed';
+  if (evidence.claim === 'cleanup_verified' && !evidence.cleanup_observed && !evidence.left_running_intentionally) return 'rerun with --cleanup-observed plus exit/closure evidence, or record --left-running-intentionally';
   if (evidence.backend === 'none' || evidence.backend === 'unknown') return 'record the actual runtime backend before claiming runtime verification';
   return 'add command output, screenshot id, pid/session id, or cleanup proof before upgrading the claim';
 }
@@ -2043,7 +2577,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -2393,7 +2927,7 @@ function renderProofMarkdownList(values) {
 function parseProofArgs(args = []) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
-  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
+  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'runtime-pid', 'runtime-port', 'runtime-exit-code', 'runtime-started-at', 'runtime-stopped-at', 'runtime-cleanup-method', 'cleanup-observed', 'left-running-intentionally', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
@@ -2401,7 +2935,7 @@ function parseProofArgs(args = []) {
       const key = rawKey.slice(2);
       if (!aliases.has(key)) continue;
       const normalizedKey = key.replace(/-/g, '_');
-      if (key === 'json' || key.startsWith('require-') || key === 'cleanup-checked') {
+      if (key === 'json' || key.startsWith('require-') || key === 'cleanup-checked' || key === 'cleanup-observed' || key === 'left-running-intentionally') {
         flags[normalizedKey] = true;
         continue;
       }
@@ -2561,12 +3095,20 @@ function structuredEvidenceList(value) {
 }
 
 function directRuntimeBackendEvidence(flags) {
-  if (!flags.runtime_backend && !flags.runtime_claim && !flags.runtime_evidence_id && !flags.runtime_command && !flags.runtime_note && !flags.cleanup_checked) return [];
+  if (!flags.runtime_backend && !flags.runtime_claim && !flags.runtime_evidence_id && !flags.runtime_command && !flags.runtime_note && !flags.cleanup_checked && !flags.cleanup_observed && !flags.left_running_intentionally) return [];
   return [JSON.stringify(buildRuntimeBackendEvidence({
     backend: flags.runtime_backend,
     claim: flags.runtime_claim,
     evidence_id: flags.runtime_evidence_id,
     command: flags.runtime_command,
+    pid: numberOrNull(flags.runtime_pid),
+    port: numberOrNull(flags.runtime_port),
+    exit_code: numberOrNull(flags.runtime_exit_code),
+    started_at: String(flags.runtime_started_at || ''),
+    stopped_at: String(flags.runtime_stopped_at || ''),
+    cleanup_method: String(flags.runtime_cleanup_method || ''),
+    cleanup_observed: Boolean(flags.cleanup_observed),
+    left_running_intentionally: Boolean(flags.left_running_intentionally),
     cleanup_checked: Boolean(flags.cleanup_checked),
     note: flags.runtime_note
   }))];
@@ -3303,6 +3845,8 @@ async function main() {
   if (command === 'version') return console.log(VERSION);
   if (command === 'detect') return detectProject(process.argv[3]);
   if (command === 'pack') return inspectProjectPack(process.argv[3]);
+  if (command === 'context') return context(process.argv.slice(3));
+  if (command === 'cleanup') return cleanup(process.argv.slice(3));
   if (command === 'budget') return budget(process.argv[3]);
   if (command === 'measure') return measure(process.argv[3], process.argv.slice(4));
   if (command === 'tools') return tools(process.argv.slice(3));

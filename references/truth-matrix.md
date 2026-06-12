@@ -38,7 +38,11 @@ Never say `verified` when the correct status is `partial`, `skipped`, `blocked`,
 
 Never say `proven` for runtime work unless the runtime evidence exists.
 
+Never say cleanup is `proven` from a cleanup intention alone. Cleanup needs observed exit, closure, or an explicit intentional-left-running record.
+
 Never say full visual `verified` when the only evidence is a reference image, generated image, code reading, or text-only critique.
+
+Ueye preflight is `partial` by design. It can identify design risks before work starts, but it cannot prove visual quality without implementation screenshot/comparison evidence.
 
 For ordinary routes, prefer `verified`, `partial`, `skipped`, `blocked`, or `assumed`.
 For `$deep` runtime verification and `$mission`, use the more precise runtime statuses when they prevent overclaiming.

@@ -137,6 +137,14 @@ export interface RuntimeBackendEvidence {
   evidence_id: string;
   command: string;
   cleanup_checked: boolean;
+  started_at: string;
+  stopped_at: string;
+  exit_code: number | null;
+  pid: number | null;
+  port: number | null;
+  cleanup_method: string;
+  cleanup_observed: boolean;
+  left_running_intentionally: boolean;
   note: string;
   truth_status: TruthStatus;
 }
@@ -409,6 +417,13 @@ export function buildMissionPatchEnvelope(input: Partial<MissionPatchEnvelope> =
 export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidence> = {}): RuntimeBackendEvidence {
   const backend = normalizeRuntimeBackend(input.backend);
   const claim = normalizeRuntimeClaim(input.claim);
+  const cleanupObserved = Boolean(input.cleanup_observed);
+  const leftRunningIntentionally = Boolean(input.left_running_intentionally);
+  const exitCode = numberOrNull(input.exit_code);
+  const pid = numberOrNull(input.pid);
+  const port = numberOrNull(input.port);
+  const stoppedAt = String(input.stopped_at || '');
+  const cleanupMethod = String(input.cleanup_method || '');
   return {
     schema: 'yam.runtime-backend-evidence.v1',
     backend,
@@ -416,8 +431,24 @@ export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidenc
     evidence_id: String(input.evidence_id || ''),
     command: String(input.command || ''),
     cleanup_checked: Boolean(input.cleanup_checked),
+    started_at: String(input.started_at || ''),
+    stopped_at: stoppedAt,
+    exit_code: exitCode,
+    pid,
+    port,
+    cleanup_method: cleanupMethod,
+    cleanup_observed: cleanupObserved,
+    left_running_intentionally: leftRunningIntentionally,
     note: String(input.note || ''),
-    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : runtimeBackendTruth(backend, claim, Boolean(input.cleanup_checked))
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : runtimeBackendTruth(backend, claim, {
+      cleanupChecked: Boolean(input.cleanup_checked),
+      cleanupObserved,
+      leftRunningIntentionally,
+      stoppedAt,
+      exitCode,
+      pid,
+      cleanupMethod
+    })
   };
 }
 
@@ -834,11 +865,24 @@ function normalizeRuntimeClaim(value: unknown = ''): RuntimeClaim {
   return 'unknown';
 }
 
-function runtimeBackendTruth(backend: RuntimeBackend, claim: RuntimeClaim, cleanupChecked = false): TruthStatus {
+function runtimeBackendTruth(backend: RuntimeBackend, claim: RuntimeClaim, details: {
+  cleanupChecked?: boolean;
+  cleanupObserved?: boolean;
+  leftRunningIntentionally?: boolean;
+  stoppedAt?: string;
+  exitCode?: number | null;
+  pid?: number | null;
+  cleanupMethod?: string;
+} = {}): TruthStatus {
   if (claim === 'blocked') return 'blocked';
   if (backend === 'none' || claim === 'not_started') return 'skipped';
   if (backend === 'unknown' || claim === 'unknown') return 'partial';
-  if (claim === 'cleanup_verified' || cleanupChecked) return 'proven';
+  const hasClosureEvidence = Boolean(details.stoppedAt || details.exitCode !== null || details.cleanupMethod);
+  if (claim === 'cleanup_verified' || details.cleanupChecked) {
+    if (details.cleanupObserved && hasClosureEvidence) return 'proven';
+    if (details.leftRunningIntentionally && (details.pid !== null || details.cleanupMethod)) return 'partial';
+    return 'real_required_missing';
+  }
   if (claim === 'observed' || claim === 'stopped' || claim === 'started') return 'verified';
   return 'partial';
 }
