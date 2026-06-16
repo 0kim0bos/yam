@@ -142,6 +142,7 @@ yam ueye report --reference ./reference.png --actual .yam/screens/home.png --pre
 yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam release report --json
 yam safety "supabase db reset"
 yam detect /path/to/project
@@ -194,10 +195,13 @@ Publishing still requires confirming the final npm package name and account acce
 - runtime evidence mini summaries
 - mission patch queue lite records
 - release report JSON
+- loop report JSON
+- study note JSON
 - structured diagnostic next actions
 - context pressure summaries
 - advisory cleanup scans
 - publish blocker evidence
+- publish readiness evidence
 - change insight reporting
 - reference source boundary notes
 - media generation proof caps
@@ -212,7 +216,10 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Runtime evidence mini: compact route, command/process, observation, cleanup, truth status, and next action fields for `$deep` or `$mission` runtime claims.
 - Patch queue lite: `$mission` lane records with pending/applied/verified/reverted/blocked state, changed files, verification hint, rollback hint, truth status, and next action.
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, and final truth status.
+- Loop report JSON: `yam loop report --json` records a read-only loop artifact: intent, stages, evidence, blockers, next action, remaining tasks, tool intent, truth status, and study note.
+- Study note: `yam.study-note.v1` keeps short non-specialist explanations for what code was failing, what role it plays, how the symptom showed up, what changed, and why it matters. Missing details stay in `limits` instead of being guessed.
 - Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.
+- Publish readiness evidence: release reports run read-only registry/auth/version probes, redact account/token details, and keep npm publish outside the report.
 - Context pressure: `yam context pressure` explains when project context is getting stale, broad, or confusing enough to summarize, refresh, narrow scope, or deepen route.
 - Cleanup scan: `yam cleanup scan` is read-only and advisory; it reports confusing hooks, local skill folders, stale traces, or old proof artifacts without deleting anything.
 - Benchmark optimization loop lite: use `yam measure <route>` and `yam template tuning` to record baseline, one route wording change, rerun result, keep/revert decision, and stop condition.
@@ -220,6 +227,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Ueye review continuity/comparison report: `$ueye` run reports can link a previous review, current evidence, comparison delta, design quality result, and next action.
 - Ueye surface context: `$ueye` run reports can record provider context, provider badge, execution surface, app surface, browser surface, control mode, preserved URL/state, and evidence id.
 - Ueye design completion gate: `$ueye` can stay fast for draft work, but a `done` claim is capped until implementation evidence, comparison/design-quality status, P0/P1 status, key states, mobile/responsive behavior, contrast/accessibility visuals, CTA affordance, and direction/reference-read proof are recorded when relevant.
+- Ueye design brief and anti-slop review: `$ueye` reports can record operator-provided brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom anti-slop blockers. P0 anti-slop findings block `done` claims.
 
 ## Ueye Capture And Compare
 
@@ -229,7 +237,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
 yam ueye preflight . --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --brief-dimension "primary CTA clarity" --constraint "mobile first" --anti-slop "placeholder copy remains" --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
 `capture` uses a Playwright install from the current project when present, then falls back to the package context. It does not install browsers or add runtime dependencies by itself. If capture is unavailable, the visual claim stays `partial` or `blocked` until a real screenshot is supplied.

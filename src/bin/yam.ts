@@ -10,10 +10,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   TRUTH_STATUSES,
+  buildLoopReport,
   buildMediaGenerationProof,
   buildMissionPatchEnvelope,
   buildRollbackHint,
   buildRuntimeBackendEvidence,
+  buildStudyNote,
   buildUeyeDesignCompletionGate,
   buildUeyeVisualProvenance,
   buildUeyeRunReport,
@@ -22,6 +24,7 @@ import {
   detectDbSafetyText as detectTrustDbSafetyText,
   isTruthStatus
 } from '../lib/trust-kernel.js';
+import type { ToolIntent } from '../lib/trust-kernel.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -141,6 +144,7 @@ Usage:
   yam tools doctor [dir]
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
+  yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
@@ -506,6 +510,7 @@ function ownerRouteForAction(id = '', reason = '', command = '') {
 function toolIntentForCommand(command = '') {
   const text = String(command || '').toLowerCase();
   if (!text) return 'read_only';
+  if (/(npm\s+(view|whoami|config\s+get|owner\s+ls)|registry:check)/i.test(text)) return 'read_only';
   if (/(publish|registry|release|npm pack|npm publish)/i.test(text)) return 'publish';
   if (/(rm |delete|drop|truncate|reset|migrate|push|deploy|write|commit|add |install)/i.test(text)) return 'destructive';
   if (/(dev|server|tmux|playwright|browser|screenshot|runtime|port|pid)/i.test(text)) return 'runtime';
@@ -514,9 +519,9 @@ function toolIntentForCommand(command = '') {
   return 'write';
 }
 
-function normalizeToolIntent(value = '') {
+function normalizeToolIntent(value = ''): ToolIntent {
   const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
-  if (['read_only', 'write', 'destructive', 'runtime', 'visual', 'publish'].includes(text)) return text;
+  if (['read_only', 'write', 'destructive', 'runtime', 'visual', 'publish'].includes(text)) return text as ToolIntent;
   return 'read_only';
 }
 
@@ -1520,6 +1525,11 @@ async function release(args = []) {
     console.log(`- Tarball: ${report.tarball.tarball_name || report.tarball.status}`);
     if (report.tarball.file_count !== undefined) console.log(`- Tarball files: ${report.tarball.file_count}`);
   }
+  if (report.publish_readiness) {
+    console.log(`- Publish readiness: ${report.publish_readiness.status}`);
+    console.log(`- Registry: ${report.publish_readiness.registry.url || 'not-verified'}`);
+    console.log(`- npm auth: ${report.publish_readiness.auth.status}`);
+  }
   if (report.failed.length) {
     console.log('- Failed:');
     for (const id of report.failed) console.log(`  - ${id}`);
@@ -1534,6 +1544,9 @@ async function release(args = []) {
   if (report.next_actions?.length) {
     console.log('- Next actions:');
     for (const action of report.next_actions) console.log(`  - ${action.next_action}`);
+  }
+  if (report.study_note?.problem?.summary || report.study_note?.problem?.symptom) {
+    console.log(`- Study note: ${report.study_note.problem.summary || report.study_note.problem.symptom}`);
   }
   if (!report.ok) process.exitCode = 1;
 }
@@ -1553,19 +1566,23 @@ function runReleaseReport() {
   const tarball = releaseTarballProvenance();
   const freshness = releaseFreshness(checks, provenance, tarball);
   const publishBlockerEvidence = publishBlockerEvidenceFromRelease(checks, tarball);
-  const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence);
+  const publishReadiness = releasePublishReadiness(checks, provenance, tarball, publishBlockerEvidence);
+  const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence, publishReadiness);
+  const ok = failed.length === 0 && publishReadiness.status === 'ready';
   return {
     schema: 'yam.release-report.v1',
     generated_at: startedAt,
     packageName: PACKAGE_JSON.name,
     version: VERSION,
-    ok: failed.length === 0,
-    truth_status: failed.length === 0 ? 'verified' : 'blocked',
+    ok,
+    truth_status: ok ? 'verified' : 'blocked',
     checks,
     failed,
     provenance,
     tarball,
     freshness,
+    publish_readiness: publishReadiness,
+    study_note: releaseStudyNote(publishReadiness, publishBlockerEvidence),
     publishBlockerEvidence,
     next_actions: nextActions
   };
@@ -1646,7 +1663,136 @@ function releaseFreshness(checks = [], provenance: AnyRecord = {}, tarball: AnyR
   };
 }
 
-function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = []) {
+function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = []) {
+  const failedChecks = checks.filter((check) => check.status !== 'passed');
+  const registryProbe = runReadOnlyCommandResult('npm', ['config', 'get', 'registry']);
+  const registryUrl = registryProbe.stdout.trim() || String(PACKAGE_JSON.publishConfig?.registry || 'https://registry.npmjs.org/');
+  const whoamiProbe = runReadOnlyCommandResult('npm', ['whoami', '--registry', registryUrl]);
+  const registryStatus = releaseRegistryStatusFromChecks(checks);
+  const latestProbe = registryStatus.checked
+    ? { ok: true, stdout: registryStatus.latest_version, note: registryStatus.note }
+    : runReadOnlyCommandResult('npm', ['view', PACKAGE_JSON.name, 'version', '--registry', registryUrl]);
+  const latestVersion = latestProbe.ok ? String(latestProbe.stdout || '').trim() : '';
+  const blockers = [];
+  const versionStatus = latestProbe.ok
+    ? registryStatus.not_published ? 'package_not_published' : latestVersion === VERSION ? 'already_published' : 'new_version'
+    : 'not_verified';
+
+  if (!registryProbe.ok) {
+    blockers.push(readinessBlocker('registry_not_verified', 'npm registry could not be read from this shell', 'run `npm config get registry` and confirm it points to the intended public registry', 'npm config get registry', 'error'));
+  }
+  if (!whoamiProbe.ok) {
+    blockers.push(readinessBlocker('auth_not_verified', whoamiProbe.note || 'npm whoami did not confirm an authenticated publisher in this shell', 'refresh npm login/token, then rerun `npm whoami` before publishing', 'npm whoami', 'error'));
+  }
+  if (!latestProbe.ok) {
+    const blocker = classifyPublishBlockerText(latestProbe.note);
+    blockers.push(readinessBlocker(blocker?.blocker_kind || 'latest_version_not_verified', blocker?.likely_cause || 'npm latest version could not be read', blocker?.safe_next_action || 'rerun the read-only registry check before publishing', 'npm view', 'error'));
+  }
+  if (versionStatus === 'already_published') {
+    blockers.push(readinessBlocker('version_already_published', `${PACKAGE_JSON.name}@${VERSION} is already present on the registry`, 'bump package.json to the next patch version before publishing', 'npm view', 'error'));
+  }
+  if (failedChecks.length) {
+    blockers.push(readinessBlocker('release_checks_failed', `${failedChecks.length} release check(s) did not pass`, 'fix failing release checks before publishing', 'npm run release:check', 'error'));
+  }
+  if (provenance.git_dirty) {
+    blockers.push(readinessBlocker('git_dirty', 'working tree has uncommitted changes', 'commit intended changes or keep them explicitly local before tagging/publishing', 'git status --short'));
+  }
+  if (provenance.dist_changed_files?.length) {
+    blockers.push(readinessBlocker('dist_not_fresh', 'dist has changed files after freshness check', 'run build and commit dist only if this package publishes dist', 'npm run build'));
+  }
+  if (tarball.status !== 'checked') {
+    blockers.push(readinessBlocker('tarball_not_verified', tarball.reason || 'npm pack dry-run did not produce tarball provenance', 'fix tarball/package-boundary issues before publishing', 'npm pack --dry-run', 'error'));
+  }
+  for (const blocker of publishBlockers) {
+    blockers.push(readinessBlocker(blocker.blocker_kind, blocker.likely_cause, blocker.safe_next_action, 'npm publish', 'error'));
+  }
+
+  const uniqueBlockers = uniqueReadinessBlockers(blockers);
+  const status = uniqueBlockers.length ? 'blocked' : 'ready';
+  return {
+    schema: 'yam.release-publish-readiness.v1',
+    generated_at: new Date().toISOString(),
+    package_name: PACKAGE_JSON.name,
+    local_version: VERSION,
+    status,
+    registry: {
+      url: registryUrl,
+      latest_version: latestVersion,
+      version_status: versionStatus,
+      truth_status: latestProbe.ok ? 'verified' : 'blocked'
+    },
+    auth: {
+      command: 'npm whoami',
+      status: whoamiProbe.ok ? 'authenticated' : 'not_authenticated',
+      account: whoamiProbe.ok ? 'observed_redacted' : '',
+      note: whoamiProbe.ok ? 'npm account observed; username intentionally redacted' : whoamiProbe.note,
+      truth_status: whoamiProbe.ok ? 'verified' : 'blocked'
+    },
+    blockers: uniqueBlockers,
+    next_action: uniqueBlockers[0]?.safe_next_action || 'publish readiness is complete; run publish only when the user explicitly intends it',
+    truth_status: status === 'ready' ? 'verified' : 'blocked'
+  };
+}
+
+function releaseRegistryStatusFromChecks(checks = []) {
+  const registryCheck = checks.find((check) => check.id === 'registry_status');
+  const note = String(registryCheck?.note || '');
+  if (registryCheck?.status !== 'passed') return { checked: false, latest_version: '', not_published: false, note };
+  const latest = note.match(/\blatest\s+([^,\s)]+)/i)?.[1] || '';
+  return {
+    checked: true,
+    latest_version: latest,
+    not_published: /not published yet/i.test(note),
+    note
+  };
+}
+
+function readinessBlocker(kind, reason, safeNextAction, command = '', severity = 'warning') {
+  return {
+    kind,
+    severity,
+    reason: summarizeCheckOutput(redactSensitiveText(reason)),
+    safe_next_action: safeNextAction,
+    command,
+    truth_status: 'partial'
+  };
+}
+
+function uniqueReadinessBlockers(blockers = []) {
+  const seen = new Set<string>();
+  return blockers.filter((blocker) => {
+    const key = `${blocker.kind}:${blocker.safe_next_action}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function releaseStudyNote(publishReadiness: AnyRecord = {}, publishBlockers = []) {
+  const authBlocked = publishReadiness.blockers?.find((blocker) => /auth|otp|permission|forbidden|not_found/i.test(`${blocker.kind} ${blocker.reason}`));
+  const firstBlocker = authBlocked || publishReadiness.blockers?.[0] || publishBlockers[0];
+  if (!firstBlocker) {
+    return buildStudyNote({
+      changed_code: 'yam release report',
+      changed_role: 'It checks whether the package looks ready to publish without running npm publish.',
+      change_summary: 'Release readiness passed the read-only checks that were available.',
+      why_important: 'A publish command changes public package state, so yam keeps the readiness proof separate from the publish action.',
+      learning_note: 'Readiness means the checks looked good; publishing still requires an explicit user action.'
+    });
+  }
+  return buildStudyNote({
+    issue_code: 'npm publish readiness',
+    issue_role: 'This part checks registry, version, auth, tarball, and local release checks before any public publish.',
+    issue_symptom: firstBlocker.reason || firstBlocker.likely_cause || 'Publish readiness is blocked.',
+    changed_code: 'yam release report',
+    changed_role: 'It now explains the likely publish blocker instead of only showing a raw npm failure.',
+    change_summary: 'The report adds auth-safe readiness, safe next action, and beginner-readable blocker evidence.',
+    why_important: 'A bad token or wrong npm account can make publish fail or target the wrong package context.',
+    learning_note: 'When release readiness is blocked, fix the first blocker before trying a publish command.'
+  });
+}
+
+function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = [], publishReadiness: AnyRecord = {}) {
   const actions = [];
   for (const check of checks) {
     if (check.status === 'passed') continue;
@@ -1663,6 +1809,9 @@ function releaseNextActions(checks = [], provenance: AnyRecord = {}, tarball: An
   }
   for (const blocker of publishBlockers) {
     actions.push(nextActionDetail(`publish-${blocker.blocker_kind}`, blocker.truth_status === 'blocked' ? 'error' : 'warning', blocker.likely_cause, blocker.safe_next_action, 'npm publish'));
+  }
+  for (const blocker of publishReadiness.blockers || []) {
+    actions.push(nextActionDetail(`publish-readiness-${blocker.kind}`, blocker.severity || 'warning', blocker.reason, blocker.safe_next_action, blocker.command || 'npm publish'));
   }
   return uniqueNextActionDetails(actions);
 }
@@ -1736,6 +1885,24 @@ function runReadOnlyCommand(command, args = []) {
   return String(result.stdout || '');
 }
 
+function runReadOnlyCommandResult(command, args = []) {
+  const result = spawnSync(command, args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, npm_config_cache: path.join(os.tmpdir(), 'yam-npm-cache') },
+    timeout: 30000
+  });
+  const stdout = redactSensitiveText(String(result.stdout || ''));
+  const stderr = redactSensitiveText(String(result.stderr || result.error?.message || ''));
+  return {
+    ok: result.status === 0,
+    status: typeof result.status === 'number' ? result.status : null,
+    stdout,
+    stderr,
+    note: summarizeCheckOutput([stdout, stderr].filter(Boolean).join('\n'))
+  };
+}
+
 function runReadOnlyCommandIn(cwd, command, args = []) {
   const result = spawnSync(command, args, {
     cwd,
@@ -1768,10 +1935,18 @@ function runReleaseCheck(id, commandSpec) {
 }
 
 function summarizeCheckOutput(output = '') {
-  const lines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = redactSensitiveText(String(output || '')).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return '';
   const highSignal = lines.filter((line) => !line.startsWith('>')).slice(-4);
   return highSignal.join(' | ').slice(0, 600);
+}
+
+function redactSensitiveText(text = '') {
+  return String(text || '')
+    .replace(/(_authToken\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/\b(password|passwd|api[_-]?key|secret|token)\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .replace(/\/\/([^:\s]+):([^@\s]+)@/g, '//[redacted]@')
+    .replace(/\b(npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g, '[redacted-token]');
 }
 
 async function readStdinTextIfAvailable() {
@@ -1779,6 +1954,53 @@ async function readStdinTextIfAvailable() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+async function loop(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return loopUsage();
+  if (subcommand === 'report') return loopReport(args.slice(1));
+  console.error(`unknown loop command: ${subcommand}`);
+  process.exitCode = 1;
+  return loopUsage();
+}
+
+function loopUsage() {
+  console.log(`yam loop
+
+Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, and a short study note. It does not run agents, start processes, publish packages, or write files.
+
+Usage:
+  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--blocked text] [--remaining-task text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
+`);
+}
+
+async function loopReport(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return loopUsage();
+  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'evidence', 'blocked', 'blocker', 'next-action', 'remaining-task', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
+  const blockers = [...arrayFlag(flags.blocked), ...arrayFlag(flags.blocker)];
+  const report = buildLoopReport({
+    route: normalizeRoute(flags.route) || String(flags.route || ''),
+    intent: String(flags.intent || ''),
+    loop_kind: String(flags.loop_kind || flags.route || 'harness'),
+    stages: arrayFlag(flags.stage),
+    evidence: arrayFlag(flags.evidence),
+    blockers,
+    truth_status: isTruthStatus(flags.truth) ? flags.truth : undefined,
+    intent_label: normalizeToolIntent(flags.intent_label || flags.tool_intent || 'read_only'),
+    next_action: String(flags.next_action || ''),
+    remaining_tasks: arrayFlag(flags.remaining_task),
+    issue_code: String(flags.issue_code || ''),
+    issue_role: String(flags.issue_role || ''),
+    issue_symptom: String(flags.issue_symptom || ''),
+    changed_code: String(flags.changed_code || ''),
+    changed_role: String(flags.changed_role || ''),
+    change_summary: String(flags.change_summary || ''),
+    why_important: String(flags.why_important || ''),
+    learning_note: String(flags.learning_note || '')
+  });
+  printJsonOrHuman(report, Boolean(flags.json), 'Loop report');
+  if (report.truth_status === 'blocked') process.exitCode = 1;
 }
 
 async function ueye(args = []) {
@@ -1801,7 +2023,7 @@ Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--brief-dimension text] [--constraint text] [--anti-slop text] [--invented-metric] [--placeholder-copy] [--generic-visual] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
@@ -2038,7 +2260,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'brief-dimension', 'constraint', 'anti-slop', 'invented-metric', 'placeholder-copy', 'generic-visual', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -2047,6 +2269,8 @@ async function ueyeReport(args = []) {
   let blockedReason = String(flags.blocked_reason || '');
   const reviewSessionId = String(flags.review_session_id || `ueye-${timestampId()}`);
   const previousReport = await readPreviousUeyeReport(flags.previous_report);
+  const designBrief = buildUeyeDesignBrief(flags);
+  const antiSlopReview = buildUeyeAntiSlopReview(flags);
   const surfaceContext = buildUeyeSurfaceContext({
     provider_context: String(flags.provider_context || 'not-recorded'),
     provider_badge: String(flags.provider_badge || flags.provider_context || 'not-recorded'),
@@ -2130,7 +2354,7 @@ async function ueyeReport(args = []) {
       completion_claim: flags.completion_claim || flags.completion_status || 'draft',
       design_score: numberOrNull(flags.design_score),
       min_design_score: numberOrNull(flags.min_design_score) ?? 8,
-      p0: [...arrayFlag(flags.p0), ...arrayFlag(flags.open_p0), ...arrayFlag(flags.p0_risk)],
+      p0: [...arrayFlag(flags.p0), ...arrayFlag(flags.open_p0), ...arrayFlag(flags.p0_risk), ...antiSlopReview.blockers],
       p1: [...arrayFlag(flags.p1), ...arrayFlag(flags.open_p1)],
       states_checked: Boolean(flags.states_checked),
       mobile_checked: Boolean(flags.mobile_checked),
@@ -2171,6 +2395,8 @@ async function ueyeReport(args = []) {
   const result = {
     ...report,
     review_session_id: reviewSessionId,
+    design_brief: designBrief,
+    anti_slop_review: antiSlopReview,
     preflight: {
       preflight_id: String(flags.preflight_id || ''),
       p0_risks: arrayFlag(flags.p0_risk),
@@ -2185,6 +2411,51 @@ async function ueyeReport(args = []) {
   };
   printJsonOrHuman(result, Boolean(flags.json), 'Ueye report');
   if (report.truth_status === 'blocked') process.exitCode = 1;
+}
+
+function buildUeyeDesignBrief(flags: AnyRecord = {}) {
+  const dimensions = arrayFlag(flags.brief_dimension);
+  const constraints = arrayFlag(flags.constraint);
+  const hasBrief = dimensions.length || constraints.length;
+  return {
+    schema: 'yam.ueye-design-brief.v1',
+    dimensions,
+    constraints,
+    source_boundary: hasBrief ? 'operator_provided_cli_flags' : 'not_provided',
+    next_action: hasBrief ? 'use this brief as context, not as visual proof' : 'add --brief-dimension and --constraint when design direction matters',
+    truth_status: hasBrief ? 'partial' : 'assumed'
+  };
+}
+
+function buildUeyeAntiSlopReview(flags: AnyRecord = {}) {
+  const explicit = arrayFlag(flags.anti_slop);
+  const checks = [
+    antiSlopCheck('invented_metric', 'Invented metrics or unsupported numeric claims', Boolean(flags.invented_metric), 'replace invented metrics with measured values or remove the claim'),
+    antiSlopCheck('placeholder_copy', 'Placeholder copy remains in the UI', Boolean(flags.placeholder_copy), 'replace placeholder copy with product-specific text before claiming done'),
+    antiSlopCheck('generic_visual', 'Generic visual treatment does not fit the product context', Boolean(flags.generic_visual), 'tie visuals to the product, state, or reference before claiming design quality')
+  ];
+  const blockers = [
+    ...explicit,
+    ...checks.filter((check) => check.status === 'fail').map((check) => `${check.id}: ${check.next_action}`)
+  ];
+  return {
+    schema: 'yam.ueye-anti-slop-review.v1',
+    checks,
+    blockers,
+    next_action: blockers[0] || (checks.some((check) => check.status === 'pass') || explicit.length ? 'anti-slop risks are recorded; keep visual proof separate' : 'record anti-slop risks when they matter before claiming done'),
+    truth_status: blockers.length ? 'blocked' : checks.some((check) => check.status === 'pass') || explicit.length ? 'partial' : 'assumed'
+  };
+}
+
+function antiSlopCheck(id, label, failed = false, nextAction = '') {
+  return {
+    id,
+    label,
+    status: failed ? 'fail' : 'not_checked',
+    severity: failed ? 'P0' : 'P2',
+    next_action: nextAction,
+    truth_status: failed ? 'blocked' : 'assumed'
+  };
 }
 
 async function readPreviousUeyeReport(file = '') {
@@ -2577,7 +2848,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'invented-metric', 'placeholder-copy', 'generic-visual'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -3851,6 +4122,7 @@ async function main() {
   if (command === 'measure') return measure(process.argv[3], process.argv.slice(4));
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
+  if (command === 'loop') return loop(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'media') return media(process.argv.slice(3));
   if (command === 'runtime') return runtime(process.argv.slice(3));

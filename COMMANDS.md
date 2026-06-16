@@ -45,7 +45,7 @@ Opt-in visual evidence helpers:
 yam ueye preflight /path/to/project --json
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --brief-dimension "primary CTA clarity" --constraint "mobile first" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
@@ -148,6 +148,7 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -187,15 +188,19 @@ yam release report --json
 yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "exit observed" --json
 yam mission queue --agent-id reviewer --scope "changed files review" --changed src/bin/yam.ts --verification-hint "npm run typecheck" --json
 yam benchmark report --label "bundle size" --baseline 120 --current 118 --unit kB --target lower --json
+yam loop report --route deep --intent "verify release readiness" --blocked "npm auth not verified" --next-action "refresh npm token, then rerun npm whoami" --json
 ```
 
 Supported report shapes:
 
 - Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
 - Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
+- Loop report: intent, stage outcomes, evidence, blockers, next action, remaining tasks, and study note.
+- Study note: short non-specialist explanation of the failing code, its role, observed symptom, changed code, and why it matters.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
 - Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.
+- Ueye design brief/anti-slop: brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom P0 blockers.
 - Context pressure: project pack age/size, memory summary, dirty scope, scripts, instruction surfaces, and route hint.
 - Cleanup scan: advisory-only list of confusing surfaces with destructive=false.
 

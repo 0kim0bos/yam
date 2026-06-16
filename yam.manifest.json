@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -10,7 +10,8 @@
     "Heavy proof when risk or user intent calls for it.",
     "Token-aware by default.",
     "Context-reuse first.",
-    "End with remaining tasks and fix-first items."
+    "End with remaining tasks and fix-first items.",
+    "Explain what failed, what changed, and why it matters in short non-specialist language when useful."
   ],
   "defaultHooks": false,
   "routes": [

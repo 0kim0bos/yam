@@ -2,6 +2,33 @@
 
 All notable changes to yam-flow are documented here.
 
+## v0.1.8 - 2026-06-16
+
+### Added
+
+- Added `yam loop report [--json]` as a read-only loop artifact for intent, stages, evidence, blockers, next action, remaining tasks, tool intent, truth status, and study note.
+- Added `yam.study-note.v1` so reports can carry short non-specialist explanations of the failing code, its role, observed symptom, changed code, why it matters, and learning note without guessing missing details.
+- Added `publish_readiness` and `study_note` to `yam release report --json` with read-only npm registry/auth/version probes and redacted account/token details.
+- Added Ueye `design_brief` and `anti_slop_review` fields with `--brief-dimension`, `--constraint`, `--anti-slop`, `--invented-metric`, `--placeholder-copy`, and `--generic-visual`.
+
+### Improved
+
+- Ueye anti-slop P0 findings now feed the design completion gate so `done` claims are blocked until fix-first issues are resolved.
+- Release reports now separate publish readiness evidence from the publish action; `npm publish` remains outside the report.
+- CLI smoke coverage now asserts loop report, study note limits, and Ueye design brief/anti-slop blocked paths.
+
+### Verification
+
+- `npm run typecheck`
+- `npm run build`
+- `npm run cli-smoke`
+- `npm run verify:self`
+- `npm run forbidden-names:check`
+- `npm run package-boundary:check`
+- `npm run dist:freshness`
+- `node ./dist/bin/yam.js release report --json` (blocked as expected by npm auth readiness and dirty git)
+- `npm whoami --registry https://registry.npmjs.org/` (E401, confirms auth/token blocker)
+
 ## v0.1.7 - 2026-06-12
 
 ### Added

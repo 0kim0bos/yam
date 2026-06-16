@@ -17,6 +17,8 @@ export type EvidenceKind = 'command' | 'evidence' | 'visual' | 'runtime' | 'skip
 export type RuntimeSubsystem = 'real_runtime' | 'tmux_physical' | 'process_cleanup' | 'browser_visual' | 'db_safety';
 export type RuntimeBackend = 'none' | 'in_app_browser' | 'playwright' | 'terminal' | 'tmux' | 'zellij' | 'unknown';
 export type RuntimeClaim = 'not_started' | 'started' | 'observed' | 'stopped' | 'cleanup_verified' | 'blocked' | 'unknown';
+export type LoopStageStatus = 'passed' | 'failed' | 'blocked' | 'skipped' | 'partial' | 'pending' | 'recorded';
+export type ToolIntent = 'read_only' | 'write' | 'destructive' | 'runtime' | 'visual' | 'publish';
 
 export interface SafetyHit {
   level: SafetyLevel;
@@ -147,6 +149,48 @@ export interface RuntimeBackendEvidence {
   left_running_intentionally: boolean;
   note: string;
   truth_status: TruthStatus;
+}
+
+export interface StudyNoteSection {
+  code: string;
+  role: string;
+  symptom?: string;
+  summary?: string;
+  truth_status: TruthStatus;
+}
+
+export interface StudyNote {
+  schema: 'yam.study-note.v1';
+  problem: StudyNoteSection;
+  change: StudyNoteSection;
+  why_it_matters: string;
+  learning_note: string;
+  limits: string[];
+  truth_status: TruthStatus;
+}
+
+export interface LoopStage {
+  id: string;
+  status: LoopStageStatus;
+  note: string;
+  truth_status: TruthStatus;
+}
+
+export interface LoopReport {
+  schema: 'yam.loop-report.v1';
+  generated_at: string;
+  route: string;
+  intent: string;
+  loop_kind: string;
+  stages: LoopStage[];
+  evidence: string[];
+  blockers: string[];
+  truth_status: TruthStatus;
+  intent_label: ToolIntent;
+  tool_intent: ToolIntent;
+  next_action: string;
+  remaining_tasks: string[];
+  study_note: StudyNote;
 }
 
 export interface UeyeRunReport {
@@ -452,6 +496,72 @@ export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidenc
   };
 }
 
+export function buildStudyNote(input: Partial<StudyNote> & Record<string, unknown> = {}): StudyNote {
+  const problem = buildStudyNoteSection(input.problem, {
+    code: input.issue_code,
+    role: input.issue_role,
+    symptom: input.issue_symptom
+  }, 'problem');
+  const change = buildStudyNoteSection(input.change, {
+    code: input.changed_code,
+    role: input.changed_role,
+    summary: input.change_summary
+  }, 'change');
+  const whyItMatters = shortText(input.why_it_matters || input.why_important);
+  const learningNote = shortText(input.learning_note);
+  const limits = [
+    ...asList(input.limits),
+    ...missingStudyNoteLimits(problem, change, whyItMatters, learningNote)
+  ];
+  const hasProblem = Boolean(problem.code || problem.role || problem.symptom);
+  const hasChange = Boolean(change.code || change.role || change.summary);
+  const truth: TruthStatus = isTruthStatus(input.truth_status) ? input.truth_status
+    : hasProblem || hasChange || whyItMatters || learningNote ? 'partial'
+      : 'assumed';
+  return {
+    schema: 'yam.study-note.v1',
+    problem,
+    change,
+    why_it_matters: whyItMatters,
+    learning_note: learningNote,
+    limits: [...new Set(limits)],
+    truth_status: truth
+  };
+}
+
+export function buildLoopReport(input: Partial<LoopReport> & Record<string, unknown> = {}): LoopReport {
+  const stages = Array.isArray(input.stages)
+    ? input.stages.map((stage) => buildLoopStage(stage))
+    : [];
+  const evidence = asList(input.evidence);
+  const blockers = asList(input.blockers || input.blocked);
+  const hasBlockedStage = stages.some((stage) => stage.status === 'blocked' || stage.status === 'failed');
+  const requestedTruth = isTruthStatus(input.truth_status) ? input.truth_status : '';
+  const derivedTruth: TruthStatus = blockers.length || hasBlockedStage ? 'blocked'
+    : evidence.length && stages.some((stage) => stage.status === 'passed') ? 'verified'
+      : evidence.length || stages.length ? 'partial'
+        : 'assumed';
+  const truth = requestedTruth ? weakestTruth(requestedTruth, derivedTruth) : derivedTruth;
+  const studyNote = buildStudyNote(input.study_note && typeof input.study_note === 'object' ? input.study_note as unknown as Record<string, unknown> : input);
+  const intentLabel = normalizeToolIntentLabel(input.intent_label || input.tool_intent);
+  return {
+    schema: 'yam.loop-report.v1',
+    generated_at: String(input.generated_at || new Date().toISOString()),
+    route: String(input.route || ''),
+    intent: shortText(input.intent),
+    loop_kind: String(input.loop_kind || 'harness'),
+    stages,
+    evidence,
+    blockers,
+    truth_status: truth,
+    intent_label: intentLabel,
+    tool_intent: intentLabel,
+    next_action: shortText(input.next_action || (blockers[0] ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    remaining_tasks: asList(input.remaining_tasks || input.remaining_task),
+    study_note: studyNote
+  };
+}
+
 export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunReport {
   const references = Array.isArray(input.reference_sources)
     ? input.reference_sources.map((item) => buildUeyeVisualProvenance(item))
@@ -492,6 +602,84 @@ export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunRepor
     next_action: String(input.next_action || gate.blockers[0] || (finalTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
     truth_status: isTruthStatus(input.truth_status) ? input.truth_status : finalTruth
   };
+}
+
+function buildStudyNoteSection(section: unknown, fallback: Record<string, unknown>, kind: 'problem' | 'change'): StudyNoteSection {
+  const source = section && typeof section === 'object' ? section as Record<string, unknown> : fallback;
+  const code = shortText(source.code);
+  const role = shortText(source.role);
+  const symptom = kind === 'problem' ? shortText(source.symptom) : undefined;
+  const summary = kind === 'change' ? shortText(source.summary) : undefined;
+  return {
+    code,
+    role,
+    ...(symptom !== undefined ? { symptom } : {}),
+    ...(summary !== undefined ? { summary } : {}),
+    truth_status: code || role || symptom || summary ? 'partial' : 'assumed'
+  };
+}
+
+function missingStudyNoteLimits(problem: StudyNoteSection, change: StudyNoteSection, whyItMatters = '', learningNote = ''): string[] {
+  const limits: string[] = [];
+  if (!problem.code) limits.push('issue_code not provided');
+  if (!problem.role) limits.push('issue_role not provided');
+  if (!problem.symptom) limits.push('issue_symptom not provided');
+  if (!change.code) limits.push('changed_code not provided');
+  if (!change.role) limits.push('changed_role not provided');
+  if (!change.summary) limits.push('change_summary not provided');
+  if (!whyItMatters) limits.push('why_it_matters not provided');
+  if (!learningNote) limits.push('learning_note not provided');
+  return limits;
+}
+
+function buildLoopStage(value: unknown = ''): LoopStage {
+  if (value && typeof value === 'object') {
+    const item = value as Partial<LoopStage>;
+    return loopStage(String(item.id || ''), item.status, String(item.note || ''));
+  }
+  const [id = '', rawStatus = '', ...noteParts] = String(value || '').split(':');
+  return loopStage(id, rawStatus, noteParts.join(':'));
+}
+
+function loopStage(id = '', rawStatus: unknown = '', note = ''): LoopStage {
+  const status = normalizeLoopStageStatus(rawStatus);
+  return {
+    id: shortText(id || 'stage'),
+    status,
+    note: shortText(note),
+    truth_status: stageTruth(status)
+  };
+}
+
+function normalizeLoopStageStatus(value: unknown = ''): LoopStageStatus {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (text === 'pass' || text === 'passed' || text === 'ok') return 'passed';
+  if (text === 'fail' || text === 'failed' || text === 'error') return 'failed';
+  if (text === 'block' || text === 'blocked') return 'blocked';
+  if (text === 'skip' || text === 'skipped') return 'skipped';
+  if (text === 'partial') return 'partial';
+  if (text === 'pending') return 'pending';
+  return 'recorded';
+}
+
+function stageTruth(status: LoopStageStatus): TruthStatus {
+  if (status === 'passed') return 'verified';
+  if (status === 'failed' || status === 'blocked') return 'blocked';
+  if (status === 'skipped') return 'skipped';
+  if (status === 'pending') return 'assumed';
+  return 'partial';
+}
+
+function normalizeToolIntentLabel(value: unknown = ''): ToolIntent {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['read_only', 'write', 'destructive', 'runtime', 'visual', 'publish'].includes(text)) return text as ToolIntent;
+  return 'read_only';
+}
+
+function shortText(value: unknown = '', limit = 240): string {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 3)}...`;
 }
 
 export function buildMediaGenerationProof(input: Partial<MediaGenerationProof> = {}): MediaGenerationProof {
