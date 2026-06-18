@@ -79,4 +79,4 @@ Keep it compact:
 - Study Note when useful: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
 - What was checked.
 - What was skipped, blocked, or still risky.
-- Handoff when useful: fix-first items, remaining tasks, recommended direction, and why that next step matters.
+- Handoff when useful: fix-first items, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

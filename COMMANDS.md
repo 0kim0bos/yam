@@ -148,7 +148,7 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
-yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --blocked-kind auth_blocked --safe-retry "retry after npm whoami succeeds" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -195,7 +195,7 @@ Supported report shapes:
 
 - Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
 - Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
-- Loop report: intent, stage outcomes, evidence, blockers, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route, and study note.
+- Loop report: intent, guided stage outcomes, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
 - Study note: short non-specialist explanation of the failing code, its role, observed symptom, changed code, and why it matters.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.

@@ -18,6 +18,7 @@ export type RuntimeSubsystem = 'real_runtime' | 'tmux_physical' | 'process_clean
 export type RuntimeBackend = 'none' | 'in_app_browser' | 'playwright' | 'terminal' | 'tmux' | 'zellij' | 'unknown';
 export type RuntimeClaim = 'not_started' | 'started' | 'observed' | 'stopped' | 'cleanup_verified' | 'blocked' | 'unknown';
 export type LoopStageStatus = 'passed' | 'failed' | 'blocked' | 'skipped' | 'partial' | 'pending' | 'recorded';
+export type LoopEvidenceLevel = 'none' | 'fixture' | 'smoke' | 'local' | 'real';
 export type ToolIntent = 'read_only' | 'write' | 'destructive' | 'runtime' | 'visual' | 'publish';
 
 export interface SafetyHit {
@@ -182,13 +183,19 @@ export interface LoopReport {
   route: string;
   intent: string;
   loop_kind: string;
+  stage_conventions: string[];
   stages: LoopStage[];
   evidence: string[];
+  evidence_level: LoopEvidenceLevel;
+  evidence_stamp: string;
+  source_digest: string;
   blockers: string[];
+  blocked_kind: string;
   truth_status: TruthStatus;
   intent_label: ToolIntent;
   tool_intent: ToolIntent;
   next_action: string;
+  safe_retry: string;
   fix_first_items: string[];
   remaining_tasks: string[];
   recommended_direction: string;
@@ -196,6 +203,9 @@ export interface LoopReport {
   why_this_next: string;
   blocked_by: string[];
   owner_route: string;
+  owner_scope: string[];
+  scope_owner: string;
+  side_effects: string[];
   study_note: StudyNote;
 }
 
@@ -541,9 +551,14 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     : [];
   const evidence = asList(input.evidence);
   const blockers = asList(input.blockers || input.blocked);
+  const blockedBy = asList(input.blocked_by);
+  const blockedKind = shortText(input.blocked_kind || (blockers.length || blockedBy.length ? 'evidence_missing' : ''));
+  const evidenceStamp = shortText(input.evidence_stamp || input.source_digest, 320);
+  const sourceDigest = shortText(input.source_digest || input.evidence_stamp, 320);
   const hasBlockedStage = stages.some((stage) => stage.status === 'blocked' || stage.status === 'failed');
+  const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind);
   const requestedTruth = isTruthStatus(input.truth_status) ? input.truth_status : '';
-  const derivedTruth: TruthStatus = blockers.length || hasBlockedStage ? 'blocked'
+  const derivedTruth: TruthStatus = hasBlockerSignal || hasBlockedStage ? 'blocked'
     : evidence.length && stages.some((stage) => stage.status === 'passed') ? 'verified'
       : evidence.length || stages.length ? 'partial'
         : 'assumed';
@@ -556,20 +571,31 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     route: String(input.route || ''),
     intent: shortText(input.intent),
     loop_kind: String(input.loop_kind || 'harness'),
+    stage_conventions: asList(input.stage_conventions || input.stage_convention).length
+      ? asList(input.stage_conventions || input.stage_convention)
+      : ['brief', 'plan', 'implement', 'critique', 'verify', 'handoff'],
     stages,
     evidence,
+    evidence_level: normalizeLoopEvidenceLevel(input.evidence_level),
+    evidence_stamp: evidenceStamp,
+    source_digest: sourceDigest,
     blockers,
+    blocked_kind: blockedKind,
     truth_status: truth,
     intent_label: intentLabel,
     tool_intent: intentLabel,
-    next_action: shortText(input.next_action || (blockers[0] ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    next_action: shortText(input.next_action || (hasBlockerSignal ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    safe_retry: shortText(input.safe_retry || (hasBlockerSignal ? 'retry only after the blocker is resolved and new evidence is recorded' : 'not required')),
     fix_first_items: asList(input.fix_first_items || input.fix_first_item),
     remaining_tasks: asList(input.remaining_tasks || input.remaining_task),
     recommended_direction: shortText(input.recommended_direction || input.direction),
     implementation_notes: asList(input.implementation_notes || input.implementation_note),
     why_this_next: shortText(input.why_this_next),
-    blocked_by: asList(input.blocked_by),
+    blocked_by: blockedBy,
     owner_route: normalizeOwnerRoute(input.owner_route || input.route),
+    owner_scope: asList(input.owner_scope || input.scope),
+    scope_owner: normalizeOwnerRoute(input.scope_owner || input.owner),
+    side_effects: asList(input.side_effects || input.side_effect),
     study_note: studyNote
   };
 }
@@ -692,6 +718,12 @@ function normalizeOwnerRoute(value: unknown = ''): string {
   const text = String(value || '').trim().replace(/^\$/, '').replace(/^yam-/, '');
   if (['quick', 'ueye', 'question', 'scout', 'deep', 'mission'].includes(text)) return `$${text}`;
   return text ? shortText(text, 80) : '';
+}
+
+function normalizeLoopEvidenceLevel(value: unknown = ''): LoopEvidenceLevel {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['fixture', 'smoke', 'local', 'real'].includes(text)) return text as LoopEvidenceLevel;
+  return 'none';
 }
 
 function shortText(value: unknown = '', limit = 240): string {

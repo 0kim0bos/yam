@@ -74,4 +74,4 @@ Include:
 - Evidence gathered.
 - Truth status.
 - Blockers or remaining risk.
-- Handoff: fix-first items, remaining tasks, recommended direction, and why that next step matters.
+- Handoff: fix-first items, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, side effects, and owner scope when another route or person may continue.

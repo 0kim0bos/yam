@@ -2,6 +2,17 @@
 
 All notable changes to yam-flow are documented here.
 
+## v1.9.1 - 2026-06-19
+
+### Added
+
+- Extended `yam loop report --json` with guided stage conventions, `evidence_level`, `evidence_stamp`/`source_digest`, `blocked_kind`, `safe_retry`, `owner_scope`, `scope_owner`, and `side_effects` so the report can act as a clearer handoff artifact without adding a new command.
+- Updated loop report smoke coverage to assert the new handoff fields.
+
+### Improved
+
+- Updated README, COMMANDS, final-report guidance, implementation skill final-response rules, and manifest principles to prefer fix-first handoff with evidence level, blocker kind, safe retry, and owner/scope clarity.
+
 ## v0.1.9 - 2026-06-18
 
 ### Added

@@ -35,7 +35,7 @@ try {
   assert(toolsDoctor.contextPressure?.schema === 'yam.context-pressure.v1', 'tools doctor missing contextPressure');
   assert(toolsDoctor.realProbe?.schema === 'yam.real-probe.v1', 'tools doctor missing realProbe');
   execFileSync(bin, ['loop', '--help'], { stdio: 'ignore' });
-  const loopReport = JSON.parse(execFileSync(bin, ['loop', 'report', '--route', 'quick', '--intent', 'fix release readiness', '--stage', 'inspect:passed:read release report', '--evidence', 'typecheck passed', '--fix-first-item', 'npm auth must be verified before publish', '--remaining-task', 'rerun release report after auth refresh', '--recommended-direction', 'fix npm auth first, then publish manually', '--implementation-note', 'keep loop report read-only', '--why-this-next', 'auth blocks public release claims', '--blocked-by', 'npm whoami E401', '--owner-route', 'deep', '--issue-code', 'src/bin/yam.ts release report', '--issue-role', 'summarizes release readiness without publishing', '--issue-symptom', 'npm auth failure needs clearer next action', '--changed-code', 'yam loop report', '--changed-role', 'records loop evidence and learning note', '--change-summary', 'added a read-only loop artifact', '--why-important', 'it helps users learn what changed without overclaiming verification', '--learning-note', 'fix blockers before claiming done', '--json'], { encoding: 'utf8' }));
+  const loopReport = spawnFailureJson(bin, ['loop', 'report', '--route', 'quick', '--intent', 'fix release readiness', '--stage', 'inspect:passed:read release report', '--evidence', 'typecheck passed', '--evidence-level', 'local', '--evidence-stamp', 'sha256:smoke-release-report', '--blocked-kind', 'auth_blocked', '--safe-retry', 'retry after npm whoami succeeds', '--fix-first-item', 'npm auth must be verified before publish', '--remaining-task', 'rerun release report after auth refresh', '--recommended-direction', 'fix npm auth first, then publish manually', '--implementation-note', 'keep loop report read-only', '--why-this-next', 'auth blocks public release claims', '--blocked-by', 'npm whoami E401', '--owner-route', 'deep', '--owner-scope', 'release readiness only', '--scope-owner', '$deep', '--side-effect', 'no publish attempted', '--issue-code', 'src/bin/yam.ts release report', '--issue-role', 'summarizes release readiness without publishing', '--issue-symptom', 'npm auth failure needs clearer next action', '--changed-code', 'yam loop report', '--changed-role', 'records loop evidence and learning note', '--change-summary', 'added a read-only loop artifact', '--why-important', 'it helps users learn what changed without overclaiming verification', '--learning-note', 'fix blockers before claiming done', '--json']);
   assert(loopReport.schema === 'yam.loop-report.v1', 'loop report schema missing');
   assert(loopReport.study_note?.schema === 'yam.study-note.v1', 'loop report missing study note');
   assert(loopReport.study_note?.problem?.role, 'loop study note problem role missing');
@@ -45,6 +45,17 @@ try {
   assert(loopReport.why_this_next === 'auth blocks public release claims', 'loop report missing why_this_next');
   assert(loopReport.blocked_by?.[0] === 'npm whoami E401', 'loop report missing blocked_by');
   assert(loopReport.owner_route === '$deep', 'loop report owner route should normalize');
+  assert(loopReport.truth_status === 'blocked', 'loop report with blocked_by should be blocked');
+  assert(loopReport.next_action === 'resolve the blocker before claiming this loop complete', 'loop report should not claim a normal next action when blocked');
+  assert(loopReport.stage_conventions?.includes('handoff'), 'loop report missing stage conventions');
+  assert(loopReport.evidence_level === 'local', 'loop report missing evidence level');
+  assert(loopReport.evidence_stamp === 'sha256:smoke-release-report', 'loop report missing evidence stamp');
+  assert(loopReport.source_digest === 'sha256:smoke-release-report', 'loop report should mirror source digest');
+  assert(loopReport.blocked_kind === 'auth_blocked', 'loop report missing blocked kind');
+  assert(loopReport.safe_retry === 'retry after npm whoami succeeds', 'loop report missing safe retry');
+  assert(loopReport.owner_scope?.[0] === 'release readiness only', 'loop report missing owner scope');
+  assert(loopReport.scope_owner === '$deep', 'loop report missing scope owner');
+  assert(loopReport.side_effects?.[0] === 'no publish attempted', 'loop report missing side effects');
   const missingStudyNote = JSON.parse(execFileSync(bin, ['loop', 'report', '--route', 'quick', '--intent', 'minimal note', '--json'], { encoding: 'utf8' }));
   assert(missingStudyNote.study_note?.limits?.includes('issue_code not provided'), 'loop study note should record missing issue_code');
   const blockedLoop = spawnFailureJson(bin, ['loop', 'report', '--route', 'deep', '--blocked', 'auth not verified', '--json']);

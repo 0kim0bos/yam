@@ -77,8 +77,11 @@ Use this when the next run needs a clear starting point:
 - Recommended direction.
 - Why this next step matters.
 - What is blocked, and by what.
+- Evidence level or stamp when the handoff relies on a specific command, file, or report.
+- Blocker kind and safe retry when the next run should not blindly repeat the same action.
+- Owner route, scope owner, and side effects when more than one person or route may continue the work.
 
-`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, and `owner_route`.
+`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, `blocked_kind`, `safe_retry`, `evidence_level`, `evidence_stamp`, `owner_route`, `owner_scope`, `scope_owner`, and `side_effects`.
 
 ## Route Weight
 
