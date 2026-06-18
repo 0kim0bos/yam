@@ -76,6 +76,7 @@ Use `references/token-budget-reporter.md` when a run needs measured budget feedb
 Keep it compact:
 
 - What changed or what the scan found.
+- Study Note when useful: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
 - What was checked.
 - What was skipped, blocked, or still risky.
-- Remaining tasks and fix-first items, only when useful.
+- Handoff when useful: fix-first items, remaining tasks, recommended direction, and why that next step matters.

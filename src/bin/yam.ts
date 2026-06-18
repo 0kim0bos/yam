@@ -1968,16 +1968,16 @@ async function loop(args = []) {
 function loopUsage() {
   console.log(`yam loop
 
-Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, and a short study note. It does not run agents, start processes, publish packages, or write files.
+Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, handoff fields, and a short study note. It does not run agents, start processes, publish packages, or write files.
 
 Usage:
-  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--blocked text] [--remaining-task text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
+  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--blocked text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
 `);
 }
 
 async function loopReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return loopUsage();
-  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'evidence', 'blocked', 'blocker', 'next-action', 'remaining-task', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'evidence', 'blocked', 'blocker', 'next-action', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
   const blockers = [...arrayFlag(flags.blocked), ...arrayFlag(flags.blocker)];
   const report = buildLoopReport({
     route: normalizeRoute(flags.route) || String(flags.route || ''),
@@ -1989,7 +1989,13 @@ async function loopReport(args = []) {
     truth_status: isTruthStatus(flags.truth) ? flags.truth : undefined,
     intent_label: normalizeToolIntent(flags.intent_label || flags.tool_intent || 'read_only'),
     next_action: String(flags.next_action || ''),
+    fix_first_items: arrayFlag(flags.fix_first_item),
     remaining_tasks: arrayFlag(flags.remaining_task),
+    recommended_direction: String(flags.recommended_direction || flags.direction || ''),
+    implementation_notes: arrayFlag(flags.implementation_note),
+    why_this_next: String(flags.why_this_next || ''),
+    blocked_by: arrayFlag(flags.blocked_by),
+    owner_route: String(flags.owner_route || flags.route || ''),
     issue_code: String(flags.issue_code || ''),
     issue_role: String(flags.issue_role || ''),
     issue_symptom: String(flags.issue_symptom || ''),

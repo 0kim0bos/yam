@@ -16,8 +16,10 @@ Include these when they are useful and keep them short:
 - Context pressure or cleanup findings when they could affect the next run.
 - Publish blocker evidence when npm/release work fails.
 - Structured diagnostic next action, when a check found a concrete next step.
+- Study Note for implementation work: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
 - Remaining tasks.
 - Fix-first items before planned tasks.
+- Recommended direction and why that next step matters when the handoff would otherwise be ambiguous.
 
 ## Anti-False-Completion Check
 
@@ -53,6 +55,30 @@ Examples:
 - Stale `yam.project.md`.
 - Active hooks or instruction files that conflict with the route.
 - Warnings that keep obscuring real problems.
+
+## Study Note
+
+Use this when implementation changed code or fixed an error and the user would benefit from learning:
+
+- What code had the issue.
+- What role that code plays.
+- How the issue showed up.
+- What changed.
+- Why the change matters.
+
+Keep it short. If the information is not known, say so instead of inventing it.
+
+## Handoff Direction
+
+Use this when the next run needs a clear starting point:
+
+- Fix-first items before planned work.
+- Remaining tasks that still belong to the request or roadmap.
+- Recommended direction.
+- Why this next step matters.
+- What is blocked, and by what.
+
+`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, and `owner_route`.
 
 ## Route Weight
 

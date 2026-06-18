@@ -2,6 +2,29 @@
 
 All notable changes to yam-flow are documented here.
 
+## v0.1.9 - 2026-06-18
+
+### Added
+
+- Expanded `yam loop report --json` into a read-only handoff artifact with `fix_first_items`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, and `owner_route`.
+- Added loop report smoke coverage for the new handoff fields while keeping the existing minimal and blocked report paths.
+
+### Improved
+
+- Updated `$quick`, `$deep`, `$mission`, and `$ueye` final response guidance so implementation work can include Study Note and handoff habits without forcing a CLI artifact for ordinary work.
+- Updated `references/final-report.md`, README, COMMANDS, and manifest principles to treat Study Note and handoff direction as final-report practices.
+
+### Verification
+
+- `npm run typecheck`
+- `npm run build`
+- `node ./dist/bin/yam.js loop report --json` with handoff fields
+- `npm run cli-smoke`
+- `npm run verify:self`
+- `npm run forbidden-names:check`
+- `npm run package-boundary:check`
+- `npm run dist:freshness`
+
 ## v0.1.8 - 2026-06-16
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",

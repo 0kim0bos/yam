@@ -102,8 +102,8 @@ Report:
 
 - What the mission changed.
 - Role/cross-verification summary.
+- Study Note for implementation lanes: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
 - Evidence gathered.
 - Truth status.
 - Cleanup status.
-- Remaining tasks.
-- Fix-first items before planned tasks.
+- Handoff: fix-first items, remaining tasks, recommended direction, and why that next step matters.

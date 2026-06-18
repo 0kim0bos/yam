@@ -189,7 +189,13 @@ export interface LoopReport {
   intent_label: ToolIntent;
   tool_intent: ToolIntent;
   next_action: string;
+  fix_first_items: string[];
   remaining_tasks: string[];
+  recommended_direction: string;
+  implementation_notes: string[];
+  why_this_next: string;
+  blocked_by: string[];
+  owner_route: string;
   study_note: StudyNote;
 }
 
@@ -557,7 +563,13 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     intent_label: intentLabel,
     tool_intent: intentLabel,
     next_action: shortText(input.next_action || (blockers[0] ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    fix_first_items: asList(input.fix_first_items || input.fix_first_item),
     remaining_tasks: asList(input.remaining_tasks || input.remaining_task),
+    recommended_direction: shortText(input.recommended_direction || input.direction),
+    implementation_notes: asList(input.implementation_notes || input.implementation_note),
+    why_this_next: shortText(input.why_this_next),
+    blocked_by: asList(input.blocked_by),
+    owner_route: normalizeOwnerRoute(input.owner_route || input.route),
     study_note: studyNote
   };
 }
@@ -674,6 +686,12 @@ function normalizeToolIntentLabel(value: unknown = ''): ToolIntent {
   const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
   if (['read_only', 'write', 'destructive', 'runtime', 'visual', 'publish'].includes(text)) return text as ToolIntent;
   return 'read_only';
+}
+
+function normalizeOwnerRoute(value: unknown = ''): string {
+  const text = String(value || '').trim().replace(/^\$/, '').replace(/^yam-/, '');
+  if (['quick', 'ueye', 'question', 'scout', 'deep', 'mission'].includes(text)) return `$${text}`;
+  return text ? shortText(text, 80) : '';
 }
 
 function shortText(value: unknown = '', limit = 240): string {

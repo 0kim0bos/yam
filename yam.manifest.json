@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -11,7 +11,8 @@
     "Token-aware by default.",
     "Context-reuse first.",
     "End with remaining tasks and fix-first items.",
-    "Explain what failed, what changed, and why it matters in short non-specialist language when useful."
+    "Explain what failed, what changed, and why it matters in short non-specialist language when useful.",
+    "Use handoff notes for fix-first items, remaining tasks, and recommended next direction when useful."
   ],
   "defaultHooks": false,
   "routes": [

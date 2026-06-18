@@ -170,5 +170,6 @@ Report:
 - Review continuity/comparison result when this continues a prior Ueye run.
 - P0-P3 issues or confirmation that no blockers were found.
 - States/viewports checked.
+- Study Note when UI implementation changed code: what UI code changed, what role it has, how the visible symptom appeared, and why the change matters in short non-specialist language.
 - Truth status and visual verification cap.
-- Remaining tasks and fix-first items before planned tasks when useful.
+- Handoff when useful: fix-first visual issues, remaining tasks, recommended direction, and why that next step matters.
