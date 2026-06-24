@@ -2,6 +2,27 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.0.0 - 2026-06-24
+
+### Added
+
+- Extended `yam loop report --json` with lightweight requirement coverage, `failure_cause`, `recovery_hint`, and `avoidance_note` so handoff artifacts can show what must still be covered before a completion claim.
+- Added `readiness_receipt` to `yam release report --json` to summarize the read-only evidence basis for package/version, registry, auth, git, dist, tarball, and release-check readiness.
+
+### Improved
+
+- Uncovered loop requirements now block verified truth, default `blocked_kind` to `requirement_uncovered`, and point the default next action at the first uncovered requirement.
+- Documented that loop avoidance notes are report-only; durable learning remains explicit through `yam memory add`.
+
+### Verification
+
+- `npm run typecheck`
+- `npm run build`
+- `npm run cli-smoke`
+- `npm run verify:self`
+- `node ./dist/bin/yam.js loop report --json` with uncovered requirement truth blocking
+- `node ./dist/bin/yam.js release report --json` (blocked as expected by npm auth readiness and dirty git, with `readiness_receipt`)
+
 ## v1.9.1 - 2026-06-19
 
 ### Added

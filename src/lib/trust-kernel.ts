@@ -189,13 +189,17 @@ export interface LoopReport {
   evidence_level: LoopEvidenceLevel;
   evidence_stamp: string;
   source_digest: string;
+  covered_requirements: string[];
+  uncovered_requirements: string[];
   blockers: string[];
   blocked_kind: string;
+  failure_cause: string;
   truth_status: TruthStatus;
   intent_label: ToolIntent;
   tool_intent: ToolIntent;
   next_action: string;
   safe_retry: string;
+  recovery_hint: string;
   fix_first_items: string[];
   remaining_tasks: string[];
   recommended_direction: string;
@@ -206,6 +210,7 @@ export interface LoopReport {
   owner_scope: string[];
   scope_owner: string;
   side_effects: string[];
+  avoidance_note: string;
   study_note: StudyNote;
 }
 
@@ -550,13 +555,18 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     ? input.stages.map((stage) => buildLoopStage(stage))
     : [];
   const evidence = asList(input.evidence);
+  const coveredRequirements = asList(input.covered_requirements || input.covered_requirement);
+  const uncoveredRequirements = asList(input.uncovered_requirements || input.uncovered_requirement);
   const blockers = asList(input.blockers || input.blocked);
   const blockedBy = asList(input.blocked_by);
-  const blockedKind = shortText(input.blocked_kind || (blockers.length || blockedBy.length ? 'evidence_missing' : ''));
+  const blockedKind = shortText(input.blocked_kind || (uncoveredRequirements.length ? 'requirement_uncovered' : blockers.length || blockedBy.length ? 'evidence_missing' : ''));
+  const failureCause = shortText(input.failure_cause);
+  const recoveryHint = shortText(input.recovery_hint);
+  const avoidanceNote = shortText(input.avoidance_note);
   const evidenceStamp = shortText(input.evidence_stamp || input.source_digest, 320);
   const sourceDigest = shortText(input.source_digest || input.evidence_stamp, 320);
   const hasBlockedStage = stages.some((stage) => stage.status === 'blocked' || stage.status === 'failed');
-  const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind);
+  const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind || uncoveredRequirements.length);
   const requestedTruth = isTruthStatus(input.truth_status) ? input.truth_status : '';
   const derivedTruth: TruthStatus = hasBlockerSignal || hasBlockedStage ? 'blocked'
     : evidence.length && stages.some((stage) => stage.status === 'passed') ? 'verified'
@@ -579,13 +589,17 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     evidence_level: normalizeLoopEvidenceLevel(input.evidence_level),
     evidence_stamp: evidenceStamp,
     source_digest: sourceDigest,
+    covered_requirements: coveredRequirements,
+    uncovered_requirements: uncoveredRequirements,
     blockers,
     blocked_kind: blockedKind,
+    failure_cause: failureCause,
     truth_status: truth,
     intent_label: intentLabel,
     tool_intent: intentLabel,
-    next_action: shortText(input.next_action || (hasBlockerSignal ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    next_action: shortText(input.next_action || (uncoveredRequirements.length ? `cover requirement before claiming complete: ${uncoveredRequirements[0]}` : hasBlockerSignal ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
     safe_retry: shortText(input.safe_retry || (hasBlockerSignal ? 'retry only after the blocker is resolved and new evidence is recorded' : 'not required')),
+    recovery_hint: recoveryHint,
     fix_first_items: asList(input.fix_first_items || input.fix_first_item),
     remaining_tasks: asList(input.remaining_tasks || input.remaining_task),
     recommended_direction: shortText(input.recommended_direction || input.direction),
@@ -596,6 +610,7 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     owner_scope: asList(input.owner_scope || input.scope),
     scope_owner: normalizeOwnerRoute(input.scope_owner || input.owner),
     side_effects: asList(input.side_effects || input.side_effect),
+    avoidance_note: avoidanceNote,
     study_note: studyNote
   };
 }

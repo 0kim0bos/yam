@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "1.9.1",
+  "version": "2.0.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -12,7 +12,7 @@
     "Context-reuse first.",
     "End with remaining tasks and fix-first items.",
     "Explain what failed, what changed, and why it matters in short non-specialist language when useful.",
-    "Use handoff notes for fix-first items, remaining tasks, recommended next direction, blocker kind, safe retry, evidence level, and owner scope when useful."
+    "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful."
   ],
   "defaultHooks": false,
   "routes": [

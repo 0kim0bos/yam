@@ -1575,6 +1575,7 @@ function runReleaseReport() {
   const publishReadiness = releasePublishReadiness(checks, provenance, tarball, publishBlockerEvidence);
   const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence, publishReadiness);
   const ok = failed.length === 0 && publishReadiness.status === 'ready';
+  const readinessReceipt = releaseReadinessReceipt(provenance, freshness, tarball, publishReadiness, ok);
   return {
     schema: 'yam.release-report.v1',
     generated_at: startedAt,
@@ -1588,9 +1589,52 @@ function runReleaseReport() {
     tarball,
     freshness,
     publish_readiness: publishReadiness,
+    readiness_receipt: readinessReceipt,
     study_note: releaseStudyNote(publishReadiness, publishBlockerEvidence),
     publishBlockerEvidence,
     next_actions: nextActions
+  };
+}
+
+function releaseReadinessReceipt(provenance: AnyRecord = {}, freshness: AnyRecord = {}, tarball: AnyRecord = {}, publishReadiness: AnyRecord = {}, ok = false) {
+  return {
+    schema: 'yam.release-readiness-receipt.v1',
+    generated_at: new Date().toISOString(),
+    package_name: PACKAGE_JSON.name,
+    local_version: VERSION,
+    registry: {
+      url: String(publishReadiness.registry?.url || ''),
+      latest_version: String(publishReadiness.registry?.latest_version || ''),
+      version_status: String(publishReadiness.registry?.version_status || 'not_verified'),
+      truth_status: publishReadiness.registry?.truth_status || 'partial'
+    },
+    auth: {
+      command: 'npm whoami',
+      status: String(publishReadiness.auth?.status || 'not_verified'),
+      account: publishReadiness.auth?.status === 'authenticated' ? 'observed_redacted' : '',
+      truth_status: publishReadiness.auth?.truth_status || 'partial'
+    },
+    git: {
+      commit: String(provenance.git_commit || ''),
+      dirty: Boolean(provenance.git_dirty),
+      dirty_lines_observed: Array.isArray(provenance.git_status_lines) ? provenance.git_status_lines.length : 0,
+      truth_status: provenance.truth_status || 'partial'
+    },
+    checks: {
+      dist: freshness.dist || 'not-verified',
+      package_boundary: freshness.package_boundary || 'not-verified',
+      cli_smoke: freshness.cli_smoke || 'not-verified',
+      tarball: tarball.status === 'checked' ? 'checked' : 'not-verified'
+    },
+    tarball: {
+      status: String(tarball.status || 'not-verified'),
+      name: String(tarball.tarball_name || ''),
+      integrity_present: Boolean(tarball.integrity),
+      shasum_present: Boolean(tarball.shasum),
+      truth_status: tarball.truth_status || 'partial'
+    },
+    publish_attempted: false,
+    truth_status: ok ? 'verified' : 'blocked'
   };
 }
 
@@ -1977,13 +2021,13 @@ function loopUsage() {
 Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, handoff fields, and a short study note. It does not run agents, start processes, publish packages, or write files.
 
 Usage:
-  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--blocked text] [--blocked-kind text] [--safe-retry text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
+  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--covered-requirement text] [--uncovered-requirement text] [--blocked text] [--blocked-kind text] [--failure-cause text] [--safe-retry text] [--recovery-hint text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--avoidance-note text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
 `);
 }
 
 async function loopReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return loopUsage();
-  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'blocked', 'blocker', 'blocked-kind', 'next-action', 'safe-retry', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'covered-requirement', 'uncovered-requirement', 'blocked', 'blocker', 'blocked-kind', 'failure-cause', 'next-action', 'safe-retry', 'recovery-hint', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'avoidance-note', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
   const blockers = [...arrayFlag(flags.blocked), ...arrayFlag(flags.blocker)];
   const report = buildLoopReport({
     route: normalizeRoute(flags.route) || String(flags.route || ''),
@@ -1995,12 +2039,16 @@ async function loopReport(args = []) {
     evidence_level: normalizeLoopEvidenceLevelFlag(flags.evidence_level),
     evidence_stamp: String(flags.evidence_stamp || ''),
     source_digest: String(flags.source_digest || ''),
+    covered_requirements: arrayFlag(flags.covered_requirement),
+    uncovered_requirements: arrayFlag(flags.uncovered_requirement),
     blockers,
     blocked_kind: String(flags.blocked_kind || ''),
+    failure_cause: String(flags.failure_cause || ''),
     truth_status: isTruthStatus(flags.truth) ? flags.truth : undefined,
     intent_label: normalizeToolIntent(flags.intent_label || flags.tool_intent || 'read_only'),
     next_action: String(flags.next_action || ''),
     safe_retry: String(flags.safe_retry || ''),
+    recovery_hint: String(flags.recovery_hint || ''),
     fix_first_items: arrayFlag(flags.fix_first_item),
     remaining_tasks: arrayFlag(flags.remaining_task),
     recommended_direction: String(flags.recommended_direction || flags.direction || ''),
@@ -2011,6 +2059,7 @@ async function loopReport(args = []) {
     owner_scope: [...arrayFlag(flags.owner_scope), ...arrayFlag(flags.scope)],
     scope_owner: String(flags.scope_owner || flags.owner || ''),
     side_effects: arrayFlag(flags.side_effect),
+    avoidance_note: String(flags.avoidance_note || ''),
     issue_code: String(flags.issue_code || ''),
     issue_role: String(flags.issue_role || ''),
     issue_symptom: String(flags.issue_symptom || ''),
