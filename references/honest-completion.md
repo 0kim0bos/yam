@@ -35,6 +35,19 @@ Verification: not run; change was limited to copy/CSS and inspected locally.
 
 For larger work, include proof summary and residual risk.
 
+Use the L0-L5 Verification Ladder:
+
+- L0 stated.
+- L1 inspected.
+- L2 local check.
+- L3 integrated.
+- L4 release/runtime/visual proof.
+- L5 bounded deep.
+
+Escalate when the claim touches public release, UI done, auth, payment, DB, runtime, deployment, broad refactor, security, high learning value, or explicit user intent.
+
+Bounded heavy verification must stop after the smallest meaningful proof set passes, or after three relevant checks have run and remaining uncertainty is listed as blocked, skipped, or remaining work.
+
 ## Runtime Guard
 
 Runtime work needs stronger evidence because long-running processes can create false success:

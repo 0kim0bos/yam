@@ -2,6 +2,18 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.1.0 - 2026-06-30
+
+### Added
+
+- Added `references/study-note.md` with required Study Note guidance for any changed code, config, release metadata, documentation, or project artifact.
+- Reworked `references/verification-levels.md` into an L0-L5 Verification Ladder covering stated, inspected, local check, integrated, release/runtime/visual proof, and bounded deep verification.
+
+### Improved
+
+- Updated core, final-report, route skill, project-pack, and trust-layer guidance so serious claims can require heavier evidence while bounded stop conditions prevent endless proof loops.
+- Strengthened `$quick`, `$deep`, `$mission`, and `$ueye` final report rules so changed artifacts include code/artifact role, expected behavior, syntax or structure insight, verification note, and uncertainty.
+
 ## v2.0.0 - 2026-06-24
 
 ### Added

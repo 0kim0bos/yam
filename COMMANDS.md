@@ -195,8 +195,9 @@ Supported report shapes:
 
 - Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
 - Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
+- Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, L5 bounded deep with stop condition and skipped/remaining work.
 - Loop report: intent, guided stage outcomes, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
-- Study note: short non-specialist explanation of the failing code, its role, observed symptom, changed code, and why it matters.
+- Study note: short non-specialist explanation of the changed code/artifact, its role, what was wrong or missing, expected behavior, one syntax/structure insight, verification, and uncertainty.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
 - Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.

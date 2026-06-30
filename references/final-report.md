@@ -4,10 +4,10 @@ Every `yam` route should end with a compact handoff that helps the next run avoi
 
 ## Required Closing Check
 
-Include these when they are useful and keep them short:
+Always keep final reports short. Include these when they apply:
 
 - What changed or what was found.
-- Change insight for non-specialists: what the touched code does, how it changed, and why it matters.
+- Change insight for non-specialists: what the touched code or artifact does, what role it has, what changed, what behavior is expected, and what remains uncertain.
 - What verification ran.
 - What was not checked.
 - Truth status, when verification or runtime claims matter.
@@ -16,7 +16,7 @@ Include these when they are useful and keep them short:
 - Context pressure or cleanup findings when they could affect the next run.
 - Publish blocker evidence when npm/release work fails.
 - Structured diagnostic next action, when a check found a concrete next step.
-- Study Note for implementation work: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
+- Study Note whenever code, config, release metadata, documentation, or project artifacts changed, even if no yam skill was explicitly invoked. This item is required for changed artifacts, not optional.
 - Remaining tasks.
 - Fix-first items before planned tasks.
 - Recommended direction and why that next step matters when the handoff would otherwise be ambiguous.
@@ -58,15 +58,19 @@ Examples:
 
 ## Study Note
 
-Use this when implementation changed code or fixed an error and the user would benefit from learning:
+Use this whenever implementation changed code or any project artifact changed:
 
-- What code had the issue.
-- What role that code plays.
-- How the issue showed up.
-- What changed.
-- Why the change matters.
+- What code or artifact changed.
+- What role that code or artifact plays in the project.
+- What was wrong, missing, unclear, or risky.
+- What changed and what behavior the change should produce.
+- One small syntax, API, schema, or structure insight for a non-specialist.
+- What was verified, or why verification is partial/skipped/blocked.
+- What remains uncertain.
 
-Keep it short. If the information is not known, say so instead of inventing it.
+Keep it short: 4-7 lines for ordinary work, longer only when risk, learning value, `$deep`, `$mission`, release, runtime, or DB work justifies it. If the information is not known, say so instead of inventing it.
+
+Use `references/study-note.md`.
 
 ## Handoff Direction
 

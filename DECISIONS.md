@@ -38,11 +38,14 @@ Every `yam` change is evaluated against honest proof, progressive depth, securit
 - Rules the model can actually follow.
 - Fast momentum without pretending simple work is always enough.
 - Depth growth when the user's understanding, project risk, or product quality benefits from it.
+- L0-L5 verification ladder with bounded heavy verification and explicit stop conditions.
 
 ### Beginner Insight
 
 - Explain changed behavior in plain language.
 - Name the code area touched and what it is responsible for.
+- Include Study Note whenever code, config, release metadata, documentation, or project artifacts changed.
+- Teach one useful syntax, schema, or structure insight without turning the final report into a long tutorial.
 - Separate implementation facts from judgment.
 - Always close with remaining tasks or useful improvements.
 

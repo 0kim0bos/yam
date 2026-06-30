@@ -346,6 +346,7 @@ async function verify({ quiet = false } = {}) {
     'token-economy.md',
     'context-reuse.md',
     'markdown-management.md',
+    'study-note.md',
     'final-report.md',
     'token-budget-reporter.md',
     'memory.md'
@@ -3776,7 +3777,7 @@ function printDetection(result) {
   }
   console.log('');
   console.log('Smallest useful checks:');
-  console.log(`- $quick: ${result.commands.typecheck || result.commands.lint || result.commands.test || result.commands.build || 'Level 0 read/inspect; no command detected'}`);
+  console.log(`- $quick: ${result.commands.typecheck || result.commands.lint || result.commands.test || result.commands.build || 'L1 inspected; no command detected'}`);
   console.log(`- $ueye: ${result.commands.typecheck || result.commands.build || 'Browser/screenshot check; no command detected'}`);
   console.log(`- $deep: ${[result.commands.typecheck, result.commands.lint, result.commands.test, result.commands.build].filter(Boolean).join(' && ') || `No command detected; define in ${PROJECT_PACK}`}`);
   if (result.frameworkChecklist?.detected) {

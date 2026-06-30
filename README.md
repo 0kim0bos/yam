@@ -14,6 +14,8 @@ Context-reuse first.
 End with remaining tasks and fix-first items.
 Security-first project guidance.
 Useful change insight for non-specialists.
+Study Note for changed artifacts.
+Verification Ladder for larger claims.
 Reference-led judgment with clear source boundaries.
 ```
 
@@ -31,17 +33,18 @@ See `ROADMAP.md` for remaining implementation stages.
 
 ## Defaults
 
-- No hooks.
+- No required hooks.
 - Optional `yam-lite` hook is advisory-only and off by default.
 - No automatic Team routing.
 - No automatic proof loops.
 - No automatic tmux.
 - No false completion claims: verification, cleanup, and visual checks must match actual evidence.
 - `yam` is not lightweight-only; it is progressive: fast direction, broader judgment when useful, stronger proof as scope/risk grows.
-- Every route should check project direction and use an honest verification level.
+- Every route should check project direction and use the L0-L5 Verification Ladder honestly.
 - Small work stays small, but serious work is allowed to become serious.
 - Security-sensitive work is never treated as ordinary polish.
-- Useful reports explain what the changed code does, how it changed, and why the change matters.
+- When code, config, release metadata, documentation, or project artifacts changed, final reports include a Study Note even if no yam skill was invoked.
+- Useful Study Notes explain what the changed code or artifact does, what role it has, what was wrong or missing, what changed, what behavior is expected, one small syntax/structure insight, what was verified, and what remains uncertain.
 - Research and reference scans should keep source boundaries clear, then rework good ideas into yam style.
 - Token economy is part of quality.
 - Project packs prevent re-reading and re-planning from scratch.
@@ -215,9 +218,10 @@ These shapes keep reports machine-readable without turning normal work into a he
 
 - Runtime evidence mini: compact route, command/process, observation, cleanup, truth status, and next action fields for `$deep` or `$mission` runtime claims.
 - Patch queue lite: `$mission` lane records with pending/applied/verified/reverted/blocked state, changed files, verification hint, rollback hint, truth status, and next action.
+- Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, and L5 bounded deep. Heavier claims require heavier evidence, but stop conditions prevent endless proof loops.
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, readiness receipt, and final truth status.
 - Loop report JSON: `yam loop report --json` records a read-only handoff artifact: guided stages, requirement coverage, evidence level/stamp, blocker kind, failure cause, safe retry, recovery hint, owner route/scope, side effects, next action, fix-first items, remaining tasks, recommended direction, implementation notes, blocked-by notes, avoidance note, tool intent, truth status, and study note.
-- Study note: `yam.study-note.v1` keeps short non-specialist explanations for what code was failing, what role it plays, how the symptom showed up, what changed, and why it matters. Missing details stay in `limits` instead of being guessed.
+- Study note: `yam.study-note.v1` and `references/study-note.md` keep non-specialist explanations for what code/artifact changed, what role it plays, what was wrong or missing, what behavior is expected, one syntax/structure insight, what was verified, and what remains uncertain. Missing details stay in `limits` instead of being guessed.
 - Avoidance note: loop reports may include one short mistake-to-avoid note, but durable memory stays explicit through `yam memory add`; `yam loop report` does not write `.yam/memory`.
 - Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.
 - Publish readiness evidence: release reports run read-only registry/auth/version probes, redact account/token details, keep npm publish outside the report, and include a `yam.release-readiness-receipt.v1` basis for the readiness judgment.

@@ -58,16 +58,19 @@ Scan lane:
 
 ## Verification
 
-- Copy/CSS/docs: Level 0 is often enough after re-reading the changed snippet.
+- Copy/CSS/docs: L1 is often enough after re-reading the changed snippet.
 - TS/JS or app logic: prefer typecheck, related test, lint, or build in that order when available.
 - Build-fix: use a compact PASS/FAIL matrix for command results.
 - If verification is skipped, partial, blocked, or assumed, say that plainly.
+- Escalate beyond L2 only when the changed behavior, user-facing impact, or risk surface needs it.
 
 Use `references/quick.md` for the merged fast/build rules.
+Use `references/verification-levels.md` for the L0-L5 ladder.
 Use `references/truth-matrix.md` for truth labels.
 Use `references/db-supabase-safety-lite.md` when a command or prompt contains DB/Supabase mutation signals.
 Use `references/token-economy.md` to keep context small.
 Use `references/context-reuse.md` before broad project reading.
+Use `references/study-note.md` when any code, config, docs, or project artifact changed.
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.
 
@@ -76,7 +79,7 @@ Use `references/token-budget-reporter.md` when a run needs measured budget feedb
 Keep it compact:
 
 - What changed or what the scan found.
-- Study Note when useful: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
+- Study Note when code, config, docs, or project artifacts changed: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
 - What was checked.
 - What was skipped, blocked, or still risky.
 - Handoff when useful: fix-first items, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

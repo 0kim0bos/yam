@@ -43,7 +43,7 @@ Use for:
 
 ## Verification
 
-Use Level 4 from `references/verification-levels.md`.
+Use L3-L5 from `references/verification-levels.md`; pick the smallest bounded set that honestly supports the claim.
 Use `references/token-economy.md`; wider context is allowed only when tied to the risk surface.
 Use `references/context-reuse.md`; update stale project packs narrowly when needed.
 Use `references/markdown-management.md` before writing broad proof or direction markdown.
@@ -52,6 +52,7 @@ Use `references/db-supabase-safety-lite.md` for destructive DB/Supabase, migrati
 Use `references/current-docs.md` when SDK/API/cloud-service behavior may be current or version-sensitive.
 Use `references/trust-kernel.md` when the task asks how yam prevents false completion or fake real proof claims.
 Use `references/honest-completion.md`; do not overclaim verification, runtime, cleanup, or visual proof.
+Use `references/study-note.md` when any code, config, docs, release metadata, or project artifact changed.
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.
 
@@ -65,12 +66,18 @@ Deep verification may include:
 - Before/after screenshot.
 - Risk-specific manual inspection.
 
+Stop condition:
+
+- Stop after the smallest meaningful verification set has passed, or after three relevant checks have run and the remaining uncertainty is clearly listed as blocked/remaining work.
+- Stop earlier when the same blocker repeats, a required tool/auth/runtime is unavailable, or a user decision is needed.
+- Do not keep retrying the same failure; classify the cause, give a recovery hint, and hand off.
+
 ## Final Response
 
 Include:
 
 - What was changed or reviewed.
-- Study Note for implementation work: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
+- Study Note for changed artifacts: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
 - Evidence gathered.
 - Truth status.
 - Blockers or remaining risk.

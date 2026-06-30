@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -11,8 +11,10 @@
     "Token-aware by default.",
     "Context-reuse first.",
     "End with remaining tasks and fix-first items.",
-    "Explain what failed, what changed, and why it matters in short non-specialist language when useful.",
-    "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful."
+    "When code, config, release metadata, documentation, or project artifacts changed, include a Study Note even if no yam skill was explicitly invoked.",
+    "Explain what changed, what role it has, what was wrong or missing when relevant, what behavior is expected, and one useful syntax or structure insight in short non-specialist language.",
+    "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful.",
+    "Use bounded heavy verification for serious claims, with explicit stop conditions instead of endless proof loops."
   ],
   "defaultHooks": false,
   "routes": [

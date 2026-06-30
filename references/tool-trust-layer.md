@@ -13,7 +13,8 @@ Every route carries a basic contract:
 - use context packs or memory before broad re-reading
 - verify only what was actually checked
 - report remaining tasks and fix-first issues when useful
-- explain what changed in plain language when code or behavior changes
+- include a Study Note when code, config, release metadata, documentation, or project artifacts changed
+- explain what changed, what role it has, what behavior is expected, and one useful syntax or structure insight in plain language
 - treat security as the first project lens
 - preserve source boundaries when outside references shaped the judgment
 
@@ -25,6 +26,8 @@ Then depth increases by route:
 - `$ueye`: implement/review UI with real visual evidence when feasible.
 - `$deep`: prove risky single-agent work with stronger runtime/tool evidence.
 - `$mission`: coordinate real subagents/team lanes with cross-verification.
+
+Verification should follow the L0-L5 ladder: stated, inspected, local check, integrated, release/runtime/visual proof, bounded deep. Serious claims can require serious evidence, but stop after the smallest meaningful proof set passes or after remaining uncertainty is clearly handed off.
 
 ## Surfaces To Wrap
 
@@ -94,6 +97,8 @@ On demand:
 
 - What the touched code or artifact is responsible for.
 - What changed in behavior, contract, UI, or safety posture.
+- What syntax, schema, or structure insight helps a non-specialist understand the change.
+- What verification level supports the claim.
 - Why the change matters to the product or user.
 - What remains uncertain or unverified.
 - What should be fixed first before the next planned task.

@@ -43,6 +43,7 @@ Do not use for:
 - Prefer the in-app browser for interactive visual checks. Do not switch to a profile-dependent browser unless the user explicitly asks or the task requires existing cookies, sessions, extensions, or profile state.
 - Ueye owns the design completion gate. Do not rely on a separate code-risk route to catch sloppy visual completion.
 - Draft or needs-polish work may stay fast; a `done` claim requires recorded design gate evidence.
+- Use the Verification Ladder: ordinary UI implementation can stay L1-L3, but a visual `done` claim needs L3-L4 evidence when feasible.
 - Do not claim a Ueye result is done when implementation evidence, design quality, P0/P1 status, state coverage, mobile/responsive behavior, contrast/accessibility visuals, CTA affordance, or reference-read/comparison evidence is missing where relevant.
 
 ## Workflow
@@ -145,6 +146,8 @@ Use these artifacts for reference-led implementation or serious visual review. K
 ## Design Checks
 
 Use `references/ueye.md` and `references/ui-quality.md`.
+Use `references/verification-levels.md` for visual proof levels and done-claim truth caps.
+Use `references/study-note.md` when UI code, design docs, config, or project artifacts changed.
 Always consider:
 
 - Direction fit.
@@ -170,6 +173,6 @@ Report:
 - Review continuity/comparison result when this continues a prior Ueye run.
 - P0-P3 issues or confirmation that no blockers were found.
 - States/viewports checked.
-- Study Note when UI implementation changed code: what UI code changed, what role it has, how the visible symptom appeared, and why the change matters in short non-specialist language.
+- Study Note when UI code, design docs, config, or project artifacts changed: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
 - Truth status and visual verification cap.
 - Handoff when useful: fix-first visual issues, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

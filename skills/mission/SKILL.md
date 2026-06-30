@@ -58,6 +58,12 @@ Do not use for:
 12. Confirm cleanup or explicitly report intentionally running processes.
 13. Produce final proof summary, truth status, remaining tasks, and fix-first items.
 
+Mission stop condition:
+
+- Stop after cross-verification and the smallest meaningful L4-L5 proof set have passed, or after three relevant checks have run and remaining uncertainty is recorded as blocked/remaining work.
+- Stop earlier when the same blocker repeats, a required tool/auth/runtime is unavailable, or a user decision is needed.
+- Do not keep retrying the same failure; classify the cause, give a recovery hint, and hand off.
+
 ## Proof Summary
 
 Include:
@@ -79,7 +85,9 @@ Use `references/runtime-orchestration.md` only when runtime evidence is needed.
 Use `references/doctor-scan.md` before final mission completion.
 Use `references/db-supabase-safety-lite.md` for destructive DB/Supabase, migration, production-write, or RLS/policy lanes.
 Use `references/current-docs.md` when any lane depends on current SDK/API/cloud-service behavior.
+Use `references/verification-levels.md` for L4-L5 mission proof boundaries.
 Use `references/honest-completion.md`; do not overclaim.
+Use `references/study-note.md` for every lane that changes code, config, docs, release metadata, or project artifacts.
 Use `references/final-report.md` to close with remaining tasks and fix-first items.
 Use `references/token-budget-reporter.md` when budget drift matters.
 
@@ -102,7 +110,7 @@ Report:
 
 - What the mission changed.
 - Role/cross-verification summary.
-- Study Note for implementation lanes: what code was wrong, what role it has, how the symptom showed up, what changed, and why it matters in short non-specialist language.
+- Study Note for any lane that changed code, config, docs, release metadata, or project artifacts: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
 - Evidence gathered.
 - Truth status.
 - Cleanup status.

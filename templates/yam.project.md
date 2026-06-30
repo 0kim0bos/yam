@@ -44,6 +44,8 @@
 - UI changes:
 - Feature changes:
 - Risky changes:
+- Verification ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, L5 bounded deep.
+- Stop condition for heavy verification:
 - Public/release changes: scan for external tool names, comparison wording, and attribution wording; remove those hits unless the user explicitly approves keeping them.
 
 ## Security Policy
@@ -56,7 +58,8 @@
 
 ## Report Policy
 
-- Explain changed code in plain language:
+- Study Note requirement for changed code/config/release metadata/docs/artifacts:
+- Explain touched code or artifact role, changed behavior, one syntax/structure insight, verification, and uncertainty:
 - Always include remaining tasks or useful improvements:
 - Preserve source boundaries for research/proof notes:
 
