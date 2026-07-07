@@ -67,6 +67,7 @@ Use these when the task depends on visual truth, reference matching, or design q
 4. Design Quality Review.
 5. Review Continuity and Comparison Report.
 6. Design Completion Gate.
+7. Deep Visual Review, when Ueye needs Deep-grade verification.
 
 Default bound:
 
@@ -168,6 +169,30 @@ Gate behavior:
 - Missing required checks for a done claim should cap truth at partial.
 - Only claim done when the gate says `ready_to_claim_done: true`.
 
+### Deep Visual Review
+
+Use when Ueye should stay in the UI/design route but needs stronger verification than a quick screenshot note.
+
+Record:
+
+- acceptance criteria for the visual claim.
+- touched, read, and verified files.
+- skipped checks and why they are acceptable or still risky.
+- residual risks.
+- stop condition for bounded verification.
+- resume hint for the next visual pass.
+- deep visual checks that ran.
+- design-system evidence such as tokens, components, or nearby patterns read.
+- implementation evidence such as screenshot, browser check, source inspection, or responsive check.
+- state matrix for default, loading, error, empty, disabled, hover/focus, and mobile states when relevant.
+
+Behavior:
+
+- Failed or blocked state matrix rows should block the deep visual review.
+- Skipped checks and residual risks should keep the claim partial unless the remaining claim is narrow and explicitly bounded.
+- Deep visual review does not replace implementation screenshot evidence when the claim depends on seeing the real screen.
+- Stop conditions prevent endless visual proof loops; resume hints make the next pass cheap to restart.
+
 ### Review Continuity and Comparison Report
 
 Use when a screen has more than one visual pass, a reference needs follow-up, or a previous Ueye report should stay connected to the next one.
@@ -222,9 +247,10 @@ Keep this metadata descriptive. It should support honest visual claims, not forc
 7. Reference vs Implementation Matrix when reference fidelity matters.
 8. Design Quality Review.
 9. Design Completion Gate before any done claim.
-10. Review Continuity and Comparison Report when the work spans multiple passes.
-11. P0/P1 closeout.
-12. Truth status.
+10. Deep Visual Review when the work needs acceptance criteria, state matrix, skipped checks, residual risks, stop condition, or resume hint.
+11. Review Continuity and Comparison Report when the work spans multiple passes.
+12. P0/P1 closeout.
+13. Truth status.
 
 ## Truth Caps
 

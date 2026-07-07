@@ -16,7 +16,8 @@
 14. For UI work, inspect real states and responsive behavior when feasible.
 15. For long-running processes, do not claim cleanup unless process exit is checked.
 16. When code, config, release metadata, documentation, or project artifacts changed, include a Study Note even if no yam skill was explicitly invoked.
-17. Explain useful change insight for non-specialists: what the touched code or artifact does, what role it has, what was wrong or missing, what changed, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+17. Explain useful change insight for non-specialists: what the touched code or artifact does, what role it has, where it runs or is read, what was wrong or missing, what changed before/after, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
 18. Use external references deliberately, preserve source clarity in research/proof notes, and rework good ideas into yam style.
 19. Treat security as the first project lens: identify sensitive surfaces early and guide safer defaults before convenience.
 20. Keep final reports short and concrete, but always include remaining tasks or state that none are meaningful.
+21. When relevant, include architecture hygiene in the Study Note: avoid dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs when existing project boundaries, scoped styles, typed tables, constraints, or indexes fit better.

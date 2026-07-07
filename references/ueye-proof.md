@@ -26,12 +26,13 @@ Ueye is one route. It should not split into separate lite/deep skills. Use these
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --acceptance-criterion "primary CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
 - `capture` uses a project-local capture backend when present, then reports `blocked` instead of installing dependencies or pretending a screenshot exists.
 - `compare` is local-only and dependency-free. It records hashes, dimensions, comparison result, and visual provenance. Different screenshots stay `partial`; exact file matches can be `verified`.
 - `report` records the Ueye run as reference sources, implementation sources, comparison result, surface context, design quality, blocked reason, next action, and truth status.
+- `report` can also record a deep visual review with acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and state matrix.
 - `report` may include continuity fields when a previous review or screenshot is being rechecked.
 - Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
 
@@ -238,6 +239,46 @@ yam proof --route ueye --truth verified --visual "implementation screenshot evid
 ```
 
 The design completion gate is a completion judgment. Keep actual source-screen proof in visual evidence, visual provenance, or a Ueye run report. Do not use self-reported gate fields to pretend a missing screenshot was captured.
+
+### Deep Visual Review
+
+Purpose: let Ueye carry Deep-grade UI verification when the work is serious, without forcing a separate route.
+
+Use this when:
+
+- The user asks for strong UI/UX verification.
+- A done claim depends on multiple states, viewports, or design-system fit.
+- A previous Ueye review needs a resume-ready handoff.
+- Missing visual evidence should become an explicit residual risk instead of being hidden.
+
+Minimum useful fields:
+
+- `acceptance_criteria`
+- `touched_files`
+- `read_files`
+- `verified_files`
+- `skipped_checks`
+- `residual_risks`
+- `stop_condition`
+- `resume_hint`
+- `deep_visual_checks`
+- `design_system_evidence`
+- `state_matrix`
+- `implementation_evidence`
+- `truth_status`
+
+State matrix examples:
+
+```bash
+yam ueye report --state-check default:pass --state-check loading:pass --state-check error:partial --state-check mobile:blocked --json
+```
+
+Truth rules:
+
+- Failed or blocked state matrix rows block the deep visual review.
+- Skipped checks and residual risks keep the result honest as `partial` unless other evidence still supports a narrower claim.
+- Deep visual review evidence does not replace a real implementation screenshot when the claim needs visual proof.
+- A stop condition should explain when to stop verifying; a resume hint should explain the next safe visual action.
 
 ### Review Continuity And Comparison Report
 

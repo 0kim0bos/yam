@@ -70,7 +70,7 @@ Use `references/truth-matrix.md` for truth labels.
 Use `references/db-supabase-safety-lite.md` when a command or prompt contains DB/Supabase mutation signals.
 Use `references/token-economy.md` to keep context small.
 Use `references/context-reuse.md` before broad project reading.
-Use `references/study-note.md` when any code, config, docs, or project artifact changed.
+Use `references/study-note.md` when any code, config, docs, or project artifact changed; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.
 
@@ -79,7 +79,8 @@ Use `references/token-budget-reporter.md` when a run needs measured budget feedb
 Keep it compact:
 
 - What changed or what the scan found.
-- Study Note when code, config, docs, or project artifacts changed: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Study Note when code, config, docs, or project artifacts changed: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Architecture hygiene when relevant: flag if the change risks dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - What was checked.
 - What was skipped, blocked, or still risky.
 - Handoff when useful: fix-first items, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

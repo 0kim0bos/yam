@@ -45,7 +45,7 @@ Opt-in visual evidence helpers:
 yam ueye preflight /path/to/project --json
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
-yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --brief-dimension "primary CTA clarity" --constraint "mobile first" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
+yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --brief-dimension "primary CTA clarity" --constraint "mobile first" --acceptance-criterion "primary CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --skipped-check "hover state not checked on touch viewport" --residual-risk "tablet breakpoint still needs visual pass" --stop-condition "stop after primary states are checked and residual risk is recorded" --resume-hint "capture tablet screenshot next" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
@@ -148,7 +148,8 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
-yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
+yam study-note check /path/to/project --text "Study Note: Touched code role before/after verification limits." --json
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -196,12 +197,14 @@ Supported report shapes:
 - Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
 - Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
 - Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, L5 bounded deep with stop condition and skipped/remaining work.
-- Loop report: intent, guided stage outcomes, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
-- Study note: short non-specialist explanation of the changed code/artifact, its role, what was wrong or missing, expected behavior, one syntax/structure insight, verification, and uncertainty.
+- Loop report: intent, guided stage outcomes, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
+- Study note: non-specialist explanation of the changed code/artifact, its role, execution point, before/after behavior, expected behavior, one syntax/structure insight, verification, uncertainty, and architecture hygiene around `page.tsx`, `global.css`, and DB `jsonb`.
+- Study Note guard: read-only check for changed files and supplied final-report text; opt into prompt-time reminders with `yam hook enable study-note --global`.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
 - Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.
 - Ueye design brief/anti-slop: brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom P0 blockers.
+- Ueye deep visual review: acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and state matrix.
 - Context pressure: project pack age/size, memory summary, dirty scope, scripts, instruction surfaces, and route hint.
 - Cleanup scan: advisory-only list of confusing surfaces with destructive=false.
 
@@ -212,5 +215,7 @@ Advisory-only hook. It does not run checks or force routes.
 ```bash
 yam hook status --global
 yam hook enable lite --global
+yam hook enable study-note --global
 yam hook disable lite --global
+yam hook disable study-note --global
 ```

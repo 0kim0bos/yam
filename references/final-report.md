@@ -7,7 +7,7 @@ Every `yam` route should end with a compact handoff that helps the next run avoi
 Always keep final reports short. Include these when they apply:
 
 - What changed or what was found.
-- Change insight for non-specialists: what the touched code or artifact does, what role it has, what changed, what behavior is expected, and what remains uncertain.
+- Change insight for non-specialists: what the touched code or artifact does, what role it has, where it runs or is read, what changed, what behavior is expected, one useful syntax/structure insight, and what remains uncertain.
 - What verification ran.
 - What was not checked.
 - Truth status, when verification or runtime claims matter.
@@ -62,9 +62,11 @@ Use this whenever implementation changed code or any project artifact changed:
 
 - What code or artifact changed.
 - What role that code or artifact plays in the project.
+- Where it runs, renders, validates, builds, publishes, or is read.
 - What was wrong, missing, unclear, or risky.
-- What changed and what behavior the change should produce.
+- What changed: before/after behavior or guidance, and what behavior the change should produce.
 - One small syntax, API, schema, or structure insight for a non-specialist.
+- Architecture hygiene when relevant: avoid dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs when existing project boundaries, scoped styles, typed tables, constraints, or indexes fit better.
 - What was verified, or why verification is partial/skipped/blocked.
 - What remains uncertain.
 
@@ -87,7 +89,7 @@ Use this when the next run needs a clear starting point:
 - Avoidance note when a repeated mistake should be easy to spot; durable memory still uses explicit `yam memory add`.
 - Owner route, scope owner, and side effects when more than one person or route may continue the work.
 
-`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, `covered_requirements`, `uncovered_requirements`, `blocked_kind`, `failure_cause`, `recovery_hint`, `safe_retry`, `evidence_level`, `evidence_stamp`, `owner_route`, `owner_scope`, `scope_owner`, `side_effects`, and `avoidance_note`.
+`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, `covered_requirements`, `uncovered_requirements`, `touched_files`, `read_files`, `verified_files`, `skipped_checks`, `stop_condition`, `resume_hint`, `readiness_state`, `blocked_kind`, `failure_cause`, `recovery_hint`, `safe_retry`, `evidence_level`, `evidence_stamp`, `owner_route`, `owner_scope`, `scope_owner`, `side_effects`, and `avoidance_note`.
 
 ## Route Weight
 

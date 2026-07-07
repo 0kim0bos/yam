@@ -147,7 +147,7 @@ Use these artifacts for reference-led implementation or serious visual review. K
 
 Use `references/ueye.md` and `references/ui-quality.md`.
 Use `references/verification-levels.md` for visual proof levels and done-claim truth caps.
-Use `references/study-note.md` when UI code, design docs, config, or project artifacts changed.
+Use `references/study-note.md` when UI code, design docs, config, or project artifacts changed; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
 Always consider:
 
 - Direction fit.
@@ -173,6 +173,7 @@ Report:
 - Review continuity/comparison result when this continues a prior Ueye run.
 - P0-P3 issues or confirmation that no blockers were found.
 - States/viewports checked.
-- Study Note when UI code, design docs, config, or project artifacts changed: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Study Note when UI code, design docs, config, or project artifacts changed: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Architecture hygiene when relevant: flag if the change risks dumping unrelated UI logic into `page.tsx`, one-off component styling into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Truth status and visual verification cap.
 - Handoff when useful: fix-first visual issues, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

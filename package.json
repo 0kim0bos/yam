@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
@@ -59,6 +59,7 @@
     "pack:dry-run": "npm pack --dry-run",
     "publish:dry": "npm publish --dry-run --access public",
     "forbidden-names:check": "node ./scripts/check-forbidden-names.mjs",
+    "study-note:check": "node ./dist/bin/yam.js study-note check --json",
     "package-boundary:check": "node ./scripts/check-package-boundary.mjs",
     "dist:freshness": "node ./scripts/check-dist-freshness.mjs",
     "registry:check": "node ./scripts/check-registry-version.mjs",

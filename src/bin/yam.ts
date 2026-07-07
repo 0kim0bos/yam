@@ -24,7 +24,7 @@ import {
   detectDbSafetyText as detectTrustDbSafetyText,
   isTruthStatus
 } from '../lib/trust-kernel.js';
-import type { LoopEvidenceLevel, ToolIntent } from '../lib/trust-kernel.js';
+import type { LoopEvidenceLevel, ReadinessState, ToolIntent } from '../lib/trust-kernel.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -71,6 +71,7 @@ const PROJECT_PACK = 'yam.project.md';
 const LEGACY_PROJECT_PACK = 'timeto.project.md';
 const PACK_STALE_DAYS = 30;
 const YAM_LITE_HOOK_COMMAND = `node ${path.join(ROOT, 'dist', 'bin', 'yam.js')} hook run lite`;
+const YAM_STUDY_NOTE_HOOK_COMMAND = `node ${path.join(ROOT, 'dist', 'bin', 'yam.js')} hook run study-note`;
 const REQUIRED_PACK_SECTIONS = [
   'Product Direction',
   'UI Direction',
@@ -144,6 +145,7 @@ Usage:
   yam tools doctor [dir]
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
+  yam study-note check [dir] [--report file|--text text] [--json]
   yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
@@ -156,7 +158,7 @@ Usage:
   yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
-  yam hook <status|enable|disable|run> [lite] [--global|--project dir]
+  yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
   yam template <project|ueye|mission|proof|tuning>
   yam tune-log [dir]
   yam install
@@ -532,6 +534,12 @@ function normalizeLoopEvidenceLevelFlag(value = ''): LoopEvidenceLevel {
   return 'none';
 }
 
+function normalizeReadinessStateFlag(value = ''): ReadinessState {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['usable', 'degraded', 'blocked', 'unknown'].includes(text)) return text as ReadinessState;
+  return 'unknown';
+}
+
 function uniqueNextActionDetails(actions = []) {
   const seen = new Set<string>();
   const unique = [];
@@ -706,6 +714,126 @@ async function cleanup(args = []) {
   if (subcommand === 'scan') return cleanupScan(args.slice(1));
   console.error(`unknown cleanup command: ${subcommand}`);
   return cleanupUsage();
+}
+
+async function studyNote(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return studyNoteUsage();
+  if (subcommand === 'check') return studyNoteCheck(args.slice(1));
+  console.error(`unknown study-note command: ${subcommand}`);
+  return studyNoteUsage();
+}
+
+function studyNoteUsage() {
+  console.log(`yam study-note
+
+Usage:
+  yam study-note check [dir] [--report file|--text text] [--json]
+
+Notes:
+  Read-only guard. It checks whether changed work has a Study Note and whether relevant UI/CSS/DB hygiene was reported.
+  It does not generate, edit, or infer the Study Note for you.
+`);
+}
+
+async function studyNoteCheck(args = []) {
+  const flags = parseSimpleFlags(args, new Set(['report', 'text', 'json']));
+  const dir = path.resolve(firstPositional(args) || process.cwd());
+  const changedFiles = await gitChangedFiles(dir);
+  const reportText = await readStudyNoteReportText(flags, dir);
+  const needsStudyNote = changedFiles.length > 0;
+  const hygieneRequirements = studyNoteHygieneRequirements(changedFiles);
+  const checks = [
+    studyNoteGuardCheck('changed_files', needsStudyNote ? 'pass' : 'skipped', needsStudyNote ? 'changed files detected; Study Note is required before final completion' : 'no changed files detected'),
+    studyNoteGuardCheck('study_note_present', !needsStudyNote || hasStudyNoteMarker(reportText) ? 'pass' : 'fail', 'final report should include a Study Note when project artifacts changed'),
+    studyNoteGuardCheck('role_or_responsibility', !needsStudyNote || /(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what the touched code/artifact does'),
+    studyNoteGuardCheck('before_after_or_change', !needsStudyNote || /(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what changed from before to after'),
+    studyNoteGuardCheck('verification_or_limits', !needsStudyNote || /(verification|verified|checked|limits|uncertain|검증|확인|한계|모르는)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what was checked and what remains uncertain')
+  ];
+  for (const requirement of hygieneRequirements) {
+    checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(reportText, requirement), requirement.note));
+  }
+  const blockers = checks.filter((check) => check.status === 'fail').map((check) => `${check.id}: ${check.next_action}`);
+  const result = {
+    schema: 'yam.study-note-guard.v1',
+    generated_at: new Date().toISOString(),
+    project: dir,
+    changed_files: changedFiles,
+    changed_file_count: changedFiles.length,
+    report_source: flags.report ? path.resolve(dir, String(flags.report)) : flags.text ? 'inline_text' : 'not_provided',
+    checks,
+    blockers,
+    next_action: blockers[0] || (needsStudyNote ? 'Study Note guard passed for the supplied report text' : 'no Study Note required because no changed files were detected'),
+    truth_status: blockers.length ? 'blocked' : needsStudyNote ? 'verified' : 'skipped'
+  };
+  printJsonOrHuman(result, Boolean(flags.json), 'Study Note guard');
+  if (blockers.length) process.exitCode = 1;
+}
+
+function firstPositional(args = []) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index] || '');
+    if (arg.startsWith('--')) {
+      if (!arg.includes('=') && !['--json'].includes(arg)) index += 1;
+      continue;
+    }
+    if (arg === 'check') continue;
+    return arg;
+  }
+  return '';
+}
+
+async function gitChangedFiles(dir) {
+  const output = runReadOnlyCommandIn(dir, 'git', ['status', '--short']);
+  return output
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.replace(/^..\s+/, '').replace(/^.* -> /, ''))
+    .map((line) => line.trim())
+    .filter((file) => file && !file.startsWith('dist/') && !file.endsWith('.tgz'));
+}
+
+async function readStudyNoteReportText(flags, dir) {
+  if (flags.text) return String(flags.text || '');
+  if (!flags.report) return '';
+  const file = path.resolve(dir, String(flags.report));
+  try {
+    return await fsp.readFile(file, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function hasStudyNoteMarker(text = '') {
+  return /(study note|study-note|학습\s*노트|스터디\s*노트)/i.test(text);
+}
+
+function studyNoteGuardCheck(id, status, nextAction) {
+  return {
+    id,
+    status,
+    next_action: nextAction,
+    truth_status: status === 'pass' ? 'verified' : status === 'fail' ? 'blocked' : status === 'skipped' ? 'skipped' : 'partial'
+  };
+}
+
+function studyNoteHygieneRequirements(files = []) {
+  const requirements = [];
+  if (files.some((file) => /(^|\/)page\.tsx$/i.test(file))) {
+    requirements.push({ id: 'page_tsx_hygiene', terms: ['page.tsx', 'component', 'hook', 'helper', 'server action', 'route'], note: 'Study Note should say whether page.tsx stayed focused or needs component/hook/helper/server-action separation' });
+  }
+  if (files.some((file) => /(^|\/)global\.css$/i.test(file))) {
+    requirements.push({ id: 'global_css_hygiene', terms: ['global.css', 'token', 'component', 'scoped', 'module', 'utility'], note: 'Study Note should say whether CSS belongs globally or should move to tokens/scoped/component styles' });
+  }
+  if (files.some((file) => /(migration|schema|db|database|sql|prisma|drizzle|supabase)/i.test(file))) {
+    requirements.push({ id: 'jsonb_hygiene', terms: ['jsonb', 'column', 'table', 'constraint', 'index', 'schema', 'relation'], note: 'Study Note should say whether structured product data belongs in typed columns/tables/constraints/indexes instead of broad DB jsonb' });
+  }
+  return requirements;
+}
+
+function requirementSatisfied(text = '', requirement) {
+  const normalized = String(text || '').toLowerCase();
+  return requirement.terms.some((term) => normalized.includes(term.toLowerCase())) ? 'pass' : 'fail';
 }
 
 function cleanupUsage() {
@@ -1270,12 +1398,12 @@ function hookUsage() {
 
 Usage:
   yam hook status [--global|--project dir]
-  yam hook enable lite [--global|--project dir]
-  yam hook disable [lite] [--global|--project dir]
-  yam hook run lite
+  yam hook enable <lite|study-note> [--global|--project dir]
+  yam hook disable [lite|study-note] [--global|--project dir]
+  yam hook run <lite|study-note>
 
 Notes:
-  yam-lite is opt-in and advisory-only. It does not run checks, tmux, subagents, or proof gates.
+  hooks are opt-in and advisory-only. They do not run tmux, subagents, or proof gates.
 `);
 }
 
@@ -1283,8 +1411,8 @@ function parseHookArgs(args = []) {
   const result = { mode: 'project', projectDir: process.cwd(), profile: 'lite' };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === 'lite') {
-      result.profile = 'lite';
+    if (arg === 'lite' || arg === 'study-note') {
+      result.profile = arg;
     } else if (arg === '--global') {
       result.mode = 'global';
     } else if (arg === '--project') {
@@ -1308,13 +1436,21 @@ function isYamLiteHook(handler: AnyRecord = {}) {
   return handler?.type === 'command' && String(handler.command || '').includes('yam.js hook run lite');
 }
 
-function stripYamLiteHooks(config: AnyRecord = {}) {
+function isYamStudyNoteHook(handler: AnyRecord = {}) {
+  return handler?.type === 'command' && String(handler.command || '').includes('yam.js hook run study-note');
+}
+
+function isYamHookProfile(handler: AnyRecord = {}, profile = 'lite') {
+  return profile === 'study-note' ? isYamStudyNoteHook(handler) : isYamLiteHook(handler);
+}
+
+function stripYamHooks(config: AnyRecord = {}, profile = 'lite') {
   const next = { ...config };
   for (const event of Object.keys(next)) {
     const entries = Array.isArray(next[event]) ? next[event] : [];
     const keptEntries = [];
     for (const entry of entries) {
-      const hooks = Array.isArray(entry?.hooks) ? entry.hooks.filter((handler) => !isYamLiteHook(handler)) : [];
+      const hooks = Array.isArray(entry?.hooks) ? entry.hooks.filter((handler) => !isYamHookProfile(handler, profile)) : [];
       const rest = { ...entry, hooks };
       if (hooks.length > 0) keptEntries.push(rest);
     }
@@ -1324,14 +1460,14 @@ function stripYamLiteHooks(config: AnyRecord = {}) {
   return next;
 }
 
-function withYamLiteHook(config: AnyRecord = {}) {
-  const next = stripYamLiteHooks(config);
+function withYamHook(config: AnyRecord = {}, profile = 'lite') {
+  const next = stripYamHooks(config, profile);
   const event = 'UserPromptSubmit';
   const entry = {
     hooks: [
       {
         type: 'command',
-        command: YAM_LITE_HOOK_COMMAND,
+        command: profile === 'study-note' ? YAM_STUDY_NOTE_HOOK_COMMAND : YAM_LITE_HOOK_COMMAND,
         timeout: 5
       }
     ]
@@ -1344,28 +1480,32 @@ async function hookStatus(args = []) {
   const parsed = parseHookArgs(args);
   const target = hookPathFor(parsed);
   const config = await readJsonOrDefault(target, {});
-  const enabled = hookConfigHasYamLite(config);
-  console.log(`yam-lite hook: ${enabled ? 'enabled' : 'disabled'}`);
+  console.log(`yam-lite hook: ${hookConfigHasProfile(config, 'lite') ? 'enabled' : 'disabled'}`);
+  console.log(`yam-study-note hook: ${hookConfigHasProfile(config, 'study-note') ? 'enabled' : 'disabled'}`);
   console.log(`scope: ${parsed.mode}`);
   console.log(`file: ${target}`);
 }
 
 function hookConfigHasYamLite(config = {}) {
+  return hookConfigHasProfile(config, 'lite');
+}
+
+function hookConfigHasProfile(config = {}, profile = 'lite') {
   return Object.values(config).some((entries) => Array.isArray(entries) && entries.some((entry) => {
-    return Array.isArray(entry?.hooks) && entry.hooks.some(isYamLiteHook);
+    return Array.isArray(entry?.hooks) && entry.hooks.some((handler) => isYamHookProfile(handler, profile));
   }));
 }
 
 async function hookEnable(args = []) {
   const parsed = parseHookArgs(args);
-  if (parsed.profile !== 'lite') {
-    console.error('Only yam-lite hook is supported: yam hook enable lite');
+  if (!['lite', 'study-note'].includes(parsed.profile)) {
+    console.error('Only lite and study-note hooks are supported: yam hook enable <lite|study-note>');
     process.exitCode = 1;
     return;
   }
   const target = hookPathFor(parsed);
   const current = await readJsonOrDefault(target, {});
-  const next = withYamLiteHook(current);
+  const next = withYamHook(current, parsed.profile);
   await fsp.mkdir(path.dirname(target), { recursive: true });
   if (await exists(target)) {
     const backup = `${target}.yam-backup-${timestampId()}`;
@@ -1373,7 +1513,7 @@ async function hookEnable(args = []) {
     console.log(`backup: ${backup}`);
   }
   await fsp.writeFile(target, `${JSON.stringify(next, null, 2)}\n`);
-  console.log(`yam-lite hook enabled (${parsed.mode}): ${target}`);
+  console.log(`yam-${parsed.profile} hook enabled (${parsed.mode}): ${target}`);
   console.log('Restart Codex or start a new thread if the app does not pick up hook changes immediately.');
 }
 
@@ -1381,22 +1521,22 @@ async function hookDisable(args = []) {
   const parsed = parseHookArgs(args);
   const target = hookPathFor(parsed);
   const current = await readJsonOrDefault(target, {});
-  if (!hookConfigHasYamLite(current)) {
-    console.log(`yam-lite hook already disabled (${parsed.mode}): ${target}`);
+  if (!hookConfigHasProfile(current, parsed.profile)) {
+    console.log(`yam-${parsed.profile} hook already disabled (${parsed.mode}): ${target}`);
     return;
   }
-  const next = stripYamLiteHooks(current);
+  const next = stripYamHooks(current, parsed.profile);
   if (Object.keys(next).length === 0) {
     await rmrf(target);
   } else {
     await fsp.writeFile(target, `${JSON.stringify(next, null, 2)}\n`);
   }
-  console.log(`yam-lite hook disabled (${parsed.mode}): ${target}`);
+  console.log(`yam-${parsed.profile} hook disabled (${parsed.mode}): ${target}`);
 }
 
 async function hookRun(args = []) {
   const profile = args[0] || 'lite';
-  if (profile !== 'lite') {
+  if (!['lite', 'study-note'].includes(profile)) {
     console.log(JSON.stringify({ continue: true }));
     return;
   }
@@ -1404,7 +1544,9 @@ async function hookRun(args = []) {
   const event = input?.hook_event_name || input?.hookEventName || input?.event || 'UserPromptSubmit';
   const cwd = String(input?.cwd || process.cwd());
   const prompt = extractPrompt(input);
-  const additionalContext = await buildYamLiteContext({ cwd, prompt });
+  const additionalContext = profile === 'study-note'
+    ? await buildStudyNoteHookContext({ cwd })
+    : await buildYamLiteContext({ cwd, prompt });
   const output = {
     continue: true,
     hookSpecificOutput: {
@@ -1455,6 +1597,27 @@ async function buildYamLiteContext({ cwd, prompt }) {
   if (docsHint) lines.push(docsHint);
   const routeHint = yamLiteRouteHint(prompt);
   if (routeHint) lines.push(routeHint);
+  return lines.join('\n');
+}
+
+async function buildStudyNoteHookContext({ cwd }) {
+  const dir = path.resolve(cwd || process.cwd());
+  const changedFiles = await gitChangedFiles(dir);
+  const lines = [
+    'yam Study Note guard active: if this turn changes code, config, release metadata, docs, or project artifacts, include a Study Note in the final response.'
+  ];
+  if (!changedFiles.length) {
+    lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add the Study Note before final.');
+    return lines.join('\n');
+  }
+  lines.push(`Changed files detected (${Math.min(changedFiles.length, 8)} shown): ${changedFiles.slice(0, 8).join(', ')}`);
+  lines.push('Study Note minimum: touched code/artifact, role, execution point, before/after change, expected behavior, one syntax/structure insight, verification, and limits.');
+  const hygiene = studyNoteHygieneRequirements(changedFiles);
+  if (hygiene.length) {
+    lines.push(`Architecture hygiene required: ${hygiene.map((item) => item.id).join(', ')}.`);
+    lines.push('Report whether the change avoided dumping unrelated logic into page.tsx, one-off CSS into global.css, or structured product data into broad DB jsonb.');
+  }
+  lines.push('This hook is advisory; it does not generate or edit the Study Note.');
   return lines.join('\n');
 }
 
@@ -2022,13 +2185,13 @@ function loopUsage() {
 Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, handoff fields, and a short study note. It does not run agents, start processes, publish packages, or write files.
 
 Usage:
-  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--covered-requirement text] [--uncovered-requirement text] [--blocked text] [--blocked-kind text] [--failure-cause text] [--safe-retry text] [--recovery-hint text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--avoidance-note text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
+  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--stop-condition text] [--resume-hint text] [--readiness-state usable|degraded|blocked|unknown] [--covered-requirement text] [--uncovered-requirement text] [--blocked text] [--blocked-kind text] [--failure-cause text] [--safe-retry text] [--recovery-hint text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--avoidance-note text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
 `);
 }
 
 async function loopReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return loopUsage();
-  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'covered-requirement', 'uncovered-requirement', 'blocked', 'blocker', 'blocked-kind', 'failure-cause', 'next-action', 'safe-retry', 'recovery-hint', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'avoidance-note', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'stop-condition', 'resume-hint', 'readiness-state', 'covered-requirement', 'uncovered-requirement', 'blocked', 'blocker', 'blocked-kind', 'failure-cause', 'next-action', 'safe-retry', 'recovery-hint', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'avoidance-note', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
   const blockers = [...arrayFlag(flags.blocked), ...arrayFlag(flags.blocker)];
   const report = buildLoopReport({
     route: normalizeRoute(flags.route) || String(flags.route || ''),
@@ -2040,6 +2203,13 @@ async function loopReport(args = []) {
     evidence_level: normalizeLoopEvidenceLevelFlag(flags.evidence_level),
     evidence_stamp: String(flags.evidence_stamp || ''),
     source_digest: String(flags.source_digest || ''),
+    touched_files: arrayFlag(flags.touched_file),
+    read_files: arrayFlag(flags.read_file),
+    verified_files: arrayFlag(flags.verified_file),
+    skipped_checks: arrayFlag(flags.skipped_check),
+    stop_condition: String(flags.stop_condition || ''),
+    resume_hint: String(flags.resume_hint || ''),
+    readiness_state: normalizeReadinessStateFlag(flags.readiness_state),
     covered_requirements: arrayFlag(flags.covered_requirement),
     uncovered_requirements: arrayFlag(flags.uncovered_requirement),
     blockers,
@@ -2094,7 +2264,7 @@ Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--brief-dimension text] [--constraint text] [--anti-slop text] [--invented-metric] [--placeholder-copy] [--generic-visual] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--brief-dimension text] [--constraint text] [--anti-slop text] [--invented-metric] [--placeholder-copy] [--generic-visual] [--acceptance-criterion text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--residual-risk text] [--stop-condition text] [--resume-hint text] [--deep-visual-check text] [--design-system-evidence text] [--implementation-evidence text] [--state-check default:pass] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
@@ -2331,7 +2501,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'brief-dimension', 'constraint', 'anti-slop', 'invented-metric', 'placeholder-copy', 'generic-visual', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'brief-dimension', 'constraint', 'anti-slop', 'invented-metric', 'placeholder-copy', 'generic-visual', 'acceptance-criterion', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'residual-risk', 'stop-condition', 'resume-hint', 'deep-visual-check', 'design-system-evidence', 'implementation-evidence', 'state-check', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -2435,6 +2605,20 @@ async function ueyeReport(args = []) {
       cta_checked: Boolean(flags.cta_checked),
       direction_locked: Boolean(flags.direction_locked),
       reference_read: Boolean(flags.reference_read)
+    },
+    deep_visual_review: {
+      acceptance_criteria: arrayFlag(flags.acceptance_criterion),
+      touched_files: arrayFlag(flags.touched_file),
+      read_files: arrayFlag(flags.read_file),
+      verified_files: arrayFlag(flags.verified_file),
+      skipped_checks: arrayFlag(flags.skipped_check),
+      residual_risks: arrayFlag(flags.residual_risk),
+      stop_condition: String(flags.stop_condition || ''),
+      resume_hint: String(flags.resume_hint || ''),
+      deep_visual_checks: arrayFlag(flags.deep_visual_check),
+      design_system_evidence: arrayFlag(flags.design_system_evidence),
+      implementation_evidence: arrayFlag(flags.implementation_evidence),
+      state_check: arrayFlag(flags.state_check)
     },
     blocked_reason: blockedReason,
     next_action: String(flags.next_visual_action || flags.next_action || '')
@@ -4193,6 +4377,7 @@ async function main() {
   if (command === 'measure') return measure(process.argv[3], process.argv.slice(4));
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
+  if (command === 'study-note') return studyNote(process.argv.slice(3));
   if (command === 'loop') return loop(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'media') return media(process.argv.slice(3));

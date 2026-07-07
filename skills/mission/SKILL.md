@@ -87,7 +87,7 @@ Use `references/db-supabase-safety-lite.md` for destructive DB/Supabase, migrati
 Use `references/current-docs.md` when any lane depends on current SDK/API/cloud-service behavior.
 Use `references/verification-levels.md` for L4-L5 mission proof boundaries.
 Use `references/honest-completion.md`; do not overclaim.
-Use `references/study-note.md` for every lane that changes code, config, docs, release metadata, or project artifacts.
+Use `references/study-note.md` for every lane that changes code, config, docs, release metadata, or project artifacts; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
 Use `references/final-report.md` to close with remaining tasks and fix-first items.
 Use `references/token-budget-reporter.md` when budget drift matters.
 
@@ -110,7 +110,8 @@ Report:
 
 - What the mission changed.
 - Role/cross-verification summary.
-- Study Note for any lane that changed code, config, docs, release metadata, or project artifacts: what changed, what role it has, what was wrong or missing, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Study Note for any lane that changed code, config, docs, release metadata, or project artifacts: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Architecture hygiene when relevant: flag if the change risks dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Evidence gathered.
 - Truth status.
 - Cleanup status.

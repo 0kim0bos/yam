@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -12,7 +12,8 @@
     "Context-reuse first.",
     "End with remaining tasks and fix-first items.",
     "When code, config, release metadata, documentation, or project artifacts changed, include a Study Note even if no yam skill was explicitly invoked.",
-    "Explain what changed, what role it has, what was wrong or missing when relevant, what behavior is expected, and one useful syntax or structure insight in short non-specialist language.",
+    "Explain what changed, what role it has, where it runs or is read, what was wrong or missing when relevant, before/after behavior, expected behavior, and one useful syntax or structure insight in short non-specialist language.",
+    "When relevant, include architecture hygiene: avoid dumping unrelated logic into page.tsx, one-off component CSS into global.css, or structured product data into broad DB jsonb blobs when better project boundaries exist.",
     "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful.",
     "Use bounded heavy verification for serious claims, with explicit stop conditions instead of endless proof loops."
   ],

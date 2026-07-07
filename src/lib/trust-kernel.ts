@@ -20,6 +20,7 @@ export type RuntimeClaim = 'not_started' | 'started' | 'observed' | 'stopped' | 
 export type LoopStageStatus = 'passed' | 'failed' | 'blocked' | 'skipped' | 'partial' | 'pending' | 'recorded';
 export type LoopEvidenceLevel = 'none' | 'fixture' | 'smoke' | 'local' | 'real';
 export type ToolIntent = 'read_only' | 'write' | 'destructive' | 'runtime' | 'visual' | 'publish';
+export type ReadinessState = 'usable' | 'degraded' | 'blocked' | 'unknown';
 
 export interface SafetyHit {
   level: SafetyLevel;
@@ -189,6 +190,13 @@ export interface LoopReport {
   evidence_level: LoopEvidenceLevel;
   evidence_stamp: string;
   source_digest: string;
+  touched_files: string[];
+  read_files: string[];
+  verified_files: string[];
+  skipped_checks: string[];
+  stop_condition: string;
+  resume_hint: string;
+  readiness_state: ReadinessState;
   covered_requirements: string[];
   uncovered_requirements: string[];
   blockers: string[];
@@ -220,6 +228,7 @@ export interface UeyeRunReport {
   implementation_sources: UeyeVisualProvenance[];
   surface_context: UeyeSurfaceContext;
   design_completion_gate: UeyeDesignCompletionGate;
+  deep_visual_review: UeyeDeepVisualReview;
   comparison_result: string;
   design_quality: string;
   blocked_reason: string;
@@ -227,8 +236,29 @@ export interface UeyeRunReport {
   truth_status: TruthStatus;
 }
 
-export interface UeyeRunReportInput extends Partial<Omit<UeyeRunReport, 'design_completion_gate'>> {
+export interface UeyeRunReportInput extends Partial<Omit<UeyeRunReport, 'design_completion_gate' | 'deep_visual_review'>> {
   design_completion_gate?: Partial<UeyeDesignCompletionGate> & Record<string, unknown>;
+  deep_visual_review?: Partial<UeyeDeepVisualReview> & Record<string, unknown>;
+}
+
+export interface UeyeDeepVisualReview {
+  schema: 'yam.ueye-deep-visual-review.v1';
+  acceptance_criteria: string[];
+  touched_files: string[];
+  read_files: string[];
+  verified_files: string[];
+  skipped_checks: string[];
+  residual_risks: string[];
+  stop_condition: string;
+  resume_hint: string;
+  deep_visual_checks: string[];
+  design_system_evidence: string[];
+  state_matrix: Record<string, string>;
+  implementation_evidence: string[];
+  blockers: string[];
+  warnings: string[];
+  next_action: string;
+  truth_status: TruthStatus;
 }
 
 export interface MediaGenerationProof {
@@ -555,24 +585,32 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     ? input.stages.map((stage) => buildLoopStage(stage))
     : [];
   const evidence = asList(input.evidence);
+  const touchedFiles = asList(input.touched_files || input.touched_file);
+  const readFiles = asList(input.read_files || input.read_file);
+  const verifiedFiles = asList(input.verified_files || input.verified_file);
+  const skippedChecks = asList(input.skipped_checks || input.skipped_check);
+  const stopCondition = shortText(input.stop_condition);
+  const resumeHint = shortText(input.resume_hint);
+  const readinessState = normalizeReadinessState(input.readiness_state);
   const coveredRequirements = asList(input.covered_requirements || input.covered_requirement);
   const uncoveredRequirements = asList(input.uncovered_requirements || input.uncovered_requirement);
   const blockers = asList(input.blockers || input.blocked);
   const blockedBy = asList(input.blocked_by);
-  const blockedKind = shortText(input.blocked_kind || (uncoveredRequirements.length ? 'requirement_uncovered' : blockers.length || blockedBy.length ? 'evidence_missing' : ''));
+  const blockedKind = shortText(input.blocked_kind || (readinessState === 'blocked' ? 'readiness_blocked' : uncoveredRequirements.length ? 'requirement_uncovered' : blockers.length || blockedBy.length ? 'evidence_missing' : ''));
   const failureCause = shortText(input.failure_cause);
   const recoveryHint = shortText(input.recovery_hint);
   const avoidanceNote = shortText(input.avoidance_note);
   const evidenceStamp = shortText(input.evidence_stamp || input.source_digest, 320);
   const sourceDigest = shortText(input.source_digest || input.evidence_stamp, 320);
   const hasBlockedStage = stages.some((stage) => stage.status === 'blocked' || stage.status === 'failed');
-  const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind || uncoveredRequirements.length);
+  const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind || uncoveredRequirements.length || readinessState === 'blocked');
   const requestedTruth = isTruthStatus(input.truth_status) ? input.truth_status : '';
   const derivedTruth: TruthStatus = hasBlockerSignal || hasBlockedStage ? 'blocked'
     : evidence.length && stages.some((stage) => stage.status === 'passed') ? 'verified'
       : evidence.length || stages.length ? 'partial'
         : 'assumed';
-  const truth = requestedTruth ? weakestTruth(requestedTruth, derivedTruth) : derivedTruth;
+  const readinessCap = readinessState === 'blocked' ? 'blocked' : readinessState === 'degraded' ? 'partial' : '';
+  const truth = requestedTruth ? weakestTruth(requestedTruth, derivedTruth, readinessCap) : weakestTruth(derivedTruth, readinessCap);
   const studyNote = buildStudyNote(input.study_note && typeof input.study_note === 'object' ? input.study_note as unknown as Record<string, unknown> : input);
   const intentLabel = normalizeToolIntentLabel(input.intent_label || input.tool_intent);
   return {
@@ -589,6 +627,13 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     evidence_level: normalizeLoopEvidenceLevel(input.evidence_level),
     evidence_stamp: evidenceStamp,
     source_digest: sourceDigest,
+    touched_files: touchedFiles,
+    read_files: readFiles,
+    verified_files: verifiedFiles,
+    skipped_checks: skippedChecks,
+    stop_condition: stopCondition,
+    resume_hint: resumeHint,
+    readiness_state: readinessState,
     covered_requirements: coveredRequirements,
     uncovered_requirements: uncoveredRequirements,
     blockers,
@@ -597,7 +642,7 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     truth_status: truth,
     intent_label: intentLabel,
     tool_intent: intentLabel,
-    next_action: shortText(input.next_action || (uncoveredRequirements.length ? `cover requirement before claiming complete: ${uncoveredRequirements[0]}` : hasBlockerSignal ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
+    next_action: shortText(input.next_action || (readinessState === 'blocked' ? 'restore readiness before claiming this loop complete' : uncoveredRequirements.length ? `cover requirement before claiming complete: ${uncoveredRequirements[0]}` : hasBlockerSignal ? 'resolve the blocker before claiming this loop complete' : 'record the next smallest useful action')),
     safe_retry: shortText(input.safe_retry || (hasBlockerSignal ? 'retry only after the blocker is resolved and new evidence is recorded' : 'not required')),
     recovery_hint: recoveryHint,
     fix_first_items: asList(input.fix_first_items || input.fix_first_item),
@@ -625,6 +670,7 @@ export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunRepor
   const blockedReason = String(input.blocked_reason || '');
   const comparisonResult = String(input.comparison_result || 'not-verified');
   const hasImplementation = implementations.length > 0;
+  const deepVisualReview = buildUeyeDeepVisualReview(input.deep_visual_review);
   const derivedTruth: TruthStatus = blockedReason ? 'blocked'
     : !references.length && !hasImplementation ? 'assumed'
       : comparisonResult === 'matched' && hasImplementation ? 'verified'
@@ -639,7 +685,8 @@ export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunRepor
     blocked_reason: blockedReason
   });
   const shouldApplyDesignGate = gate.mode === 'strict' || gate.completion_claim === 'done' || gate.blockers.length > 0;
-  const finalTruth = shouldApplyDesignGate ? weakestTruth(derivedTruth, gate.truth_status) : derivedTruth;
+  const deepTruthCap = deepVisualReview.truth_status === 'assumed' ? '' : deepVisualReview.truth_status;
+  const finalTruth = shouldApplyDesignGate ? weakestTruth(derivedTruth, gate.truth_status, deepTruthCap) : weakestTruth(derivedTruth, deepTruthCap);
   return {
     schema: 'yam.ueye-run-report.v1',
     reference_sources: references,
@@ -649,11 +696,75 @@ export function buildUeyeRunReport(input: UeyeRunReportInput = {}): UeyeRunRepor
       truth_status: isTruthStatus(input.surface_context?.truth_status) ? input.surface_context?.truth_status : finalTruth
     }),
     design_completion_gate: gate,
+    deep_visual_review: deepVisualReview,
     comparison_result: comparisonResult,
     design_quality: String(input.design_quality || 'not-checked'),
     blocked_reason: blockedReason,
-    next_action: String(input.next_action || gate.blockers[0] || (finalTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
+    next_action: String(input.next_action || gate.blockers[0] || deepVisualReview.blockers[0] || (finalTruth === 'verified' ? 'no action required' : 'capture or provide implementation screenshot before claiming verified visual status')),
     truth_status: isTruthStatus(input.truth_status) ? input.truth_status : finalTruth
+  };
+}
+
+export function buildUeyeDeepVisualReview(input: Partial<UeyeDeepVisualReview> & Record<string, unknown> = {}): UeyeDeepVisualReview {
+  const acceptanceCriteria = asList(input.acceptance_criteria || input.acceptance_criterion);
+  const touchedFiles = asList(input.touched_files || input.touched_file);
+  const readFiles = asList(input.read_files || input.read_file);
+  const verifiedFiles = asList(input.verified_files || input.verified_file);
+  const skippedChecks = asList(input.skipped_checks || input.skipped_check);
+  const residualRisks = asList(input.residual_risks || input.residual_risk);
+  const deepVisualChecks = asList(input.deep_visual_checks || input.deep_visual_check);
+  const designSystemEvidence = asList(input.design_system_evidence || input.design_system);
+  const implementationEvidence = asList(input.implementation_evidence || input.implementation_evidence_item);
+  const stateMatrix = buildStateMatrix(input.state_matrix, input);
+  const stopCondition = shortText(input.stop_condition);
+  const resumeHint = shortText(input.resume_hint);
+  const blockers = [
+    ...asList(input.blockers || input.blocked),
+    ...(Object.values(stateMatrix).some((status) => status === 'fail' || status === 'blocked') ? ['state_matrix: fix failed or blocked UI states before claiming done'] : [])
+  ];
+  const warnings = [
+    ...asList(input.warnings || input.warning),
+    ...skippedChecks.map((check) => `skipped: ${check}`),
+    ...residualRisks.map((risk) => `risk: ${risk}`),
+    ...(acceptanceCriteria.length && !implementationEvidence.length ? ['implementation_evidence: record how the UI was checked against acceptance criteria'] : [])
+  ];
+  const hasAnySignal = Boolean(
+    acceptanceCriteria.length ||
+    touchedFiles.length ||
+    readFiles.length ||
+    verifiedFiles.length ||
+    skippedChecks.length ||
+    residualRisks.length ||
+    stopCondition ||
+    resumeHint ||
+    deepVisualChecks.length ||
+    designSystemEvidence.length ||
+    implementationEvidence.length ||
+    Object.keys(stateMatrix).length
+  );
+  const truth: TruthStatus = blockers.length ? 'blocked'
+    : hasAnySignal && skippedChecks.length ? 'partial'
+      : hasAnySignal && implementationEvidence.length ? 'verified'
+        : hasAnySignal ? 'partial'
+          : 'assumed';
+  return {
+    schema: 'yam.ueye-deep-visual-review.v1',
+    acceptance_criteria: acceptanceCriteria,
+    touched_files: touchedFiles,
+    read_files: readFiles,
+    verified_files: verifiedFiles,
+    skipped_checks: skippedChecks,
+    residual_risks: residualRisks,
+    stop_condition: stopCondition,
+    resume_hint: resumeHint,
+    deep_visual_checks: deepVisualChecks,
+    design_system_evidence: designSystemEvidence,
+    state_matrix: stateMatrix,
+    implementation_evidence: implementationEvidence,
+    blockers,
+    warnings,
+    next_action: shortText(input.next_action || blockers[0] || warnings[0] || (hasAnySignal ? 'continue with the recorded Ueye verification boundary' : 'record acceptance criteria and visual evidence when Ueye needs deep verification')),
+    truth_status: isTruthStatus(input.truth_status) ? input.truth_status : truth
   };
 }
 
@@ -739,6 +850,43 @@ function normalizeLoopEvidenceLevel(value: unknown = ''): LoopEvidenceLevel {
   const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
   if (['fixture', 'smoke', 'local', 'real'].includes(text)) return text as LoopEvidenceLevel;
   return 'none';
+}
+
+function normalizeReadinessState(value: unknown = ''): ReadinessState {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['usable', 'degraded', 'blocked', 'unknown'].includes(text)) return text as ReadinessState;
+  return 'unknown';
+}
+
+function buildStateMatrix(rawStateMatrix: unknown = null, input: Record<string, unknown> = {}): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (rawStateMatrix && typeof rawStateMatrix === 'object' && !Array.isArray(rawStateMatrix)) {
+    for (const [key, value] of Object.entries(rawStateMatrix as Record<string, unknown>)) {
+      const name = shortText(key, 80);
+      if (name) result[name] = normalizeStateCheckStatus(value);
+    }
+  }
+  for (const item of asList(input.state_check)) {
+    const [name = '', rawStatus = 'checked'] = item.split(':');
+    const key = shortText(name, 80);
+    if (key) result[key] = normalizeStateCheckStatus(rawStatus);
+  }
+  for (const key of ['default', 'loading', 'error', 'empty', 'disabled', 'hover', 'focus', 'mobile']) {
+    const value = input[`${key}_state`];
+    if (value !== undefined) result[key] = normalizeStateCheckStatus(value);
+  }
+  return result;
+}
+
+function normalizeStateCheckStatus(value: unknown = ''): string {
+  const text = String(value || '').toLowerCase().replace(/[-\s]/g, '_');
+  if (['pass', 'checked', 'verified', 'ok'].includes(text)) return 'pass';
+  if (['fail', 'failed', 'broken'].includes(text)) return 'fail';
+  if (['blocked', 'missing'].includes(text)) return 'blocked';
+  if (['skipped', 'skip'].includes(text)) return 'skipped';
+  if (['partial', 'needs_polish', 'warning'].includes(text)) return 'partial';
+  if (['not_checked', 'unknown'].includes(text)) return 'not_checked';
+  return shortText(value, 80) || 'checked';
 }
 
 function shortText(value: unknown = '', limit = 240): string {

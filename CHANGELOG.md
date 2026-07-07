@@ -2,6 +2,20 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.2.0 - 2026-07-07
+
+### Added
+
+- Added `yam study-note check` as a read-only Study Note Guard Lite for changed files and supplied final-report text.
+- Added an opt-in `study-note` hook profile via `yam hook enable study-note --global` for prompt-time Study Note reminders without auto-generating or editing reports.
+- Extended `yam loop report --json` with resume-ready handoff fields: touched/read/verified files, skipped checks, stop condition, resume hint, and readiness state.
+- Added Ueye deep visual review fields for acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and state matrix.
+
+### Improved
+
+- Strengthened Study Note v3 guidance for non-developer learning with execution point, before/after behavior, expected behavior, and architecture hygiene checks for `page.tsx`, `global.css`, and DB `jsonb` boundaries.
+- Strengthened Ueye guidance so serious UI work can carry Deep-grade verification inside the Ueye route without requiring a separate Deep route.
+
 ## v2.1.0 - 2026-06-30
 
 ### Added

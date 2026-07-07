@@ -59,7 +59,8 @@
 ## Report Policy
 
 - Study Note requirement for changed code/config/release metadata/docs/artifacts:
-- Explain touched code or artifact role, changed behavior, one syntax/structure insight, verification, and uncertainty:
+- Explain touched code or artifact role, execution point, before/after behavior, one syntax/structure insight, verification, and uncertainty:
+- Architecture hygiene checks for `page.tsx`, `global.css`, and DB `jsonb` overuse:
 - Always include remaining tasks or useful improvements:
 - Preserve source boundaries for research/proof notes:
 
