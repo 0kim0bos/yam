@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -36,8 +36,8 @@
     },
     {
       "id": "scout",
-      "stage": "v0.1",
-      "purpose": "Lightweight investigation and recommendation without code changes by default."
+      "stage": "v0.2",
+      "purpose": "Investigation, wide search, evidence-led source mapping, blocked-source fallback, opposition pass, and recommendation without code changes by default."
     },
     {
       "id": "deep",

@@ -16,6 +16,7 @@ Use for:
 - Objective and subjective evaluation together.
 - Macro, realistic, and future-facing judgment.
 - Broad reference scans when the user needs wider perspective.
+- Wide search across source classes, markets, tools, harnesses, agent patterns, or third-party ecosystems.
 - Security-centered direction checks before implementation.
 - Finding patterns worth reworking into yam style.
 
@@ -31,6 +32,11 @@ Use for:
 - Do not change code unless the user asks.
 - Return a practical recommendation.
 - Separate fact, inference, opinion, and recommendation.
+- Use an evidence ledger for wide scans: claim, source or local evidence, confidence, and uncertainty.
+- Run an opposition pass for broad recommendations: name the strongest reason the preferred direction may be wrong.
+- Use blocked-source acquisition only when a high-signal source is blocked, protected by WAF, or hosted on a platform that ordinary fetch cannot read.
+- Treat `insane-search` as a source acquisition subroutine, not as Scout's default search path.
+- Use real subagents or parallel agent lanes only when the user explicitly asks for delegation, subagents, or parallel agent work and the environment supports it.
 - Treat "objective" as evidence plus constraints, not certainty theater.
 - Treat "subjective" as named taste, product instinct, and likely user perception.
 - Security is the first lens: call out auth, payment, DB, secrets, permission, deployment, supply-chain, and public-release risks early.
@@ -46,13 +52,17 @@ Use for:
    - design/reference scan
    - product/technical direction memo
    - risk discovery
+   - wide scan
 3. Read `yam.project.md` first when project direction matters.
 4. Gather enough high-signal sources to support the decision; keep source quality higher than source volume.
-5. Compare options by fit, risk, cost, implementation effort, and durability.
-6. Identify security and trust implications before convenience or aesthetics.
-7. Give both objective and subjective judgment when useful.
-8. Recommend a direction and which ideas are worth reworking into yam style.
-9. State uncertainty and what would change the recommendation.
+5. For wide scans, build a source map before deep reading: official/primary, implementation evidence, third-party analysis, community reports, contrarian sources, and local evidence.
+6. Recover blocked high-signal sources through the blocked-source fallback only when ordinary access fails or is predictably blocked.
+7. Compare options by fit, risk, cost, implementation effort, durability, and evidence quality.
+8. Identify security and trust implications before convenience or aesthetics.
+9. Give both objective and subjective judgment when useful.
+10. Run an opposition pass when making a broad recommendation.
+11. Recommend a direction and which ideas are worth reworking into yam style.
+12. State uncertainty and what would change the recommendation.
 
 ## Output
 
@@ -65,6 +75,8 @@ Use concise sections:
 - Alternatives.
 - Risks.
 - Security lens.
+- Evidence ledger.
+- Opposition pass.
 - Ideas to rework into yam style.
 - Sources or local evidence.
 - Remaining tasks or useful next improvements.
@@ -72,6 +84,7 @@ Use concise sections:
 Use `references/token-economy.md`; default to 3-7 high-signal sources unless the user asks for a broad research scan.
 Use `references/current-docs.md` for current SDK/API/cloud-service questions.
 Use `references/context-reuse.md`; do not rescout known decisions unless they may be stale.
+Use `references/scout-wide-scan.md` when the user asks for broad search, powerful outside patterns, harness/agent comparisons, or ecosystem scans.
 Use `references/markdown-management.md` before creating or updating project packs.
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.

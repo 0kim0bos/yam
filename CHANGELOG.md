@@ -2,6 +2,15 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.2.1 - 2026-07-09
+
+### Improved
+
+- Strengthened `$scout` into a wider research harness with source mapping, evidence ledger, opposition pass, and blocked-source fallback guidance.
+- Added `references/scout-wide-scan.md` for broad searches across tools, agent systems, protocols, harnesses, markets, and third-party ecosystems.
+- Clarified that `insane-search` should be used as blocked-source acquisition for high-signal sources, not as Scout's default search path.
+- Clarified that real subagent or parallel research lanes are explicit-only and should not turn ordinary scouting into `$mission`.
+
 ## v2.2.0 - 2026-07-07
 
 ### Added
