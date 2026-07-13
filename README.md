@@ -143,9 +143,15 @@ yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
 yam ueye preflight /path/to/project --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --acceptance-criterion "primary CTA remains visible on mobile" --state-check default:pass --state-check mobile:partial --implementation-evidence "browser screenshot reviewed" --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --app-surface codex-app --browser-surface in-app-browser --preserved-state --json
+yam ueye asset add --manifest .yam/ueye/assets.json --id official-logo --file ./assets/logo.png --license-note "operator supplied; local review" --operator-provided --do-not-replace --json
+yam ueye asset verify --manifest .yam/ueye/assets.json --json
+yam ueye revision archive --file .yam/screens/home.png --round 1 --artifact-id home --root .yam/ueye/revisions --json
+yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
 yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
+yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "read-only review" --evidence "review completed without edits" --out .yam/mission/reviewer-1.json --json
+yam mission gate --expected-thread reviewer-1 --receipt .yam/mission/reviewer-1.json --out .yam/mission/completion.json --json
 yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam release report --json
 yam safety "supabase db reset"
@@ -199,6 +205,8 @@ Publishing still requires confirming the final npm package name and account acce
 - runtime backend evidence
 - runtime evidence mini summaries
 - mission patch queue lite records
+- Mission read-only reviewer/doctor contracts, subagent receipts, and completion gate
+- Ueye local asset provenance and non-overwriting revision history
 - release report JSON
 - loop report JSON
 - study note JSON
@@ -220,6 +228,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 
 - Runtime evidence mini: compact route, command/process, observation, cleanup, truth status, and next action fields for `$deep` or `$mission` runtime claims.
 - Patch queue lite: `$mission` lane records with pending/applied/verified/reverted/blocked state, changed files, verification hint, rollback hint, truth status, and next action.
+- Mission completion receipt: every expected thread records lifecycle and outcome separately; reviewer/doctor write access, missing evidence, ambiguous stops, and receipt inventory gaps block the aggregate gate.
 - Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, and L5 bounded deep. Heavier claims require heavier evidence, but stop conditions prevent endless proof loops.
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, readiness receipt, and final truth status.
 - Loop report JSON: `yam loop report --json` records a read-only handoff artifact: guided stages, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, requirement coverage, evidence level/stamp, blocker kind, failure cause, safe retry, recovery hint, owner route/scope, side effects, next action, fix-first items, remaining tasks, recommended direction, implementation notes, blocked-by notes, avoidance note, tool intent, truth status, and study note.
@@ -237,6 +246,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Ueye design completion gate: `$ueye` can stay fast for draft work, but a `done` claim is capped until implementation evidence, comparison/design-quality status, P0/P1 status, key states, mobile/responsive behavior, contrast/accessibility visuals, CTA affordance, and direction/reference-read proof are recorded when relevant.
 - Ueye design brief and anti-slop review: `$ueye` reports can record operator-provided brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom anti-slop blockers. P0 anti-slop findings block `done` claims.
 - Ueye deep visual review: `$ueye` can record acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and a state matrix so serious UI work can carry Deep-grade verification without leaving the Ueye route.
+- Ueye asset/revision integrity: `$ueye` can record license/provenance and protected/editable flags for local references, then preserve pre-edit artifacts in hash-verified numbered rounds.
 
 ## Ueye Capture And Compare
 
@@ -246,6 +256,8 @@ These shapes keep reports machine-readable without turning normal work into a he
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
 yam ueye preflight . --json
+yam ueye asset verify --manifest .yam/ueye/assets.json --json
+yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --brief-dimension "primary CTA clarity" --constraint "mobile first" --anti-slop "placeholder copy remains" --acceptance-criterion "pricing card CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --skipped-check "hover state not checked on touch viewport" --residual-risk "tablet breakpoint still needs visual pass" --stop-condition "stop after primary states are checked and residual risk is recorded" --resume-hint "capture tablet screenshot next" --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 

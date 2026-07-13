@@ -35,6 +35,8 @@ Do not use for:
 - If the user explicitly insists on `$mission` despite unavailable subagents, mark the mission `partial` or `blocked` instead of pretending role-play is team execution.
 - Use tmux/dev server/browser QA only when the mission needs runtime evidence.
 - Cross-verify before claiming completion.
+- Reviewer and doctor lanes are read-only by default: they may inspect and run non-mutating checks, but they must not claim changed files or write access.
+- A subagent stop event is lifecycle evidence, not success evidence. Every spawned thread needs an explicit outcome and verification evidence.
 - Do not claim verified, cleaned up, or visually checked without evidence.
 - Doctor scan is mandatory for mission finalization, but it should stay concise.
 
@@ -48,15 +50,18 @@ Do not use for:
    - Reviewer: checks code, risk, and project direction.
    - UX/browser verifier: checks screen behavior when relevant.
    - Doctor/scanner: checks direction fit, scope control, verification, cleanup, stale context, and false-completion risk.
+   - Keep Reviewer and Doctor read-only; if either must implement a fix, hand it back to an Implementer lane or create a new bounded write lane.
 5. Execute the implementation in bounded steps.
 6. Record a compact patch envelope for each real lane that changes code.
 7. Add rollback hints for touched files, generated files, before checks, and safe revert notes.
 8. Use `$deep`-style runtime verification when the mission needs dev server, tmux, test watcher, browser QA, cleanup, or before/after evidence.
 9. Cross-check findings and resolve contradictions.
-10. Run the smallest honest final verification set.
-11. Run doctor scan with `references/doctor-scan.md`.
-12. Confirm cleanup or explicitly report intentionally running processes.
-13. Produce final proof summary, truth status, remaining tasks, and fix-first items.
+10. Record one `yam mission receipt` for every spawned thread. `stopped` without `passed|failed|blocked` remains ambiguous and cannot support completion.
+11. Run `yam mission gate` against the expected thread inventory and receipts.
+12. Run the smallest honest final verification set.
+13. Run doctor scan with `references/doctor-scan.md`.
+14. Confirm cleanup or explicitly report intentionally running processes.
+15. Produce final proof summary, truth status, remaining tasks, and fix-first items.
 
 Mission stop condition:
 
@@ -73,6 +78,8 @@ Include:
 - Subagent decision: used / downgraded_to_deep / unavailable_partial / blocked, with reason.
 - Files or surfaces changed.
 - Patch envelope for each real code-changing lane.
+- Subagent receipt for every expected thread.
+- Passing Mission completion gate before a `verified` or `proven` Mission claim.
 - Rollback hint for risky or multi-file changes.
 - Runtime/tmux/browser evidence when used.
 - Cross-verification result.
@@ -90,6 +97,14 @@ Use `references/honest-completion.md`; do not overclaim.
 Use `references/study-note.md` for every lane that changes code, config, docs, release metadata, or project artifacts; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
 Use `references/final-report.md` to close with remaining tasks and fix-first items.
 Use `references/token-budget-reporter.md` when budget drift matters.
+
+Useful CLI artifacts:
+
+```bash
+yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "read-only review" --evidence "review findings recorded" --out .yam/mission/reviewer-1.json --json
+yam mission gate --expected-thread reviewer-1 --receipt .yam/mission/reviewer-1.json --out .yam/mission/completion.json --json
+yam proof --route mission --truth verified --mission-completion "$(<.yam/mission/completion.json)" --json
+```
 
 ## Prompt Pattern
 

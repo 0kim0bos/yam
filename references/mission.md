@@ -27,6 +27,13 @@ Role model:
 - UX/browser verifier: checks UI behavior, browser state, screenshots, or flows when relevant.
 - Doctor/scanner: checks direction fit, scope control, command output, stale instructions, runtime/cleanup evidence, false-completion risk, and remaining fix-first items.
 
+Read-only role contract:
+
+- Reviewer and Doctor default to `access_mode: read_only`.
+- They may read files, search, inspect diffs, and run non-mutating diagnostics.
+- They must not claim `changed_files` or use write access.
+- When review finds a needed fix, return a patch request to an Implementer lane instead of silently changing the implementation.
+
 Subagent policy:
 
 - Mission requires real subagent/team orchestration to be considered a full mission.
@@ -35,6 +42,15 @@ Subagent policy:
 - If the user invoked mission but real subagents are unavailable or unsafe, downgrade to `deep` by default and report `subagent decision: downgraded_to_deep`.
 - If the user explicitly insists on mission despite missing subagents, mark the result `partial` or `blocked`; do not treat self-review as team execution.
 - The final proof must record the subagent decision: `used`, `downgraded_to_deep`, `unavailable_partial`, or `blocked`, with the reason.
+
+Subagent completion receipts:
+
+- Record one `yam.mission-subagent-receipt.v1` for every expected thread.
+- Lifecycle and outcome are separate: `stopped` only means the thread ended.
+- A passed receipt requires an explicit `outcome: passed`, bounded scope, and verification evidence.
+- Failed, blocked, ambiguous, missing, duplicated, unexpected, or read-only-violating receipts block the aggregate gate.
+- `yam mission gate` compares receipt files with the expected thread inventory and produces `yam.mission-completion-gate.v1`.
+- A Mission proof requesting `verified` or `proven` is capped when this gate is missing or blocked.
 
 Patch envelope:
 

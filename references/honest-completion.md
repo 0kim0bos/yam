@@ -64,6 +64,7 @@ Runtime work needs stronger evidence because long-running processes can create f
 - No automatic tmux for ordinary work.
 - No release-blocking runtime proof unless the user chooses `$deep` or `$mission`.
 - No full `$mission` claim without real subagent/team evidence; downgrade to `$deep`, or mark mission partial/blocked.
+- No verified/proven Mission claim without a passing completion gate covering every expected thread; lifecycle stop alone is not success.
 
 Design baseline:
 

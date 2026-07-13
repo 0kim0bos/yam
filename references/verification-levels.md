@@ -143,7 +143,7 @@ Stop condition:
 - `$quick`: L1-L2 by default; L3 only when the claim needs it.
 - `$ueye`: L1-L3 for ordinary UI work; L4 when claiming visual done.
 - `$deep`: L3-L5 when risk or user intent calls for strong verification.
-- `$mission`: L4-L5 when real subagents/team lanes are used, with cross-verification.
+- `$mission`: L4-L5 when real subagents/team lanes are used, with cross-verification, per-thread receipts, and a passing aggregate completion gate.
 
 ## Completion Claim Rule
 
@@ -154,5 +154,6 @@ Completion claims require evidence at or above the level implied by the claim:
 - UI done claim: L3-L4 with visual evidence when feasible.
 - Runtime/cleanup claim: L4.
 - Release/auth/DB/security claim: L4-L5.
+- Mission verified/proven claim: L4-L5 plus expected-thread receipt coverage and completion gate.
 
 If the evidence level is lower than the claim, lower the truth status and report the gap.

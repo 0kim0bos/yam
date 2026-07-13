@@ -42,6 +42,32 @@
 | comparison_result | matched / similar / different / not-verified / not-applicable |
 | truth_status | verified / partial / skipped / blocked / assumed |
 
+## Asset Manifest
+
+| Field | Value |
+| --- | --- |
+| manifest_path |  |
+| asset_id |  |
+| source_url/page |  |
+| license_note |  |
+| operator_provided | true / false |
+| do_not_replace | true / false |
+| allowed_for_edit | true / false |
+| sha256 | unknown |
+| dimensions | unknown |
+| verification | verified / partial / blocked |
+
+## Revision History
+
+| Field | Value |
+| --- | --- |
+| manifest_path |  |
+| artifact_id |  |
+| round |  |
+| archived_path |  |
+| sha256 | unknown |
+| verification | verified / blocked |
+
 ## Surface Context
 
 | Field | Value |

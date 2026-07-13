@@ -26,6 +26,10 @@ Ueye is one route. It should not split into separate lite/deep skills. Use these
 ```bash
 yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --json
+yam ueye asset add --manifest .yam/ueye/assets.json --id official-logo --file ./assets/logo.png --source-page-url https://example.com/brand --license-note "official brand asset; local review use" --do-not-replace --json
+yam ueye asset verify --manifest .yam/ueye/assets.json --json
+yam ueye revision archive --file .yam/screens/home.png --round 1 --artifact-id home --root .yam/ueye/revisions --json
+yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --acceptance-criterion "primary CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
@@ -34,6 +38,8 @@ yam ueye report --reference ./reference.png --actual .yam/screens/home.png --acc
 - `report` records the Ueye run as reference sources, implementation sources, comparison result, surface context, design quality, blocked reason, next action, and truth status.
 - `report` can also record a deep visual review with acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and state matrix.
 - `report` may include continuity fields when a previous review or screenshot is being rechecked.
+- `asset` records and verifies local reference provenance, protection/edit flags, dimensions, bytes, and hashes without downloading remote content.
+- `revision` copies a live artifact into a non-overwriting round archive and verifies the revision history before it supports a done claim.
 - Without capture or user-provided screenshots, report implementation/source review separately from visual verification and cap the visual claim.
 
 ### Media Generation Proof

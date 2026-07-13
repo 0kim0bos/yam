@@ -31,6 +31,18 @@
 | comparison_result | matched / similar / different / not-verified / not-applicable |
 | truth_status | verified / partial / skipped / blocked / assumed |
 
+## Asset And Revision Integrity
+
+| Field | Value |
+| --- | --- |
+| asset_manifest |  |
+| asset_manifest_truth | verified / partial / blocked |
+| protected_assets |  |
+| editable_assets |  |
+| revision_manifest |  |
+| archived_rounds |  |
+| revision_truth | verified / blocked |
+
 ## Surface Context
 
 | Field | Value |

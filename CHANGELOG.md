@@ -2,6 +2,20 @@
 
 All notable changes to yam-flow are documented here.
 
+## Unreleased
+
+### Added
+
+- Added `yam mission receipt` with reviewer/doctor read-only contracts, explicit lifecycle/outcome separation, verification evidence, and per-thread completion eligibility.
+- Added `yam mission gate` to block Mission completion when expected thread receipts are missing, duplicated, unexpected, ambiguous, failed, or violate read-only role boundaries.
+- Added `yam ueye asset add|verify` for local reference provenance, license notes, protection/edit flags, dimensions, and SHA-256 integrity checks.
+- Added `yam ueye revision archive|verify` for non-overwriting round archives with hashed revision history.
+
+### Improved
+
+- Mission proof requests for `verified` or `proven` now recompute and validate supplied completion gates, then cap the claim when a passing gate is missing.
+- Ueye reports can attach asset and revision manifests; a supplied invalid manifest blocks a visual `done` claim.
+
 ## v2.2.1 - 2026-07-09
 
 ### Improved

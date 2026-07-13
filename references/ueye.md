@@ -68,6 +68,8 @@ Use these when the task depends on visual truth, reference matching, or design q
 5. Review Continuity and Comparison Report.
 6. Design Completion Gate.
 7. Deep Visual Review, when Ueye needs Deep-grade verification.
+8. Asset Manifest, when local reference media affects the design.
+9. Revision History, when an iterative visual artifact is about to be replaced.
 
 Default bound:
 
@@ -76,6 +78,16 @@ Default bound:
 - Prefer paths, URLs, dimensions, and hashes for images when available.
 - Do not require voxel grids, exhaustive callouts, or generated annotations.
 - Do not let proof artifacts turn Ueye into always-on heavy orchestration.
+
+### Asset Manifest
+
+Use `yam ueye asset add|verify` for important local references such as official identity files, supplied photos, and editable visual sources.
+
+Record source URL/page when known, a license or usage note, operator-provided status, `do_not_replace`, `allowed_for_edit`, dimensions, bytes, and SHA-256. Missing licensing stays visible as a warning. The helper does not fetch URLs or infer usage rights.
+
+### Revision History
+
+Use `yam ueye revision archive` before replacing an artifact during an iterative design pass. Archives are written to numbered round folders with exclusive-copy behavior, so a different payload cannot silently overwrite an existing round. `yam ueye revision verify` recomputes hashes before the history supports a done claim.
 
 ### Visual Evidence Inventory
 

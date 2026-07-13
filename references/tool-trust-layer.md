@@ -138,6 +138,7 @@ Tool intent labels stay advisory and route-scoped:
 - browser/screenshot evidence
 - visual provenance for reference-based UI work
 - mission patch envelopes for real team lanes
+- per-thread Mission receipts and aggregate completion gate
 - runtime evidence mini for route-level runtime claims
 - patch queue lite when mission lane apply/verify order matters
 - rollback hints for risky changes
@@ -145,6 +146,8 @@ Tool intent labels stay advisory and route-scoped:
 - structured diagnostic next action
 - truth status
 - skipped/blocked/assumed items
+
+Reviewer and doctor Mission lanes use `read_only` intent by default. A receipt that claims write access or changed files for those roles is a contract violation, and a stopped thread without an explicit outcome is not success evidence.
 
 `yam release report --json` should collect release readiness into a machine-readable artifact:
 

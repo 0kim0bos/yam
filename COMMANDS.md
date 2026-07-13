@@ -47,6 +47,10 @@ yam ueye capture --url http://localhost:3000 --out .yam/screens/home.png
 yam ueye compare --reference ./reference.png --actual .yam/screens/home.png
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --preflight-id ueye-preflight-123 --p0-risk "mobile CTA may clip" --quality-gate-note "check CTA contrast before done" --brief-dimension "primary CTA clarity" --constraint "mobile first" --acceptance-criterion "primary CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --skipped-check "hover state not checked on touch viewport" --residual-risk "tablet breakpoint still needs visual pass" --stop-condition "stop after primary states are checked and residual risk is recorded" --resume-hint "capture tablet screenshot next" --review-session-id pricing-card-v1 --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --similar "overall hierarchy" --different "button glow intensity" --missing "mobile state" --design-quality needs-polish --json
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --json
+yam ueye asset add --manifest .yam/ueye/assets.json --id official-logo --file ./assets/logo.png --license-note "operator supplied; local review" --operator-provided --do-not-replace --json
+yam ueye asset verify --manifest .yam/ueye/assets.json --json
+yam ueye revision archive --file .yam/screens/home.png --round 1 --artifact-id home --root .yam/ueye/revisions --json
+yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route ueye --truth partial --visual "browser/local screenshot comparison executed" --require-visual
 ```
@@ -162,6 +166,9 @@ yam media proof --requested --attempted --output ./generated.png --wait-loop --j
 yam runtime evidence --backend terminal --claim observed --evidence-id dev-server-1 --command "npm run dev" --pid 123 --port 3000 --json
 yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "process exit checked" --json
 yam mission queue --agent-id implementer --scope "checkout form" --changed src/checkout.tsx --verification-hint "npm run typecheck" --rollback-hint "revert checkout form patch if typecheck or smoke fails" --json
+yam mission receipt --thread-id implementer-1 --role implementer --access-mode write --lifecycle stopped --outcome passed --scope "checkout form" --changed src/checkout.tsx --evidence "typecheck passed" --out .yam/mission/implementer-1.json --json
+yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "read-only checkout review" --evidence "review completed without edits" --out .yam/mission/reviewer-1.json --json
+yam mission gate --expected-thread implementer-1 --expected-thread reviewer-1 --receipt .yam/mission/implementer-1.json --receipt .yam/mission/reviewer-1.json --out .yam/mission/completion.json --json
 yam benchmark report --label "render time" --baseline 100 --current 86 --unit ms --target lower --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam proof --route deep --truth proven --require-runtime --runtime "mock server fixture"
@@ -187,7 +194,7 @@ yam template tuning
 yam tools doctor /path/to/project --json
 yam release report --json
 yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "exit observed" --json
-yam mission queue --agent-id reviewer --scope "changed files review" --changed src/bin/yam.ts --verification-hint "npm run typecheck" --json
+yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "changed files review" --evidence "read-only findings recorded" --json
 yam benchmark report --label "bundle size" --baseline 120 --current 118 --unit kB --target lower --json
 yam loop report --route deep --intent "verify release readiness" --blocked "npm auth not verified" --next-action "refresh npm token, then rerun npm whoami" --json
 ```

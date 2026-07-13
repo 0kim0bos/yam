@@ -18,9 +18,9 @@ Acceptance criteria:
 
 역할:
 - Implementer: 범위 안에서 구현
-- Reviewer: 코드/구조/리스크/방향성 검토
+- Reviewer: read_only로 코드/구조/리스크/방향성 검토; 변경이 필요하면 Implementer에 반환
 - UX/browser verifier: 화면/상태/브라우저 흐름 확인
-- Doctor/scanner: stale context, 과검증/검증부족, false-completion risk, cleanup, 남은 fix-first 점검
+- Doctor/scanner: read_only로 stale context, 과검증/검증부족, false-completion risk, cleanup, 남은 fix-first 점검
 
 Subagent 판단:
 - 실제 subagent/team 사용 가능 여부:
@@ -54,6 +54,28 @@ Rollback hint:
 - before_check:
 - safe_revert_note:
 
+Subagent receipts:
+- expected_thread_ids:
+- thread_id:
+- role: implementer / reviewer / ux_verifier / doctor
+- access_mode: read_only / write
+- lifecycle_status: pending / running / stopped / failed / cancelled
+- outcome: passed / failed / blocked / ambiguous
+- assigned_scope:
+- changed_files:
+- verification_evidence:
+- remaining_risks:
+- completion_eligible: true / false
+
+Mission completion gate:
+- missing_thread_ids:
+- duplicate_thread_ids:
+- unexpected_thread_ids:
+- invalid_thread_ids:
+- read_only_violations:
+- ready_to_claim_complete: true / false
+- truth_status: verified / blocked
+
 검증:
 - 필요한 가장 작은 검증 명령을 우선 실행
 - 필요하면 tmux/dev server/browser QA/process cleanup proof 사용
@@ -63,6 +85,7 @@ Rollback hint:
 - 구현 요약
 - 역할별 교차 검증 결과
 - subagent decision
+- expected thread receipt coverage and Mission completion gate
 - 실제 evidence
 - truth status
 - cleanup status

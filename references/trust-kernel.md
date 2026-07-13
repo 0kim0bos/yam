@@ -40,6 +40,8 @@ The module provides:
 - runtime truth matrix
 - completion proof object creation
 - Ueye design completion gate creation
+- Mission subagent receipt and aggregate completion gate creation
+- Ueye asset/revision integrity helpers through the CLI
 
 ## Policy
 
@@ -54,5 +56,6 @@ For example:
 - Required runtime evidence that is missing becomes `real_required_missing`.
 - Cleanup claims require cleanup evidence.
 - Ueye `done` claims require a passing design completion gate or stay capped at `partial` or `blocked`.
+- Mission `verified` or `proven` claims require a passing completion gate built from the expected thread inventory and explicit receipts.
 
 This keeps the trust layer progressive and route-scoped.

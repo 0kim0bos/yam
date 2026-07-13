@@ -42,6 +42,8 @@ Never say cleanup is `proven` from a cleanup intention alone. Cleanup needs obse
 
 Never say full visual `verified` when the only evidence is a reference image, generated image, code reading, or text-only critique.
 
+Never say a Mission is `verified` or `proven` because every thread emitted a stop event. Every expected thread needs one unambiguous receipt with outcome and evidence, and the aggregate completion gate must pass.
+
 Ueye preflight is `partial` by design. It can identify design risks before work starts, but it cannot prove visual quality without implementation screenshot/comparison evidence.
 
 For ordinary routes, prefer `verified`, `partial`, `skipped`, `blocked`, or `assumed`.

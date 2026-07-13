@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -12,7 +11,9 @@ import {
   TRUTH_STATUSES,
   buildLoopReport,
   buildMediaGenerationProof,
+  buildMissionCompletionGate,
   buildMissionPatchEnvelope,
+  buildMissionSubagentReceipt,
   buildRollbackHint,
   buildRuntimeBackendEvidence,
   buildStudyNote,
@@ -25,6 +26,13 @@ import {
   isTruthStatus
 } from '../lib/trust-kernel.js';
 import type { LoopEvidenceLevel, ReadinessState, ToolIntent } from '../lib/trust-kernel.js';
+import {
+  archiveUeyeRevision,
+  inspectImageFile,
+  upsertUeyeAsset,
+  verifyUeyeAssetManifest,
+  verifyUeyeRevisionHistory
+} from '../lib/ueye-artifacts.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -151,9 +159,13 @@ Usage:
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
   yam ueye report [--reference ref.png] [--actual screenshot.png] [--provider-context local] [--execution-surface in-app-browser] [--json]
+  yam ueye asset <add|verify> [options]
+  yam ueye revision <archive|verify> [options]
   yam media proof [--requested] [--attempted] [--output file] [--json]
   yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--json]
   yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
+  yam mission receipt [--thread-id id] [--role reviewer] [--lifecycle stopped] [--outcome passed] [--evidence text] [--json]
+  yam mission gate [--expected-thread id] [--receipt file] [--json]
   yam benchmark report [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--json]
   yam release report [--json]
   yam safety [text...]
@@ -367,7 +379,7 @@ async function verify({ quiet = false } = {}) {
   for (const template of ['ueye-review.md', 'ueye-comparison.md', 'mission-plan.md', 'runtime-proof.md', 'tuning-log.md']) {
     if (!await exists(path.join(ROOT, 'templates', template))) issues.push(`missing template: ${template}`);
   }
-  for (const module of ['trust-kernel.js']) {
+  for (const module of ['trust-kernel.js', 'ueye-artifacts.js']) {
     if (!await exists(path.join(ROOT, 'dist', 'lib', module))) issues.push(`missing dist lib module: ${module}`);
   }
 
@@ -2251,6 +2263,8 @@ async function ueye(args = []) {
   if (subcommand === 'compare') return ueyeCompare(args.slice(1));
   if (subcommand === 'preflight') return ueyePreflight(args.slice(1));
   if (subcommand === 'report') return ueyeReport(args.slice(1));
+  if (subcommand === 'asset') return ueyeAsset(args.slice(1));
+  if (subcommand === 'revision') return ueyeRevision(args.slice(1));
   console.error(`unknown ueye command: ${subcommand}`);
   return ueyeUsage();
 }
@@ -2264,13 +2278,90 @@ Usage:
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
-  yam ueye report [--reference ref.png] [--actual screenshot.png] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--brief-dimension text] [--constraint text] [--anti-slop text] [--invented-metric] [--placeholder-copy] [--generic-visual] [--acceptance-criterion text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--residual-risk text] [--stop-condition text] [--resume-hint text] [--deep-visual-check text] [--design-system-evidence text] [--implementation-evidence text] [--state-check default:pass] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye report [--reference ref.png] [--actual screenshot.png] [--asset-manifest file] [--revision-manifest file] [--preflight-id id] [--p0-risk text] [--quality-gate-note text] [--brief-dimension text] [--constraint text] [--anti-slop text] [--invented-metric] [--placeholder-copy] [--generic-visual] [--acceptance-criterion text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--residual-risk text] [--stop-condition text] [--resume-hint text] [--deep-visual-check text] [--design-system-evidence text] [--implementation-evidence text] [--state-check default:pass] [--review-session-id id] [--provider-context local] [--execution-surface in-app-browser] [--app-surface codex-app] [--browser-surface in-app-browser] [--control-mode manual|automated] [--preserved-state] [--preserved-url URL] [--completion-claim draft|needs-polish|done] [--strict] [--design-score n] [--p0 text] [--p1 text] [--states-checked] [--mobile-checked] [--contrast-checked] [--similar text] [--different text] [--missing text] [--resolved text] [--new-finding text] [--still-open text] [--regression text] [--viewport 1440x900] [--state default] [--design-quality pass|needs-polish|fails|not-checked] [--json]
+  yam ueye asset add [--manifest file] --id id --file image [--source-url URL] [--source-page-url URL] [--license-note text] [--operator-provided] [--do-not-replace] [--allowed-for-edit] [--json]
+  yam ueye asset verify [--manifest file] [--json]
+  yam ueye revision archive --file image --round n [--artifact-id id] [--root dir] [--manifest file] [--json]
+  yam ueye revision verify [--root dir] [--manifest file] [--json]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
   compare uses local files only and reports sha256, dimensions, comparison_result, and proof-ready visual provenance.
   report produces a proof-ready Ueye visual run report, design completion gate, and continuity/comparison record without requiring a new capture.
+  asset records local reference provenance and protection flags; it never downloads remote content.
+  revision copies the current local artifact into a non-overwriting round archive before the live file is edited.
 `);
+}
+
+async function ueyeAsset(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return ueyeUsage();
+  const flags = parseSimpleFlags(args.slice(1), new Set(['manifest', 'id', 'file', 'source-url', 'source-page-url', 'retrieved-at', 'license-note', 'operator-provided', 'do-not-replace', 'allowed-for-edit', 'replace', 'json']));
+  const manifest = path.resolve(expandHome(flags.manifest || path.join(process.cwd(), '.yam', 'ueye', 'assets.json')));
+  try {
+    if (subcommand === 'add') {
+      if (!flags.id || !flags.file) throw new Error('asset add requires --id and --file');
+      const result = await upsertUeyeAsset({
+        manifest_path: manifest,
+        id: String(flags.id),
+        file: path.resolve(expandHome(flags.file)),
+        source_url: flags.source_url,
+        source_page_url: flags.source_page_url,
+        retrieved_at: flags.retrieved_at,
+        license_note: flags.license_note,
+        operator_provided: flags.operator_provided ? true : undefined,
+        do_not_replace: flags.do_not_replace ? true : undefined,
+        allowed_for_edit: flags.allowed_for_edit ? true : undefined,
+        replace: Boolean(flags.replace)
+      });
+      printJsonOrHuman(result, Boolean(flags.json), 'Ueye asset');
+      return;
+    }
+    if (subcommand === 'verify') {
+      const result = await verifyUeyeAssetManifest(manifest);
+      printJsonOrHuman(result, Boolean(flags.json), 'Ueye asset verification');
+      if (result.truth_status === 'blocked') process.exitCode = 1;
+      return;
+    }
+    throw new Error(`unknown ueye asset command: ${subcommand}`);
+  } catch (error) {
+    const result = { schema: 'yam.ueye-asset-error.v1', status: 'blocked', reason: errorMessage(error), truth_status: 'blocked' };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye asset');
+    process.exitCode = 1;
+  }
+}
+
+async function ueyeRevision(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return ueyeUsage();
+  const flags = parseSimpleFlags(args.slice(1), new Set(['file', 'round', 'artifact-id', 'root', 'manifest', 'json']));
+  const root = path.resolve(expandHome(flags.root || path.join(process.cwd(), '.yam', 'ueye', 'revisions')));
+  const manifest = path.resolve(expandHome(flags.manifest || path.join(root, 'manifest.json')));
+  try {
+    if (subcommand === 'archive') {
+      if (!flags.file || !flags.round) throw new Error('revision archive requires --file and --round');
+      const result = await archiveUeyeRevision({
+        file: path.resolve(expandHome(flags.file)),
+        root,
+        manifest_path: manifest,
+        round: Number(flags.round),
+        artifact_id: flags.artifact_id
+      });
+      printJsonOrHuman(result, Boolean(flags.json), 'Ueye revision');
+      return;
+    }
+    if (subcommand === 'verify') {
+      const result = await verifyUeyeRevisionHistory(manifest);
+      printJsonOrHuman(result, Boolean(flags.json), 'Ueye revision verification');
+      if (result.truth_status === 'blocked') process.exitCode = 1;
+      return;
+    }
+    throw new Error(`unknown ueye revision command: ${subcommand}`);
+  } catch (error) {
+    const result = { schema: 'yam.ueye-revision-error.v1', status: 'blocked', reason: errorMessage(error), truth_status: 'blocked' };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye revision');
+    process.exitCode = 1;
+  }
 }
 
 async function ueyePreflight(args = []) {
@@ -2501,7 +2592,7 @@ async function ueyeCompare(args = []) {
 
 async function ueyeReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return ueyeUsage();
-  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'brief-dimension', 'constraint', 'anti-slop', 'invented-metric', 'placeholder-copy', 'generic-visual', 'acceptance-criterion', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'residual-risk', 'stop-condition', 'resume-hint', 'deep-visual-check', 'design-system-evidence', 'implementation-evidence', 'state-check', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['reference', 'ref', 'actual', 'screenshot', 'capture-backend', 'compare-backend', 'design-quality', 'blocked-reason', 'next-action', 'next-visual-action', 'review-session-id', 'preflight-id', 'p0-risk', 'quality-gate-note', 'brief-dimension', 'constraint', 'anti-slop', 'invented-metric', 'placeholder-copy', 'generic-visual', 'acceptance-criterion', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'residual-risk', 'stop-condition', 'resume-hint', 'deep-visual-check', 'design-system-evidence', 'implementation-evidence', 'state-check', 'asset-manifest', 'revision-manifest', 'reference-id', 'screenshot-id', 'previous-screenshot-id', 'current-screenshot-id', 'previous-report', 'comparison-notes', 'similar', 'different', 'missing', 'resolved', 'new-finding', 'still-open', 'regression', 'viewport', 'state', 'provider-context', 'provider-badge', 'execution-surface', 'app-surface', 'browser-surface', 'control-mode', 'preserved-state', 'preserved-url', 'url', 'evidence-id', 'completion-claim', 'completion-status', 'gate-mode', 'strict', 'design-score', 'min-design-score', 'p0', 'p1', 'open-p0', 'open-p1', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'comparison-result', 'json']));
   const reference = String(flags.reference || flags.ref || '');
   const actual = String(flags.actual || flags.screenshot || '');
   const referenceSources = [];
@@ -2579,6 +2670,12 @@ async function ueyeReport(args = []) {
   } catch (error) {
     blockedReason = errorMessage(error);
   }
+
+  const assetManifest = await optionalUeyeAssetVerification(flags.asset_manifest);
+  const revisionHistory = await optionalUeyeRevisionVerification(flags.revision_manifest);
+  const doneClaim = ['done', 'complete', 'completed'].includes(String(flags.completion_claim || flags.completion_status || '').toLowerCase());
+  if (doneClaim && assetManifest?.truth_status === 'blocked') blockedReason = blockedReason || `asset manifest blocked: ${assetManifest.next_action || 'verification failed'}`;
+  if (doneClaim && revisionHistory?.truth_status === 'blocked') blockedReason = blockedReason || `revision history blocked: ${revisionHistory.next_action || 'verification failed'}`;
 
   const report = buildUeyeRunReport({
     reference_sources: referenceSources,
@@ -2662,10 +2759,30 @@ async function ueyeReport(args = []) {
     capture_backend: String(flags.capture_backend || 'not-recorded'),
     compare_backend: String(flags.compare_backend || 'local-file-hash'),
     continuity: comparisonReport.continuity,
-    comparison_report: comparisonReport
+    comparison_report: comparisonReport,
+    asset_manifest: assetManifest,
+    revision_history: revisionHistory
   };
   printJsonOrHuman(result, Boolean(flags.json), 'Ueye report');
   if (report.truth_status === 'blocked') process.exitCode = 1;
+}
+
+async function optionalUeyeAssetVerification(file = '') {
+  if (!file) return null;
+  try {
+    return await verifyUeyeAssetManifest(path.resolve(expandHome(file)));
+  } catch (error) {
+    return { schema: 'yam.ueye-asset-verification.v1', truth_status: 'blocked', reason: errorMessage(error), next_action: 'repair or recreate the asset manifest before a done claim' };
+  }
+}
+
+async function optionalUeyeRevisionVerification(file = '') {
+  if (!file) return null;
+  try {
+    return await verifyUeyeRevisionHistory(path.resolve(expandHome(file)));
+  } catch (error) {
+    return { schema: 'yam.ueye-revision-verification.v1', truth_status: 'blocked', reason: errorMessage(error), next_action: 'repair or recreate the revision manifest before a done claim' };
+  }
 }
 
 function buildUeyeDesignBrief(flags: AnyRecord = {}) {
@@ -2942,6 +3059,8 @@ async function mission(args = []) {
   const subcommand = args[0] || 'help';
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return missionUsage();
   if (subcommand === 'queue' || subcommand === 'patch') return missionQueue(args.slice(1));
+  if (subcommand === 'receipt') return missionReceipt(args.slice(1));
+  if (subcommand === 'gate' || subcommand === 'close') return missionGate(args.slice(1));
   console.error(`unknown mission command: ${subcommand}`);
   return missionUsage();
 }
@@ -2951,10 +3070,74 @@ function missionUsage() {
 
 Usage:
   yam mission queue [--lane-id id] [--agent-id id] [--status pending|applied|verified|blocked|reverted] [--scope text] [--changed file] [--depends-on lane] [--generated file] [--verification-hint text] [--rollback-hint text] [--before-check text] [--out file] [--truth status] [--json]
+  yam mission receipt --thread-id id --role implementer|reviewer|ux-verifier|doctor --lifecycle pending|running|stopped|failed|cancelled --outcome passed|failed|blocked|ambiguous [--access-mode read-only|write] [--scope text] [--changed file] [--evidence text] [--remaining-risk text] [--out file] [--json]
+  yam mission gate --expected-thread id --receipt file [--expected-thread id --receipt file] [--out file] [--json]
 
 Notes:
   Produces a patch queue item for mission handoff/review. It does not run workers; persistence is opt-in with --out.
+  Reviewer and doctor receipts default to read-only and are blocked if they claim changed files or write access.
+  A stopped lifecycle is not success by itself; a passed outcome needs explicit verification evidence.
 `);
+}
+
+async function missionReceipt(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return missionUsage();
+  const flags = parseSimpleFlags(args, new Set(['receipt-id', 'thread-id', 'lane-id', 'agent-id', 'role', 'access-mode', 'lifecycle', 'outcome', 'scope', 'changed', 'evidence', 'remaining-risk', 'out', 'json']));
+  const receipt = buildMissionSubagentReceipt({
+    receipt_id: String(flags.receipt_id || `receipt-${timestampId()}`),
+    thread_id: String(flags.thread_id || ''),
+    lane_id: String(flags.lane_id || flags.thread_id || ''),
+    agent_id: String(flags.agent_id || ''),
+    role: flags.role,
+    access_mode: flags.access_mode,
+    lifecycle_status: flags.lifecycle,
+    outcome: flags.outcome,
+    assigned_scope: String(flags.scope || ''),
+    changed_files: arrayFlag(flags.changed),
+    verification_evidence: arrayFlag(flags.evidence),
+    remaining_risks: arrayFlag(flags.remaining_risk)
+  });
+  const result = {
+    ...receipt,
+    persistence: flags.out ? 'written' : 'not-persisted',
+    out: flags.out ? path.resolve(expandHome(flags.out)) : '',
+    next_action: receipt.completion_eligible ? 'include this receipt in `yam mission gate`' : receipt.blockers[0] || 'complete the receipt evidence'
+  };
+  if (flags.out) await writeJsonArtifact(flags.out, result);
+  printJsonOrHuman(result, Boolean(flags.json), 'Mission receipt');
+  if (receipt.truth_status === 'blocked') process.exitCode = 1;
+}
+
+async function missionGate(args = []) {
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return missionUsage();
+  const flags = parseSimpleFlags(args, new Set(['expected-thread', 'receipt', 'out', 'json']));
+  const receipts = [];
+  const loadErrors: string[] = [];
+  for (const file of arrayFlag(flags.receipt)) {
+    const target = path.resolve(expandHome(file));
+    try {
+      receipts.push(await readJson(target));
+    } catch (error) {
+      loadErrors.push(`${target}: ${errorMessage(error)}`);
+    }
+  }
+  const gate = buildMissionCompletionGate({
+    expected_thread_ids: arrayFlag(flags.expected_thread),
+    receipts
+  });
+  const blockers = [...gate.blockers, ...loadErrors.map((error) => `receipt_load_failed: ${error}`)];
+  const result = {
+    ...gate,
+    blockers,
+    ready_to_claim_complete: gate.ready_to_claim_complete && loadErrors.length === 0,
+    next_action: blockers[0] || gate.next_action,
+    truth_status: blockers.length ? 'blocked' : gate.truth_status,
+    persistence: flags.out ? 'written' : 'not-persisted',
+    out: flags.out ? path.resolve(expandHome(flags.out)) : ''
+  };
+  if (flags.out) await writeJsonArtifact(flags.out, result);
+  printJsonOrHuman(result, Boolean(flags.json), 'Mission completion gate');
+  if (result.truth_status === 'blocked') process.exitCode = 1;
 }
 
 async function missionQueue(args = []) {
@@ -3103,7 +3286,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'invented-metric', 'placeholder-copy', 'generic-visual'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'invented-metric', 'placeholder-copy', 'generic-visual', 'operator-provided', 'do-not-replace', 'allowed-for-edit', 'replace'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -3143,53 +3326,7 @@ async function loadOptionalPlaywright() {
 }
 
 async function imageFileInfo(file) {
-  const absolute = path.resolve(expandHome(file));
-  const buffer = await fsp.readFile(absolute);
-  const stat = await fsp.stat(absolute);
-  return {
-    path: absolute,
-    sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
-    bytes: stat.size,
-    dimensions: imageDimensions(buffer)
-  };
-}
-
-function imageDimensions(buffer) {
-  const png = pngDimensions(buffer);
-  if (png) return png;
-  const jpeg = jpegDimensions(buffer);
-  if (jpeg) return jpeg;
-  const gif = gifDimensions(buffer);
-  if (gif) return gif;
-  return 'unknown';
-}
-
-function pngDimensions(buffer) {
-  if (buffer.length < 24) return '';
-  if (buffer.readUInt32BE(0) !== 0x89504e47 || buffer.readUInt32BE(4) !== 0x0d0a1a0a) return '';
-  return `${buffer.readUInt32BE(16)}x${buffer.readUInt32BE(20)}`;
-}
-
-function gifDimensions(buffer) {
-  if (buffer.length < 10) return '';
-  const signature = buffer.toString('ascii', 0, 6);
-  if (signature !== 'GIF87a' && signature !== 'GIF89a') return '';
-  return `${buffer.readUInt16LE(6)}x${buffer.readUInt16LE(8)}`;
-}
-
-function jpegDimensions(buffer) {
-  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return '';
-  let offset = 2;
-  while (offset < buffer.length) {
-    if (buffer[offset] !== 0xff) return '';
-    const marker = buffer[offset + 1];
-    const length = buffer.readUInt16BE(offset + 2);
-    if (marker >= 0xc0 && marker <= 0xc3 && offset + 8 < buffer.length) {
-      return `${buffer.readUInt16BE(offset + 7)}x${buffer.readUInt16BE(offset + 5)}`;
-    }
-    offset += 2 + length;
-  }
-  return '';
+  return inspectImageFile(path.resolve(expandHome(file)));
 }
 
 function printJsonOrHuman(result, json = false, label = 'yam') {
@@ -3206,6 +3343,12 @@ function printJsonOrHuman(result, json = false, label = 'yam') {
       console.log(`- ${key}: ${value}`);
     }
   }
+}
+
+async function writeJsonArtifact(file, value) {
+  const target = path.resolve(expandHome(file));
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  await fsp.writeFile(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
 function detectDbSafetyText(text = '') {
@@ -3251,6 +3394,8 @@ async function proof(args = []) {
   printProofList('Runtime backend evidence', summary.runtimeBackendEvidence || []);
   printProofList('Visual provenance', summary.visualProvenance || []);
   printProofList('Mission patch envelope', summary.missionEnvelope || []);
+  printProofList('Mission subagent receipt', summary.missionReceipt || []);
+  printProofList('Mission completion gate', summary.missionCompletion || []);
   printProofList('Rollback hint', summary.rollbackHint || []);
   printProofList('Media proof', summary.mediaProof || []);
   printProofList('Design completion', summary.designCompletion || []);
@@ -3341,6 +3486,14 @@ function buildProofSummary(parsed, artifact) {
       ...structuredEvidenceList(artifact.missionEnvelope),
       ...structuredEvidenceList(parsed.flags.mission_envelope)
     ],
+    missionReceipt: [
+      ...structuredEvidenceList(artifact.missionReceipt),
+      ...structuredEvidenceList(parsed.flags.mission_receipt)
+    ],
+    missionCompletion: [
+      ...structuredEvidenceList(artifact.missionCompletion),
+      ...structuredEvidenceList(parsed.flags.mission_completion)
+    ],
     rollbackHint: [
       ...structuredEvidenceList(artifact.rollbackHint),
       ...structuredEvidenceList(parsed.flags.rollback_hint)
@@ -3412,6 +3565,12 @@ function renderProofMarkdown(summary) {
     '## Mission patch envelope',
     ...renderProofMarkdownList(summary.missionEnvelope || []),
     '',
+    '## Mission subagent receipt',
+    ...renderProofMarkdownList(summary.missionReceipt || []),
+    '',
+    '## Mission completion gate',
+    ...renderProofMarkdownList(summary.missionCompletion || []),
+    '',
     '## Rollback hint',
     ...renderProofMarkdownList(summary.rollbackHint || []),
     '',
@@ -3453,7 +3612,7 @@ function renderProofMarkdownList(values) {
 function parseProofArgs(args = []) {
   const flags: AnyRecord = {};
   const positionals: string[] = [];
-  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'runtime-pid', 'runtime-port', 'runtime-exit-code', 'runtime-started-at', 'runtime-stopped-at', 'runtime-cleanup-method', 'cleanup-observed', 'left-running-intentionally', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
+  const aliases = new Set(['goal', 'route', 'truth', 'command', 'evidence', 'visual', 'runtime', 'runtime-backend', 'runtime-claim', 'runtime-evidence-id', 'runtime-command', 'runtime-pid', 'runtime-port', 'runtime-exit-code', 'runtime-started-at', 'runtime-stopped-at', 'runtime-cleanup-method', 'cleanup-observed', 'left-running-intentionally', 'cleanup-checked', 'runtime-note', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'mission-receipt', 'mission-completion', 'rollback-hint', 'media-proof', 'design-completion', 'cleanup', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified', 'from', 'format', 'out', 'file', 'json', 'require-runtime', 'require-real-runtime', 'require-tmux', 'require-visual']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('--')) {
@@ -3467,7 +3626,7 @@ function parseProofArgs(args = []) {
       }
       const value = inlineValue ?? args[index + 1] ?? '';
       if (inlineValue === undefined) index += 1;
-      if (['command', 'evidence', 'visual', 'runtime', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'rollback-hint', 'media-proof', 'design-completion', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
+      if (['command', 'evidence', 'visual', 'runtime', 'runtime-backend-evidence', 'visual-provenance', 'mission-envelope', 'mission-receipt', 'mission-completion', 'rollback-hint', 'media-proof', 'design-completion', 'changed', 'skipped', 'blocked', 'assumed', 'assumption', 'unverified'].includes(key)) {
         flags[normalizedKey] = [...arrayFlag(flags[normalizedKey]), value];
       } else {
         flags[normalizedKey] = value;
@@ -3508,6 +3667,8 @@ function emptyProofArtifact() {
     runtimeBackendEvidence: [],
     visualProvenance: [],
     missionEnvelope: [],
+    missionReceipt: [],
+    missionCompletion: [],
     rollbackHint: [],
     mediaProof: [],
     designCompletion: [],
@@ -3536,6 +3697,8 @@ async function parseProofJson(file, empty) {
       runtimeBackendEvidence: structuredEvidenceList(data.runtimeBackendEvidence || data.runtime_backend_evidence),
       visualProvenance: structuredEvidenceList(data.visualProvenance || data.visual_provenance),
       missionEnvelope: structuredEvidenceList(data.missionEnvelope || data.mission_envelope),
+      missionReceipt: structuredEvidenceList(data.missionReceipt || data.mission_receipt),
+      missionCompletion: structuredEvidenceList(data.missionCompletion || data.mission_completion),
       rollbackHint: structuredEvidenceList(data.rollbackHint || data.rollback_hint),
       mediaProof: structuredEvidenceList(data.mediaProof || data.media_proof),
       designCompletion: structuredEvidenceList(data.designCompletion || data.design_completion),
@@ -3567,6 +3730,8 @@ async function parseProofMarkdown(file, empty) {
     runtimeBackendEvidence: readProofList(text, 'Runtime backend evidence'),
     visualProvenance: readProofList(text, 'Visual provenance'),
     missionEnvelope: readProofList(text, 'Mission patch envelope'),
+    missionReceipt: readProofList(text, 'Mission subagent receipt'),
+    missionCompletion: readProofList(text, 'Mission completion gate'),
     rollbackHint: readProofList(text, 'Rollback hint'),
     mediaProof: readProofList(text, 'Media proof'),
     designCompletion: readProofList(text, 'Design completion'),
@@ -3651,6 +3816,12 @@ function formatStructuredEvidence(value) {
     if (data.schema === 'yam.ueye-visual-provenance.v1' || data.source_kind || data.reference_id || data.screenshot_id) {
       return JSON.stringify(buildUeyeVisualProvenance(data));
     }
+    if (data.schema === 'yam.mission-subagent-receipt.v1' || data.thread_id || data.lifecycle_status || data.outcome) {
+      return JSON.stringify(buildMissionSubagentReceipt(data));
+    }
+    if (data.schema === 'yam.mission-completion-gate.v1' || data.expected_thread_ids || data.ready_to_claim_complete !== undefined) {
+      return JSON.stringify(buildMissionCompletionGate(data));
+    }
     if (data.schema === 'yam.mission-patch-envelope.v1' || data.agent_id || data.assigned_scope) {
       return JSON.stringify(buildMissionPatchEnvelope(data));
     }
@@ -3674,7 +3845,7 @@ function formatStructuredEvidence(value) {
 
 function hasProofEvidence(parsed) {
   const flags = parsed.flags || {};
-  return ['command', 'evidence', 'visual', 'runtime', 'runtime_backend_evidence', 'visual_provenance', 'mission_envelope', 'rollback_hint', 'media_proof', 'design_completion', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup || flags.runtime_backend || flags.runtime_claim);
+  return ['command', 'evidence', 'visual', 'runtime', 'runtime_backend_evidence', 'visual_provenance', 'mission_envelope', 'mission_receipt', 'mission_completion', 'rollback_hint', 'media_proof', 'design_completion', 'changed', 'skipped', 'blocked'].some((key) => arrayFlag(flags[key]).length > 0) || Boolean(flags.cleanup || flags.runtime_backend || flags.runtime_claim);
 }
 
 function printProofList(label, values) {

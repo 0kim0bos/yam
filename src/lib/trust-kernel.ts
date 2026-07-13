@@ -21,6 +21,10 @@ export type LoopStageStatus = 'passed' | 'failed' | 'blocked' | 'skipped' | 'par
 export type LoopEvidenceLevel = 'none' | 'fixture' | 'smoke' | 'local' | 'real';
 export type ToolIntent = 'read_only' | 'write' | 'destructive' | 'runtime' | 'visual' | 'publish';
 export type ReadinessState = 'usable' | 'degraded' | 'blocked' | 'unknown';
+export type MissionLaneRole = 'implementer' | 'reviewer' | 'ux_verifier' | 'doctor' | 'other';
+export type MissionAccessMode = 'read_only' | 'write';
+export type MissionLifecycleStatus = 'pending' | 'running' | 'stopped' | 'failed' | 'cancelled';
+export type MissionOutcome = 'passed' | 'failed' | 'blocked' | 'ambiguous';
 
 export interface SafetyHit {
   level: SafetyLevel;
@@ -131,6 +135,53 @@ export interface MissionPatchEnvelope {
   changed_files: string[];
   verification_hint: string;
   rollback_hint: RollbackHint;
+  truth_status: TruthStatus;
+}
+
+export interface MissionContractCheck {
+  id: string;
+  label: string;
+  status: 'pass' | 'fail' | 'warning';
+  next_action: string;
+}
+
+export interface MissionSubagentReceipt {
+  schema: 'yam.mission-subagent-receipt.v1';
+  receipt_id: string;
+  generated_at: string;
+  thread_id: string;
+  lane_id: string;
+  agent_id: string;
+  role: MissionLaneRole;
+  access_mode: MissionAccessMode;
+  lifecycle_status: MissionLifecycleStatus;
+  outcome: MissionOutcome;
+  assigned_scope: string;
+  changed_files: string[];
+  verification_evidence: string[];
+  remaining_risks: string[];
+  checks: MissionContractCheck[];
+  blockers: string[];
+  warnings: string[];
+  completion_eligible: boolean;
+  truth_status: TruthStatus;
+}
+
+export interface MissionCompletionGate {
+  schema: 'yam.mission-completion-gate.v1';
+  generated_at: string;
+  expected_thread_ids: string[];
+  receipt_count: number;
+  receipts: MissionSubagentReceipt[];
+  missing_thread_ids: string[];
+  duplicate_thread_ids: string[];
+  unexpected_thread_ids: string[];
+  invalid_thread_ids: string[];
+  read_only_violations: string[];
+  blockers: string[];
+  warnings: string[];
+  ready_to_claim_complete: boolean;
+  next_action: string;
   truth_status: TruthStatus;
 }
 
@@ -300,6 +351,8 @@ export interface ProofSummary {
   unverified?: unknown;
   visualProvenance?: unknown;
   missionEnvelope?: unknown;
+  missionReceipt?: unknown;
+  missionCompletion?: unknown;
   rollbackHint?: unknown;
   runtimeBackendEvidence?: unknown;
   mediaProof?: unknown;
@@ -336,6 +389,8 @@ export interface YamCompletionProof {
   runtime: string[];
   visualProvenance: string[];
   missionEnvelope: string[];
+  missionReceipt: string[];
+  missionCompletion: string[];
   rollbackHint: string[];
   runtimeBackendEvidence: string[];
   mediaProof: string[];
@@ -507,6 +562,137 @@ export function buildMissionPatchEnvelope(input: Partial<MissionPatchEnvelope> =
     rollback_hint: rollback,
     truth_status: isTruthStatus(input.truth_status) ? input.truth_status : 'partial'
   };
+}
+
+export function buildMissionSubagentReceipt(input: Partial<MissionSubagentReceipt> & Record<string, unknown> = {}): MissionSubagentReceipt {
+  const role = normalizeMissionLaneRole(input.role);
+  const accessMode = normalizeMissionAccessMode(input.access_mode, role);
+  const lifecycleStatus = normalizeMissionLifecycleStatus(input.lifecycle_status);
+  const outcome = normalizeMissionOutcome(input.outcome);
+  const threadId = String(input.thread_id || '');
+  const assignedScope = String(input.assigned_scope || '');
+  const changedFiles = asList(input.changed_files);
+  const verificationEvidence = asList(input.verification_evidence);
+  const remainingRisks = asList(input.remaining_risks);
+  const readOnlyRole = role === 'reviewer' || role === 'doctor';
+  const checks = [
+    missionContractCheck('thread_id', 'Thread id is recorded', Boolean(threadId), 'record --thread-id for every spawned thread'),
+    missionContractCheck('assigned_scope', 'Assigned scope is recorded', Boolean(assignedScope), 'record the bounded lane scope'),
+    missionContractCheck('read_only_role', 'Reviewer and doctor lanes stay read-only', !readOnlyRole || (accessMode === 'read_only' && changedFiles.length === 0), 'rerun reviewer/doctor without write access or changed files'),
+    missionContractCheck('terminal_lifecycle', 'Lifecycle reached a terminal state', ['stopped', 'failed', 'cancelled'].includes(lifecycleStatus), 'wait for a terminal lifecycle event before finalization'),
+    missionContractCheck('explicit_outcome', 'Outcome is explicit and unambiguous', outcome !== 'ambiguous', 'record passed, failed, or blocked; a stop event alone is not success evidence'),
+    missionContractCheck('passed_evidence', 'Passed outcome has verification evidence', outcome !== 'passed' || verificationEvidence.length > 0, 'attach at least one concrete verification item for a passed outcome')
+  ];
+  const blockers = checks.filter((check) => check.status === 'fail').map((check) => `${check.id}: ${check.next_action}`);
+  if (outcome === 'failed' || outcome === 'blocked') blockers.push(`outcome_${outcome}: resolve or hand off this thread before mission completion`);
+  if ((lifecycleStatus === 'failed' || lifecycleStatus === 'cancelled') && outcome === 'passed') {
+    blockers.push('lifecycle_outcome_conflict: a failed or cancelled lifecycle cannot claim a passed outcome');
+  }
+  const warnings = remainingRisks.length ? ['remaining risks are recorded and must be included in the mission handoff'] : [];
+  const completionEligible = blockers.length === 0 && lifecycleStatus === 'stopped' && outcome === 'passed';
+  const truth: TruthStatus = completionEligible ? 'verified' : blockers.length ? 'blocked' : 'partial';
+  return {
+    schema: 'yam.mission-subagent-receipt.v1',
+    receipt_id: String(input.receipt_id || `receipt-${threadId || 'unassigned'}`),
+    generated_at: String(input.generated_at || new Date().toISOString()),
+    thread_id: threadId,
+    lane_id: String(input.lane_id || threadId),
+    agent_id: String(input.agent_id || ''),
+    role,
+    access_mode: accessMode,
+    lifecycle_status: lifecycleStatus,
+    outcome,
+    assigned_scope: assignedScope,
+    changed_files: changedFiles,
+    verification_evidence: verificationEvidence,
+    remaining_risks: remainingRisks,
+    checks,
+    blockers: uniqueStrings(blockers),
+    warnings,
+    completion_eligible: completionEligible,
+    truth_status: truth
+  };
+}
+
+export function buildMissionCompletionGate(input: Partial<MissionCompletionGate> & Record<string, unknown> = {}): MissionCompletionGate {
+  const expectedThreadIds = uniqueStrings(asList(input.expected_thread_ids));
+  const receipts = asObjectList(input.receipts).map((receipt) => buildMissionSubagentReceipt(receipt));
+  const receiptCounts = new Map<string, number>();
+  for (const receipt of receipts) {
+    receiptCounts.set(receipt.thread_id, (receiptCounts.get(receipt.thread_id) || 0) + 1);
+  }
+  const missingThreadIds = expectedThreadIds.filter((threadId) => !receiptCounts.has(threadId));
+  const duplicateThreadIds = [...receiptCounts.entries()].filter(([, count]) => count > 1).map(([threadId]) => threadId).filter(Boolean);
+  const unexpectedThreadIds = uniqueStrings(receipts.map((receipt) => receipt.thread_id).filter((threadId) => threadId && !expectedThreadIds.includes(threadId)));
+  const expectedReceipts = receipts.filter((receipt) => expectedThreadIds.includes(receipt.thread_id));
+  const invalidThreadIds = uniqueStrings([
+    ...expectedReceipts.filter((receipt) => !receipt.completion_eligible).map((receipt) => receipt.thread_id),
+    ...receipts.filter((receipt) => !receipt.thread_id).map((receipt) => `missing:${receipt.receipt_id}`)
+  ]);
+  const readOnlyViolations = uniqueStrings(receipts
+    .filter((receipt) => receipt.checks.some((check) => check.id === 'read_only_role' && check.status === 'fail'))
+    .map((receipt) => receipt.thread_id || receipt.lane_id));
+  const blockers: string[] = [];
+  if (!expectedThreadIds.length) blockers.push('expected_thread_inventory_missing: record every spawned thread before finalization');
+  if (missingThreadIds.length) blockers.push(`missing_receipts: ${missingThreadIds.join(', ')}`);
+  if (duplicateThreadIds.length) blockers.push(`duplicate_receipts: ${duplicateThreadIds.join(', ')}`);
+  if (unexpectedThreadIds.length) blockers.push(`unexpected_receipts: ${unexpectedThreadIds.join(', ')}`);
+  if (invalidThreadIds.length) blockers.push(`invalid_or_incomplete_receipts: ${invalidThreadIds.join(', ')}`);
+  if (readOnlyViolations.length) blockers.push(`read_only_contract_violations: ${readOnlyViolations.join(', ')}`);
+  blockers.push(...asList(input.blockers));
+  const warnings = uniqueStrings(asList(input.warnings));
+  const ready = blockers.length === 0 && expectedReceipts.length === expectedThreadIds.length;
+  return {
+    schema: 'yam.mission-completion-gate.v1',
+    generated_at: String(input.generated_at || new Date().toISOString()),
+    expected_thread_ids: expectedThreadIds,
+    receipt_count: receipts.length,
+    receipts,
+    missing_thread_ids: missingThreadIds,
+    duplicate_thread_ids: duplicateThreadIds,
+    unexpected_thread_ids: unexpectedThreadIds,
+    invalid_thread_ids: invalidThreadIds,
+    read_only_violations: readOnlyViolations,
+    blockers: uniqueStrings(blockers),
+    warnings,
+    ready_to_claim_complete: ready,
+    next_action: ready ? 'attach this gate to the mission proof summary' : blockers[0] || 'resolve mission receipt warnings',
+    truth_status: ready ? 'verified' : 'blocked'
+  };
+}
+
+function missionContractCheck(id: string, label: string, passed: boolean, nextAction: string): MissionContractCheck {
+  return {
+    id,
+    label,
+    status: passed ? 'pass' : 'fail',
+    next_action: nextAction
+  };
+}
+
+function normalizeMissionLaneRole(value: unknown = ''): MissionLaneRole {
+  const text = String(value || '').toLowerCase().replace(/[- ]/g, '_');
+  if (['implementer', 'reviewer', 'ux_verifier', 'doctor'].includes(text)) return text as MissionLaneRole;
+  return 'other';
+}
+
+function normalizeMissionAccessMode(value: unknown = '', role: MissionLaneRole = 'other'): MissionAccessMode {
+  const text = String(value || '').toLowerCase().replace(/[- ]/g, '_');
+  if (text === 'read_only' || text === 'readonly') return 'read_only';
+  if (text === 'write') return 'write';
+  return role === 'reviewer' || role === 'doctor' ? 'read_only' : 'write';
+}
+
+function normalizeMissionLifecycleStatus(value: unknown = ''): MissionLifecycleStatus {
+  const text = String(value || '').toLowerCase();
+  if (['pending', 'running', 'stopped', 'failed', 'cancelled'].includes(text)) return text as MissionLifecycleStatus;
+  return 'pending';
+}
+
+function normalizeMissionOutcome(value: unknown = ''): MissionOutcome {
+  const text = String(value || '').toLowerCase();
+  if (['passed', 'failed', 'blocked'].includes(text)) return text as MissionOutcome;
+  return 'ambiguous';
 }
 
 export function buildRuntimeBackendEvidence(input: Partial<RuntimeBackendEvidence> = {}): RuntimeBackendEvidence {
@@ -997,6 +1183,12 @@ export function classifyEvidenceTruth(summary: ProofSummary = {}, options: Proof
   for (const envelope of asList(summary.missionEnvelope)) {
     rows.push(evidenceRow('evidence', envelope, metadataTruth(envelope, 'partial')));
   }
+  for (const receipt of asList(summary.missionReceipt)) {
+    rows.push(evidenceRow('evidence', receipt, metadataTruth(receipt, 'partial')));
+  }
+  for (const completion of asList(summary.missionCompletion)) {
+    rows.push(evidenceRow('evidence', completion, metadataTruth(completion, 'partial')));
+  }
   for (const rollback of asList(summary.rollbackHint)) {
     rows.push(evidenceRow('evidence', rollback, metadataTruth(rollback, 'partial')));
   }
@@ -1044,6 +1236,19 @@ export function applyProofTruthCaps(summary: ProofSummary = {}, options: ProofOp
     if (designCompletionTruth === 'blocked') blockers.push('ueye_design_completion_blocked');
     if (!['verified', 'proven'].includes(designCompletionTruth)) {
       unverified.push('ueye_design_completion_not_verified');
+    }
+  }
+  const missionRoute = String(summary.route || '').replace(/^\$/, '').toLowerCase() === 'mission';
+  const missionCompletionValues = asValueList(summary.missionCompletion);
+  if (missionRoute && ['verified', 'proven'].includes(requested)) {
+    if (!missionCompletionValues.length) {
+      cappedTruth = weakestTruth(cappedTruth, 'partial');
+      unverified.push('mission_completion_gate_missing');
+    } else {
+      const missionTruth = missionCompletionCap(missionCompletionValues);
+      cappedTruth = weakestTruth(cappedTruth, missionTruth);
+      if (missionTruth === 'blocked') blockers.push('mission_completion_gate_blocked');
+      if (!['verified', 'proven'].includes(missionTruth)) unverified.push('mission_completion_not_verified');
     }
   }
   if (requested !== cappedTruth) {
@@ -1102,6 +1307,8 @@ export function buildYamCompletionProof(summary: ProofSummary = {}, options: Pro
     runtime: asList(summary.runtime),
     visualProvenance: asList(summary.visualProvenance),
     missionEnvelope: asList(summary.missionEnvelope),
+    missionReceipt: asList(summary.missionReceipt),
+    missionCompletion: asList(summary.missionCompletion),
     rollbackHint: asList(summary.rollbackHint),
     runtimeBackendEvidence: asList(summary.runtimeBackendEvidence),
     mediaProof: asList(summary.mediaProof),
@@ -1179,6 +1386,17 @@ function designCompletionCap(value: unknown = ''): TruthStatus | null {
   const items = asList(value);
   if (!items.length) return null;
   return items.reduce<TruthStatus>((weakest, item) => weakestTruth(weakest, readStructuredTruth(item, 'partial')), 'proven');
+}
+
+function missionCompletionCap(value: unknown = ''): TruthStatus {
+  const items = asValueList(value);
+  if (!items.length) return 'partial';
+  return items.reduce<TruthStatus>((weakest, item) => {
+    const parsed = parseStructuredValue(item);
+    if (!parsed || typeof parsed !== 'object') return weakestTruth(weakest, 'blocked');
+    const gate = buildMissionCompletionGate(parsed as Record<string, unknown>);
+    return weakestTruth(weakest, gate.truth_status);
+  }, 'proven');
 }
 
 function strongestSupportedTruth(rows: EvidenceRow[] = []): TruthStatus {
@@ -1299,6 +1517,27 @@ function hasText(values: unknown[] = [], pattern: RegExp): boolean {
 function asList(value?: unknown): string[] {
   if (!value) return [];
   return Array.isArray(value) ? value.filter(Boolean).map(String) : [String(value)].filter(Boolean);
+}
+
+function asValueList(value?: unknown): unknown[] {
+  if (value === undefined || value === null || value === '') return [];
+  return Array.isArray(value) ? value.filter(Boolean) : [value];
+}
+
+function parseStructuredValue(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object') return value as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function asObjectList(value?: unknown): Array<Record<string, unknown>> {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : [value];
+  return items.filter((item) => Boolean(item) && typeof item === 'object') as Array<Record<string, unknown>>;
 }
 
 function uniqueStrings(values: unknown[] = []): string[] {

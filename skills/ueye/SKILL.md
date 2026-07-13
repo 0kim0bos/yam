@@ -60,6 +60,9 @@ Do not use for:
    - Mark any ambiguous or unobservable detail instead of inventing it.
 5. Inspect nearby UI patterns, tokens, styles, and state handling.
 6. Implement the smallest coherent design improvement when implementation is requested.
+   - When local reference assets materially shape the design, record them with `yam ueye asset add` before editing.
+   - Use `do_not_replace` for protected identity assets and enable `allowed_for_edit` only when usage rights and task scope support editing.
+   - Before overwriting an iterative visual artifact, preserve the current file with `yam ueye revision archive`.
 7. Check default, loading, error, empty, disabled, hover/focus, and mobile states when relevant.
 8. Run browser/screenshot verification when feasible.
    - Prefer the in-app browser for local pages, localhost, file URLs, and ordinary visual QA.
@@ -127,6 +130,13 @@ Use these artifacts for reference-led implementation or serious visual review. K
    - record whether generation was requested, attempted, blocked, or produced an output.
    - use `yam media proof --requested --attempted --output path.png --wait-loop --json` when a generated image materially affects the design direction.
    - never use generated media proof as a substitute for implemented screen evidence.
+10. Asset Manifest, when logos, photos, illustrations, or other local reference files materially affect the work:
+   - record local file path, source URL/page when known, retrieval time, license note, operator-provided status, `do_not_replace`, `allowed_for_edit`, dimensions, bytes, and SHA-256.
+   - `yam ueye asset` records local files only; it does not download remote content.
+11. Revision History, when an artifact will be regenerated or overwritten:
+   - archive the current file under a numbered round before editing it.
+   - never overwrite a different archived payload for the same artifact and round.
+   - verify the revision manifest before using it in a visual `done` claim.
 
 ## Visual Truth Caps
 
@@ -177,3 +187,4 @@ Report:
 - Architecture hygiene when relevant: flag if the change risks dumping unrelated UI logic into `page.tsx`, one-off component styling into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Truth status and visual verification cap.
 - Handoff when useful: fix-first visual issues, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.
+- Asset manifest and revision history status when reference media or iterative artifact replacement materially affected the work.

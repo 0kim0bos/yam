@@ -71,6 +71,7 @@ Tasks:
 - Merge `ui`, `eye`, and `review` into `ueye`. Done.
 - Add Ueye checklist refinements. Done.
 - Add Visual Evidence Inventory, Reference Read Proof, Reference vs Implementation Matrix, and Design Quality Review. Done.
+- Add local reference asset provenance/protection manifest and non-overwriting revision history. Done.
 - Add optional browser/screenshot capture notes.
 - Keep image generation optional, never a gate.
 
@@ -231,6 +232,7 @@ Tasks:
 - Add mission prompt template. Done.
 - Add doctor scan checklist. Done.
 - Require real subagent/team execution for full `$mission`; otherwise downgrade to `$deep` or report partial/blocked. Done.
+- Make Reviewer/Doctor lanes read-only by default and require explicit per-thread receipts plus an aggregate completion gate. Done.
 
 ### 14. Quick / Ueye Consolidation
 
@@ -421,3 +423,26 @@ Keep out for now:
 - required thread attachment ids.
 - app-specific visual gates.
 - blocking ordinary Ueye work when attachment metadata is absent.
+
+#### Plan Review Canvas Lite
+
+Status: deferred until repeated real-use demand.
+
+Trigger:
+
+- Users repeatedly need to annotate a generated plan or design report at exact elements instead of replying in prose.
+- Terminal-only approval causes revision ambiguity or costly re-reading.
+- A local browser review surface would materially shorten an approved Mission or Ueye feedback loop.
+
+First shape:
+
+- local-only artifact review.
+- anchored comments and approve/request-changes verdict.
+- explicit session end and bounded idle shutdown.
+- Host/Origin checks, path confinement, and sandboxed artifact rendering.
+
+Keep out for now:
+
+- default local server.
+- remote sharing or hosting.
+- automatic implementation start without an explicit approval verdict.

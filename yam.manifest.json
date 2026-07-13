@@ -26,8 +26,8 @@
     },
     {
       "id": "ueye",
-      "stage": "v0.3",
-      "purpose": "Tight UI/UX/design implementation and visual review with visual provenance, surface context, reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
+      "stage": "v0.4",
+      "purpose": "Tight UI/UX/design implementation and visual review with visual provenance, local asset integrity, revision history, reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
     },
     {
       "id": "question",
@@ -46,8 +46,8 @@
     },
     {
       "id": "mission",
-      "stage": "v0.2",
-      "purpose": "Explicit real-subagent/team execution route for approved plans, patch envelopes, rollback hints, cross-verification, doctor scan, and final proof."
+      "stage": "v0.3",
+      "purpose": "Explicit real-subagent/team execution route for approved plans, read-only reviewer/doctor contracts, per-thread receipts, aggregate completion gate, patch envelopes, rollback hints, cross-verification, doctor scan, and final proof."
     }
   ]
 }
