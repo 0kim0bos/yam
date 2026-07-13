@@ -21,3 +21,21 @@
 19. Treat security as the first project lens: identify sensitive surfaces early and guide safer defaults before convenience.
 20. Keep final reports short and concrete, but always include remaining tasks or state that none are meaningful.
 21. When relevant, include architecture hygiene in the Study Note: avoid dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs when existing project boundaries, scoped styles, typed tables, constraints, or indexes fit better.
+
+## Latest Update Trigger
+
+When the user says exactly `yam 최신 업데이트 사항 반영해줘` in a chat for this project, treat that phrase as explicit authorization to update the globally installed package and refresh the installed yam skills.
+
+Run these commands sequentially from the yam project directory:
+
+```bash
+npm install -g yam-flow
+yam install
+yam version
+yam status
+```
+
+- Request any environment approval required for network access or writes outside the workspace.
+- Stop at the first failed command, report the blocker, and do not claim that later steps ran.
+- After all four commands pass, report the installed version and skill status, then tell the user that Codex can be restarted to reload the updated skills.
+- Do not restart Codex automatically.
