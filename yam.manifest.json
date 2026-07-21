@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -13,6 +13,7 @@
     "Context-reuse first.",
     "End with remaining tasks and fix-first items.",
     "When code, config, release metadata, documentation, or project artifacts changed, include a Study Note even if no yam skill was explicitly invoked.",
+    "When the opt-in Study Note hook is enabled, check the final response at Codex Stop and request one bounded correction pass instead of relying only on prompt-time advice.",
     "Explain what changed, what role it has, where it runs or is read, what was wrong or missing when relevant, before/after behavior, expected behavior, and one useful syntax or structure insight in short non-specialist language.",
     "When relevant, include architecture hygiene: avoid dumping unrelated logic into page.tsx, one-off component CSS into global.css, or structured product data into broad DB jsonb blobs when better project boundaries exist.",
     "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful.",

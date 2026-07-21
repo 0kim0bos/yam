@@ -53,3 +53,9 @@ Selective skill systems favor lower-context workflows.
 Minimal-core systems avoid hooks unless the rule is short and changes behavior.
 
 `yam` keeps this hook advisory-only so beginner momentum is preserved while the agent still receives a direction nudge. Deeper proof belongs in `$deep` and real team execution belongs in `$mission`, not in an always-on prompt hook.
+
+## Separate Study Note Profile
+
+`study-note` is a separate opt-in profile, not part of the lite contract. It installs a `UserPromptSubmit` reminder and a Codex `Stop` handler that checks the latest assistant message with the read-only Study Note Guard. A missing or incomplete note requests one correction pass; `stop_hook_active` bounds the retry so the hook cannot create an infinite completion loop. The profile never writes the note or runs verification.
+
+Hook status validates executable and script targets plus required event coverage. Re-enabling a broken profile creates a timestamped backup, preserves unrelated hook entries, and migrates stale commands to the current package entrypoint.

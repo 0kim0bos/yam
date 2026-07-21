@@ -2,6 +2,27 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.3.2 - 2026-07-21
+
+### Added
+
+- Added a bounded Codex `Stop` completion gate to the opt-in `study-note` hook profile. Changed work with a missing or incomplete Study Note receives one correction prompt before completion.
+- Added hook health inspection for missing executables, missing script targets, incomplete event coverage, duplicate handlers, unsupported command shapes, and unreadable hook config.
+- Added deterministic packaged-CLI smoke coverage for broken-path detection, nonzero health status, backup-backed migration, unrelated-hook preservation, Stop blocking/passing, and loop prevention.
+
+### Improved
+
+- `yam hook status` now reports configured-but-broken profiles as `broken` and exits nonzero instead of calling a stale command `enabled`.
+- Re-enabling a hook profile migrates stale absolute paths to the current installed Node and package entrypoint, adds the required events, preserves unrelated hooks, creates a timestamped backup, and writes config atomically.
+- Study Note Guard checks now cover execution point, expected behavior, syntax or structure insight, verification, and limits separately.
+
+### Verification
+
+- `npm run verify:self`
+- `npm run dist:freshness`
+- `npm run package-boundary:check`
+- `npm run cli-smoke`
+
 ## v2.3.1 - 2026-07-21
 
 ### Added

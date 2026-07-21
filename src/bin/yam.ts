@@ -84,8 +84,9 @@ const VERSION = String(PACKAGE_JSON.version || '0.0.0');
 const PROJECT_PACK = 'yam.project.md';
 const LEGACY_PROJECT_PACK = 'timeto.project.md';
 const PACK_STALE_DAYS = 30;
-const YAM_LITE_HOOK_COMMAND = `node ${path.join(ROOT, 'dist', 'bin', 'yam.js')} hook run lite`;
-const YAM_STUDY_NOTE_HOOK_COMMAND = `node ${path.join(ROOT, 'dist', 'bin', 'yam.js')} hook run study-note`;
+const YAM_HOOK_ENTRYPOINT = path.join(ROOT, 'dist', 'bin', 'yam.js');
+const YAM_LITE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run lite`;
+const YAM_STUDY_NOTE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run study-note`;
 const REQUIRED_PACK_SECTIONS = [
   'Product Direction',
   'UI Direction',
@@ -756,16 +757,27 @@ Notes:
 async function studyNoteCheck(args = []) {
   const flags = parseSimpleFlags(args, new Set(['report', 'text', 'json']));
   const dir = path.resolve(firstPositional(args) || process.cwd());
-  const changedFiles = await gitChangedFiles(dir);
   const reportText = await readStudyNoteReportText(flags, dir);
+  const reportSource = flags.report ? path.resolve(dir, String(flags.report)) : flags.text ? 'inline_text' : 'not_provided';
+  const result = await buildStudyNoteGuardResult(dir, reportText, reportSource);
+  printJsonOrHuman(result, Boolean(flags.json), 'Study Note guard');
+  if (result.blockers.length) process.exitCode = 1;
+}
+
+async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'not_provided') {
+  const changedFiles = await gitChangedFiles(dir);
   const needsStudyNote = changedFiles.length > 0;
   const hygieneRequirements = studyNoteHygieneRequirements(changedFiles);
   const checks = [
     studyNoteGuardCheck('changed_files', needsStudyNote ? 'pass' : 'skipped', needsStudyNote ? 'changed files detected; Study Note is required before final completion' : 'no changed files detected'),
     studyNoteGuardCheck('study_note_present', !needsStudyNote || hasStudyNoteMarker(reportText) ? 'pass' : 'fail', 'final report should include a Study Note when project artifacts changed'),
     studyNoteGuardCheck('role_or_responsibility', !needsStudyNote || /(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what the touched code/artifact does'),
+    studyNoteGuardCheck('execution_point', !needsStudyNote || /(execution|\bruns?\b|\bloads?\b|\brenders?\b|validates?|builds?|publishes?|read by|실행|로드|렌더|검사|검증|빌드|게시|배포|읽)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain where or when the touched code/artifact runs or is read'),
     studyNoteGuardCheck('before_after_or_change', !needsStudyNote || /(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what changed from before to after'),
-    studyNoteGuardCheck('verification_or_limits', !needsStudyNote || /(verification|verified|checked|limits|uncertain|검증|확인|한계|모르는)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what was checked and what remains uncertain')
+    studyNoteGuardCheck('expected_behavior', !needsStudyNote || /(expected|should|will|result|behavior|예상|기대|결과|동작|되어야|하게 됨)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should describe the expected behavior or result'),
+    studyNoteGuardCheck('syntax_or_structure', !needsStudyNote || /(syntax|structure|schema|\bapi\b|function|array|field|type|condition|문법|구조|스키마|함수|배열|필드|타입|조건)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should include one useful syntax or structure insight'),
+    studyNoteGuardCheck('verification', !needsStudyNote || /(verification|verified|checked|tested|검증|확인|테스트)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what was checked'),
+    studyNoteGuardCheck('limits_or_uncertainty', !needsStudyNote || /(limits?|uncertain|unknown|not checked|remaining|한계|불확실|모르는|미확인|남은)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what remains uncertain or explicitly state that no meaningful uncertainty remains')
   ];
   for (const requirement of hygieneRequirements) {
     checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(reportText, requirement), requirement.note));
@@ -777,14 +789,13 @@ async function studyNoteCheck(args = []) {
     project: dir,
     changed_files: changedFiles,
     changed_file_count: changedFiles.length,
-    report_source: flags.report ? path.resolve(dir, String(flags.report)) : flags.text ? 'inline_text' : 'not_provided',
+    report_source: reportSource,
     checks,
     blockers,
     next_action: blockers[0] || (needsStudyNote ? 'Study Note guard passed for the supplied report text' : 'no Study Note required because no changed files were detected'),
     truth_status: blockers.length ? 'blocked' : needsStudyNote ? 'verified' : 'skipped'
   };
-  printJsonOrHuman(result, Boolean(flags.json), 'Study Note guard');
-  if (blockers.length) process.exitCode = 1;
+  return result;
 }
 
 function firstPositional(args = []) {
@@ -1028,6 +1039,8 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
   const codexHome = path.join(os.homedir(), '.codex');
   const pluginCache = path.join(codexHome, 'plugins', 'cache');
   const globalHook = await readJsonOrDefault(path.join(codexHome, 'hooks.json'), {});
+  const globalLiteHookHealth = await inspectHookProfile(globalHook, 'lite');
+  const globalStudyNoteHookHealth = await inspectHookProfile(globalHook, 'study-note');
   const tmux = await findExecutable('tmux');
   const packageInfo = await projectPackageInfo(dir);
   const pack = await findProjectPack(dir);
@@ -1046,7 +1059,8 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
   const rows = [
     readinessRow('Codex home', await exists(codexHome) ? 'ready' : 'missing', codexHome),
     readinessRow('Yam skills', await status({ quiet: true }) === 0 ? 'ready' : 'missing', DEST),
-    readinessRow('yam-lite hook', hookConfigHasYamLite(globalHook) ? 'enabled' : 'disabled', 'optional UserPromptSubmit guide'),
+    readinessRow('yam-lite hook', globalLiteHookHealth.state, globalLiteHookHealth.issues[0] || 'optional UserPromptSubmit guide'),
+    readinessRow('yam-study-note hook', globalStudyNoteHookHealth.state, globalStudyNoteHookHealth.issues[0] || 'optional prompt reminder plus one-pass Stop completion gate'),
     readinessRow('tmux', tmux ? 'ready' : 'missing', tmux || 'not found on PATH or common Homebrew paths'),
     readinessRow('Browser plugin', await pluginCacheHas('openai-bundled/browser') ? 'ready' : 'unknown', 'Codex in-app browser cache'),
     readinessRow('Chrome plugin', await pluginCacheHas('openai-bundled/chrome') ? 'ready' : 'unknown', 'Chrome/profile-dependent browser cache'),
@@ -1420,7 +1434,8 @@ Usage:
   yam hook run <lite|study-note>
 
 Notes:
-  hooks are opt-in and advisory-only. They do not run tmux, subagents, or proof gates.
+  hooks are opt-in. lite is advisory-only; study-note adds a prompt reminder and a one-pass Stop completion gate.
+  Hooks do not generate reports, run tmux, start subagents, or execute verification automatically.
 `);
 }
 
@@ -1450,11 +1465,11 @@ function hookPathFor(parsed) {
 }
 
 function isYamLiteHook(handler: AnyRecord = {}) {
-  return handler?.type === 'command' && String(handler.command || '').includes('yam.js hook run lite');
+  return handler?.type === 'command' && /yam(?:\.js)?["']?\s+hook\s+run\s+lite(?:\s|$)/i.test(String(handler.command || ''));
 }
 
 function isYamStudyNoteHook(handler: AnyRecord = {}) {
-  return handler?.type === 'command' && String(handler.command || '').includes('yam.js hook run study-note');
+  return handler?.type === 'command' && /yam(?:\.js)?["']?\s+hook\s+run\s+study-note(?:\s|$)/i.test(String(handler.command || ''));
 }
 
 function isYamHookProfile(handler: AnyRecord = {}, profile = 'lite') {
@@ -1464,7 +1479,8 @@ function isYamHookProfile(handler: AnyRecord = {}, profile = 'lite') {
 function stripYamHooks(config: AnyRecord = {}, profile = 'lite') {
   const next = { ...config };
   for (const event of Object.keys(next)) {
-    const entries = Array.isArray(next[event]) ? next[event] : [];
+    if (!Array.isArray(next[event])) continue;
+    const entries = next[event];
     const keptEntries = [];
     for (const entry of entries) {
       const hooks = Array.isArray(entry?.hooks) ? entry.hooks.filter((handler) => !isYamHookProfile(handler, profile)) : [];
@@ -1479,28 +1495,42 @@ function stripYamHooks(config: AnyRecord = {}, profile = 'lite') {
 
 function withYamHook(config: AnyRecord = {}, profile = 'lite') {
   const next = stripYamHooks(config, profile);
-  const event = 'UserPromptSubmit';
-  const entry = {
-    hooks: [
-      {
-        type: 'command',
-        command: profile === 'study-note' ? YAM_STUDY_NOTE_HOOK_COMMAND : YAM_LITE_HOOK_COMMAND,
-        timeout: 5
-      }
-    ]
-  };
-  next[event] = [...(Array.isArray(next[event]) ? next[event] : []), entry];
+  const command = hookCommandForProfile(profile);
+  for (const event of hookEventsForProfile(profile)) {
+    const entry = {
+      hooks: [
+        {
+          type: 'command',
+          command,
+          timeout: 5
+        }
+      ]
+    };
+    next[event] = [...(Array.isArray(next[event]) ? next[event] : []), entry];
+  }
   return next;
 }
 
 async function hookStatus(args = []) {
   const parsed = parseHookArgs(args);
   const target = hookPathFor(parsed);
-  const config = await readJsonOrDefault(target, {});
-  console.log(`yam-lite hook: ${hookConfigHasProfile(config, 'lite') ? 'enabled' : 'disabled'}`);
-  console.log(`yam-study-note hook: ${hookConfigHasProfile(config, 'study-note') ? 'enabled' : 'disabled'}`);
+  const loaded = await readHookConfig(target);
+  if (loaded.error) {
+    console.log('yam-lite hook: broken');
+    console.log('yam-study-note hook: broken');
+    console.log(`  - hook config unreadable: ${loaded.error}`);
+    console.log(`scope: ${parsed.mode}`);
+    console.log(`file: ${target}`);
+    process.exitCode = 1;
+    return;
+  }
+  const lite = await inspectHookProfile(loaded.config, 'lite');
+  const studyNote = await inspectHookProfile(loaded.config, 'study-note');
+  printHookProfileStatus('lite', lite);
+  printHookProfileStatus('study-note', studyNote);
   console.log(`scope: ${parsed.mode}`);
   console.log(`file: ${target}`);
+  if (lite.state === 'broken' || studyNote.state === 'broken') process.exitCode = 1;
 }
 
 function hookConfigHasYamLite(config = {}) {
@@ -1513,6 +1543,160 @@ function hookConfigHasProfile(config = {}, profile = 'lite') {
   }));
 }
 
+function hookCommandForProfile(profile = 'lite') {
+  return profile === 'study-note' ? YAM_STUDY_NOTE_HOOK_COMMAND : YAM_LITE_HOOK_COMMAND;
+}
+
+function hookEventsForProfile(profile = 'lite') {
+  return profile === 'study-note' ? ['UserPromptSubmit', 'Stop'] : ['UserPromptSubmit'];
+}
+
+function hookProfileEntries(config: AnyRecord = {}, profile = 'lite') {
+  const matches = [];
+  for (const [event, entries] of Object.entries(config)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!Array.isArray(entry?.hooks)) continue;
+      for (const handler of entry.hooks) {
+        if (isYamHookProfile(handler, profile)) matches.push({ event, handler });
+      }
+    }
+  }
+  return matches;
+}
+
+function splitHookCommand(command = '') {
+  const words = [];
+  let current = '';
+  let quote = '';
+  let escaped = false;
+  let started = false;
+  for (const char of String(command)) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      started = true;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      started = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = '';
+      else current += char;
+      started = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        words.push(current);
+        current = '';
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (escaped || quote) return [];
+  if (started) words.push(current);
+  return words;
+}
+
+function parseYamHookCommand(command = '', profile = 'lite') {
+  const words = splitHookCommand(command);
+  if (words.length === 5 && words[2] === 'hook' && words[3] === 'run' && words[4] === profile) {
+    const nodeName = path.basename(words[0]).toLowerCase();
+    if (/^node(?:\.exe)?$/.test(nodeName) && path.basename(words[1]).toLowerCase() === 'yam.js') {
+      return { executable: words[0], script: words[1] };
+    }
+  }
+  if (words.length === 4 && words[1] === 'hook' && words[2] === 'run' && words[3] === profile) {
+    const yamName = path.basename(words[0]).toLowerCase();
+    if (/^yam(?:\.cmd|\.exe)?$/.test(yamName)) return { executable: words[0], script: '' };
+  }
+  return null;
+}
+
+async function hookTargetExists(target = '', executable = false) {
+  if (!target) return false;
+  if (!path.isAbsolute(target)) return executable ? Boolean(await findExecutable(target)) : false;
+  try {
+    await fsp.access(target, executable ? fs.constants.X_OK : fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function inspectHookHandler(handler: AnyRecord = {}, profile = 'lite') {
+  const parsed = parseYamHookCommand(String(handler.command || ''), profile);
+  if (!parsed) return { ok: false, issue: 'unsupported yam hook command shape; rerun hook enable to migrate it' };
+  if (!await hookTargetExists(parsed.executable, true)) {
+    return { ok: false, issue: `hook executable is missing or not executable: ${parsed.executable}` };
+  }
+  if (parsed.script && !await hookTargetExists(parsed.script)) {
+    return { ok: false, issue: `hook target is missing: ${parsed.script}` };
+  }
+  return { ok: true, issue: '' };
+}
+
+async function inspectHookProfile(config: AnyRecord = {}, profile = 'lite') {
+  const entries = hookProfileEntries(config, profile);
+  if (!entries.length) return { state: 'disabled', issues: [], entries };
+  const issues = [];
+  for (const event of hookEventsForProfile(profile)) {
+    const count = entries.filter((entry) => entry.event === event).length;
+    if (count === 0) issues.push(`${event} handler is missing; rerun yam hook enable ${profile}`);
+    if (count > 1) issues.push(`${event} has ${count} yam-${profile} handlers; rerun hook enable to remove duplicates`);
+  }
+  for (const entry of entries) {
+    if (!hookEventsForProfile(profile).includes(entry.event)) {
+      issues.push(`unexpected ${entry.event} handler; rerun hook enable to migrate event coverage`);
+    }
+    const health = await inspectHookHandler(entry.handler, profile);
+    if (!health.ok) issues.push(`${entry.event}: ${health.issue}`);
+  }
+  return { state: issues.length ? 'broken' : 'enabled', issues: [...new Set(issues)], entries };
+}
+
+function printHookProfileStatus(profile, health) {
+  console.log(`yam-${profile} hook: ${health.state}`);
+  for (const issue of health.issues) console.log(`  - ${issue}`);
+}
+
+async function readHookConfig(target) {
+  try {
+    const value = JSON.parse(await fsp.readFile(target, 'utf8'));
+    if (!value || Array.isArray(value) || typeof value !== 'object') {
+      return { config: {}, exists: true, error: 'top-level value must be a JSON object' };
+    }
+    return { config: value, exists: true, error: '' };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { config: {}, exists: false, error: '' };
+    return { config: {}, exists: true, error: errorMessage(error) };
+  }
+}
+
+async function writeHookConfig(target, config) {
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.yam-write-${process.pid}-${timestampId()}`;
+  try {
+    await fsp.writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+    await fsp.rename(temporary, target);
+  } catch (error) {
+    await rmrf(temporary).catch(() => {});
+    throw error;
+  }
+}
+
 async function hookEnable(args = []) {
   const parsed = parseHookArgs(args);
   if (!['lite', 'study-note'].includes(parsed.profile)) {
@@ -1521,23 +1705,45 @@ async function hookEnable(args = []) {
     return;
   }
   const target = hookPathFor(parsed);
-  const current = await readJsonOrDefault(target, {});
+  const loaded = await readHookConfig(target);
+  if (loaded.error) {
+    console.error(`Cannot update unreadable hook config: ${target}`);
+    console.error(loaded.error);
+    process.exitCode = 1;
+    return;
+  }
+  const current = loaded.config;
+  const existing = hookProfileEntries(current, parsed.profile);
+  const expectedEvents = hookEventsForProfile(parsed.profile);
+  const expectedCommand = hookCommandForProfile(parsed.profile);
+  const needsMigration = existing.length > 0 && (
+    existing.length !== expectedEvents.length
+    || existing.some((entry) => !expectedEvents.includes(entry.event) || String(entry.handler?.command || '') !== expectedCommand)
+  );
   const next = withYamHook(current, parsed.profile);
   await fsp.mkdir(path.dirname(target), { recursive: true });
-  if (await exists(target)) {
+  if (loaded.exists) {
     const backup = `${target}.yam-backup-${timestampId()}`;
     await fsp.copyFile(target, backup);
     console.log(`backup: ${backup}`);
   }
-  await fsp.writeFile(target, `${JSON.stringify(next, null, 2)}\n`);
+  await writeHookConfig(target, next);
   console.log(`yam-${parsed.profile} hook enabled (${parsed.mode}): ${target}`);
+  if (needsMigration) console.log(`migrated: ${existing.length} existing yam-${parsed.profile} handler(s) to the current command and event coverage`);
   console.log('Restart Codex or start a new thread if the app does not pick up hook changes immediately.');
 }
 
 async function hookDisable(args = []) {
   const parsed = parseHookArgs(args);
   const target = hookPathFor(parsed);
-  const current = await readJsonOrDefault(target, {});
+  const loaded = await readHookConfig(target);
+  if (loaded.error) {
+    console.error(`Cannot update unreadable hook config: ${target}`);
+    console.error(loaded.error);
+    process.exitCode = 1;
+    return;
+  }
+  const current = loaded.config;
   if (!hookConfigHasProfile(current, parsed.profile)) {
     console.log(`yam-${parsed.profile} hook already disabled (${parsed.mode}): ${target}`);
     return;
@@ -1546,7 +1752,7 @@ async function hookDisable(args = []) {
   if (Object.keys(next).length === 0) {
     await rmrf(target);
   } else {
-    await fsp.writeFile(target, `${JSON.stringify(next, null, 2)}\n`);
+    await writeHookConfig(target, next);
   }
   console.log(`yam-${parsed.profile} hook disabled (${parsed.mode}): ${target}`);
 }
@@ -1560,6 +1766,10 @@ async function hookRun(args = []) {
   const input = await readStdinJson();
   const event = input?.hook_event_name || input?.hookEventName || input?.event || 'UserPromptSubmit';
   const cwd = String(input?.cwd || process.cwd());
+  if (profile === 'study-note' && event === 'Stop') {
+    console.log(JSON.stringify(await buildStudyNoteStopOutput(input, cwd)));
+    return;
+  }
   const prompt = extractPrompt(input);
   const additionalContext = profile === 'study-note'
     ? await buildStudyNoteHookContext({ cwd })
@@ -1625,6 +1835,7 @@ async function buildStudyNoteHookContext({ cwd }) {
   ];
   if (!changedFiles.length) {
     lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add the Study Note before final.');
+    lines.push('The Study Note Stop hook will check the final response if artifacts are changed later in the turn.');
     return lines.join('\n');
   }
   lines.push(`Changed files detected (${Math.min(changedFiles.length, 8)} shown): ${changedFiles.slice(0, 8).join(', ')}`);
@@ -1634,8 +1845,29 @@ async function buildStudyNoteHookContext({ cwd }) {
     lines.push(`Architecture hygiene required: ${hygiene.map((item) => item.id).join(', ')}.`);
     lines.push('Report whether the change avoided dumping unrelated logic into page.tsx, one-off CSS into global.css, or structured product data into broad DB jsonb.');
   }
-  lines.push('This hook is advisory; it does not generate or edit the Study Note.');
+  lines.push('This prompt reminder does not generate or edit the Study Note; the paired Stop hook requests one correction pass if the final response is incomplete.');
   return lines.join('\n');
+}
+
+async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd()) {
+  const lastAssistantMessage = String(input?.last_assistant_message || input?.lastAssistantMessage || '');
+  const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message');
+  if (!result.blockers.length) return { continue: true };
+  const summary = result.blockers.slice(0, 4).join('; ');
+  if (Boolean(input?.stop_hook_active || input?.stopHookActive)) {
+    return {
+      continue: true,
+      systemMessage: `yam Study Note completion gate remains blocked after one correction pass: ${summary}`
+    };
+  }
+  return {
+    decision: 'block',
+    reason: [
+      'yam Study Note completion gate blocked this response because changed project artifacts require a complete Study Note.',
+      summary,
+      'Revise the final response to include: touched artifact, role, execution point, before/after change, expected behavior, one syntax/structure insight, verification, limits, and any relevant architecture hygiene.'
+    ].join(' ')
+  };
 }
 
 function yamLiteRouteHint(prompt = '') {

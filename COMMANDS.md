@@ -152,7 +152,7 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
-yam study-note check /path/to/project --text "Study Note: Touched code role before/after verification limits." --json
+yam study-note check /path/to/project --text "Study Note: The hook handler's role is final-report validation. It runs at Codex Stop. Before it only reminded; after it requests one correction pass. Expected behavior is a complete note. Structure insight: decision=block creates a continuation prompt. Verification checked the packaged CLI. Limits: a restarted real task remains to be observed." --json
 yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
@@ -206,7 +206,7 @@ Supported report shapes:
 - Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, L5 bounded deep with stop condition and skipped/remaining work.
 - Loop report: intent, guided stage outcomes, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
 - Study note: non-specialist explanation of the changed code/artifact, its role, execution point, before/after behavior, expected behavior, one syntax/structure insight, verification, uncertainty, and architecture hygiene around `page.tsx`, `global.css`, and DB `jsonb`.
-- Study Note guard: read-only check for changed files and supplied final-report text; opt into prompt-time reminders with `yam hook enable study-note --global`.
+- Study Note guard: read-only check for changed files and supplied final-report text; the opt-in `study-note` hook adds a prompt reminder and one bounded Codex `Stop` correction pass.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.
 - Ueye continuity/comparison: previous report, current report, comparison delta, design quality, next action.
@@ -215,9 +215,9 @@ Supported report shapes:
 - Context pressure: project pack age/size, memory summary, dirty scope, scripts, instruction surfaces, and route hint.
 - Cleanup scan: advisory-only list of confusing surfaces with destructive=false.
 
-## Lite Hook
+## Hooks
 
-Advisory-only hook. It does not run checks or force routes.
+`lite` is advisory-only. `study-note` runs the read-only Study Note Guard against the final assistant message and can request one correction pass; neither profile runs verification or forces routes.
 
 ```bash
 yam hook status --global
@@ -226,3 +226,5 @@ yam hook enable study-note --global
 yam hook disable lite --global
 yam hook disable study-note --global
 ```
+
+`yam hook status` exits nonzero for unreadable configs, stale paths, missing targets, duplicate handlers, or incomplete event coverage. Re-enable the affected profile to back up the file, preserve unrelated hooks, and migrate its command and events.

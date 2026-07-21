@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,7 +34,8 @@ try {
   const missingStudyNoteGuard = spawnFailureJson(bin, ['study-note', 'check', root, '--json']);
   assert(missingStudyNoteGuard.schema === 'yam.study-note-guard.v1', 'study note guard schema missing');
   assert(missingStudyNoteGuard.truth_status === 'blocked', 'study note guard should block changed files without report text');
-  const passingStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', root, '--text', 'Study Note: Touched code role before/after changed verification limits.', '--json'], { encoding: 'utf8' }));
+  const completeStudyNote = 'Study Note: Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains.';
+  const passingStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', root, '--text', completeStudyNote, '--json'], { encoding: 'utf8' }));
   assert(passingStudyNoteGuard.truth_status === 'verified', 'study note guard should pass supplied Study Note text');
   const toolsDoctor = JSON.parse(execFileSync(bin, ['tools', 'doctor', root, '--json'], { encoding: 'utf8' }));
   assert(toolsDoctor.contextPressure?.schema === 'yam.context-pressure.v1', 'tools doctor missing contextPressure');
@@ -42,10 +43,47 @@ try {
   const hookRunStudyNote = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit' }), encoding: 'utf8' }));
   assert(hookRunStudyNote.hookSpecificOutput?.additionalContext?.includes('Study Note guard active'), 'study note hook should inject advisory context');
   const hookProject = join(prefix, 'hook-project');
-  execFileSync('mkdir', ['-p', hookProject]);
+  const hookConfigDir = join(hookProject, '.codex');
+  const hookConfigFile = join(hookConfigDir, 'hooks.json');
+  mkdirSync(hookConfigDir, { recursive: true });
+  writeFileSync(hookConfigFile, `${JSON.stringify({
+    description: 'preserve this hook metadata',
+    SessionStart: [{ hooks: [{ type: 'command', command: 'printf unrelated-session-hook', timeout: 3 }] }],
+    UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node /definitely/missing/yam.js hook run study-note', timeout: 5 }] }]
+  }, null, 2)}\n`);
+  const brokenHookStatus = spawnFailureText(bin, ['hook', 'status', '--project', hookProject]);
+  assert(brokenHookStatus.includes('yam-study-note hook: broken'), 'missing hook target should report broken');
+  assert(brokenHookStatus.includes('hook target is missing'), 'broken hook status should identify the missing target');
   execFileSync(bin, ['hook', 'enable', 'study-note', '--project', hookProject], { stdio: 'ignore' });
   const hookStatus = execFileSync(bin, ['hook', 'status', '--project', hookProject], { encoding: 'utf8' });
   assert(hookStatus.includes('yam-study-note hook: enabled'), 'study note hook status should show enabled');
+  const hookConfig = JSON.parse(readFileSync(hookConfigFile, 'utf8'));
+  assert(hookConfig.description === 'preserve this hook metadata', 'hook migration should preserve top-level metadata');
+  assert(hookConfig.SessionStart?.[0]?.hooks?.[0]?.command === 'printf unrelated-session-hook', 'hook migration should preserve unrelated hooks');
+  assert(hookConfig.UserPromptSubmit?.some((entry) => entry.hooks?.some((handler) => handler.command?.includes('hook run study-note'))), 'study note profile should install UserPromptSubmit');
+  assert(hookConfig.Stop?.some((entry) => entry.hooks?.some((handler) => handler.command?.includes('hook run study-note'))), 'study note profile should install Stop completion gate');
+  assert(readdirSync(hookConfigDir).some((name) => name.startsWith('hooks.json.yam-backup-')), 'hook migration should create a backup');
+  execFileSync('git', ['init', '-q'], { cwd: hookProject });
+  writeFileSync(join(hookProject, 'tracked.txt'), 'baseline\n');
+  execFileSync('git', ['add', 'tracked.txt'], { cwd: hookProject });
+  execFileSync('git', ['-c', 'user.name=yam-smoke', '-c', 'user.email=yam-smoke@example.com', 'commit', '-qm', 'baseline'], { cwd: hookProject });
+  writeFileSync(join(hookProject, 'tracked.txt'), 'changed\n');
+  const blockedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Done.' }), encoding: 'utf8' }));
+  assert(blockedStop.decision === 'block', 'Study Note Stop hook should request one correction pass');
+  assert(blockedStop.reason?.includes('completion gate blocked'), 'Study Note Stop hook should explain the completion block');
+  const passingStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: completeStudyNote }), encoding: 'utf8' }));
+  assert(passingStop.continue === true && !passingStop.decision, 'complete Study Note should pass the Stop hook');
+  const boundedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: true, last_assistant_message: 'Still missing.' }), encoding: 'utf8' }));
+  assert(boundedStop.continue === true && boundedStop.systemMessage?.includes('remains blocked'), 'Stop hook should avoid an infinite correction loop and retain a warning');
+  const invalidHookProject = join(prefix, 'invalid-hook-project');
+  const invalidHookConfigDir = join(invalidHookProject, '.codex');
+  const invalidHookConfigFile = join(invalidHookConfigDir, 'hooks.json');
+  mkdirSync(invalidHookConfigDir, { recursive: true });
+  writeFileSync(invalidHookConfigFile, '{ invalid json\n');
+  const invalidHookStatus = spawnFailureText(bin, ['hook', 'status', '--project', invalidHookProject]);
+  assert(invalidHookStatus.includes('hook config unreadable'), 'invalid hook config should report broken');
+  spawnFailureText(bin, ['hook', 'enable', 'study-note', '--project', invalidHookProject]);
+  assert(readFileSync(invalidHookConfigFile, 'utf8') === '{ invalid json\n', 'hook enable should not overwrite unreadable config');
   execFileSync(bin, ['loop', '--help'], { stdio: 'ignore' });
   const loopReport = spawnFailureJson(bin, ['loop', 'report', '--route', 'quick', '--intent', 'fix release readiness', '--stage', 'inspect:passed:read release report', '--evidence', 'typecheck passed', '--evidence-level', 'local', '--evidence-stamp', 'sha256:smoke-release-report', '--touched-file', 'src/bin/yam.ts', '--read-file', 'README.md', '--verified-file', 'scripts/cli-smoke.mjs', '--skipped-check', 'npm publish skipped by design', '--stop-condition', 'stop after release readiness evidence is recorded', '--resume-hint', 'rerun release report after npm auth refresh', '--readiness-state', 'blocked', '--covered-requirement', 'release report is read-only', '--blocked-kind', 'auth_blocked', '--failure-cause', 'auth_token_invalid', '--safe-retry', 'retry after npm whoami succeeds', '--recovery-hint', 'refresh npm auth, then rerun readiness checks', '--fix-first-item', 'npm auth must be verified before publish', '--remaining-task', 'rerun release report after auth refresh', '--recommended-direction', 'fix npm auth first, then publish manually', '--implementation-note', 'keep loop report read-only', '--why-this-next', 'auth blocks public release claims', '--blocked-by', 'npm whoami E401', '--owner-route', 'deep', '--owner-scope', 'release readiness only', '--scope-owner', '$deep', '--side-effect', 'no publish attempted', '--avoidance-note', 'do not retry publish before npm auth is proven', '--issue-code', 'src/bin/yam.ts release report', '--issue-role', 'summarizes release readiness without publishing', '--issue-symptom', 'npm auth failure needs clearer next action', '--changed-code', 'yam loop report', '--changed-role', 'records loop evidence and learning note', '--change-summary', 'added a read-only loop artifact', '--why-important', 'it helps users learn what changed without overclaiming verification', '--learning-note', 'fix blockers before claiming done', '--json']);
   assert(loopReport.schema === 'yam.loop-report.v1', 'loop report schema missing');
@@ -192,6 +230,15 @@ function spawnFailureJson(bin, args) {
     execFileSync(bin, args, { encoding: 'utf8' });
   } catch (error) {
     return JSON.parse(String(error.stdout || '{}'));
+  }
+  throw new Error(`Expected failure for ${args.join(' ')}`);
+}
+
+function spawnFailureText(bin, args) {
+  try {
+    execFileSync(bin, args, { encoding: 'utf8' });
+  } catch (error) {
+    return [error.stdout, error.stderr].filter(Boolean).map(String).join('\n');
   }
   throw new Error(`Expected failure for ${args.join(' ')}`);
 }

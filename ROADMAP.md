@@ -11,9 +11,10 @@ Implemented:
 - Transactional skill install with rollback, SHA-256 receipt, install lock, and status drift detection. Done.
 - CLI helpers: detect, budget, template, tune-log, version.
 - Optional advisory `yam-lite` hook with status/enable/disable. Done.
+- Optional Study Note prompt reminder plus bounded Codex `Stop` completion gate, hook health, and stale-path migration. Done.
 - Opt-in project memory: init, add, list, summary, resolve.
 - Honest completion guard: no verified/cleanup/visual claims without evidence.
-- No hooks, automations, or global config.
+- No hooks, automations, or global config mutations unless the user explicitly enables them.
 - Token economy policy.
 
 ## Next Stages
@@ -304,6 +305,8 @@ Tasks:
 
 - Add `yam hook status|enable|disable|run lite`. Done.
 - Keep `yam-lite` advisory-only through `UserPromptSubmit`. Done.
+- Add Study Note `UserPromptSubmit` reminder plus one-pass `Stop` completion gate. Done.
+- Detect broken hook targets and migrate stale paths without replacing unrelated hooks. Done.
 - Add `references/tool-trust-layer.md`. Done.
 - Add read-only `yam tools doctor`. Done.
 - Add `yam proof` summary command. Done.

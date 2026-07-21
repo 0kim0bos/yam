@@ -35,6 +35,7 @@ See `ROADMAP.md` for remaining implementation stages.
 
 - No required hooks.
 - Optional `yam-lite` hook is advisory-only and off by default.
+- Optional `study-note` hook adds a prompt reminder and a bounded final-response check; it is off by default.
 - No automatic Team routing.
 - No automatic proof loops.
 - No automatic tmux.
@@ -86,6 +87,19 @@ yam hook disable lite --global
 ```
 
 It only adds short advisory context. It does not run verification, tmux, browser QA, subagents, or dependency installs.
+
+## Study Note Hook
+
+Enable this profile when you want Codex to check changed work at final-response time as well as remind the agent at prompt time.
+
+```bash
+yam hook enable study-note --global
+yam hook status --global
+```
+
+The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam checks the latest assistant message with the same read-only Study Note Guard used by `yam study-note check`. If changed artifacts lack the required role, execution point, before/after, expected behavior, syntax/structure, verification, limits, or relevant architecture hygiene, Codex receives one correction prompt. A second failed check warns but does not loop forever. The hook never writes the Study Note or runs verification for the agent.
+
+`yam hook status` reports stale or missing command targets as `broken` and exits nonzero. Run `yam hook enable <profile> --global` again to create a timestamped backup, preserve unrelated hooks, and migrate that profile to the current installed path and event coverage. Restart Codex or open a new task after changing hooks.
 
 ## Install
 
@@ -227,7 +241,7 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, readiness receipt, and final truth status.
 - Loop report JSON: `yam loop report --json` records a read-only handoff artifact: guided stages, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, requirement coverage, evidence level/stamp, blocker kind, failure cause, safe retry, recovery hint, owner route/scope, side effects, next action, fix-first items, remaining tasks, recommended direction, implementation notes, blocked-by notes, avoidance note, tool intent, truth status, and study note.
 - Study note: `yam.study-note.v1` and `references/study-note.md` keep non-specialist explanations for what code/artifact changed, what role it plays, where it runs, what changed from before to after, what behavior is expected, one syntax/structure insight, what was verified, and what remains uncertain. Missing details stay in `limits` instead of being guessed. Study Note v3 also asks whether work was dumped into `page.tsx`, `global.css`, or broad DB `jsonb` when a smaller component, style module/token, typed column, relation, or validation schema would teach and scale better.
-- Study Note guard: `yam study-note check` is a read-only missing-note guard. It checks changed files against supplied final-report text and can be used directly or through the opt-in `yam hook enable study-note --global` advisory hook.
+- Study Note guard: `yam study-note check` is a read-only missing-note guard. The opt-in `yam hook enable study-note --global` profile reuses it for a prompt reminder and one bounded Codex `Stop` correction pass; it still does not generate or edit a report.
 - Avoidance note: loop reports may include one short mistake-to-avoid note, but durable memory stays explicit through `yam memory add`; `yam loop report` does not write `.yam/memory`.
 - Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.
 - Publish readiness evidence: release reports run read-only registry/auth/version probes, redact account/token details, keep npm publish outside the report, and include a `yam.release-readiness-receipt.v1` basis for the readiness judgment.
