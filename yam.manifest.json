@@ -1,12 +1,13 @@
 {
   "name": "yam",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "principles": [
     "Direction before execution.",
     "Start fast.",
     "Deepen deliberately.",
     "Basic direction fit and honest verification always.",
     "Honest by design.",
+    "Stage and verify the complete managed skill set before replacement, then record install integrity for later drift checks.",
     "Heavy proof when risk or user intent calls for it.",
     "Token-aware by default.",
     "Context-reuse first.",

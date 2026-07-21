@@ -8,6 +8,7 @@ Implemented:
 - Six routes: quick, ueye, question, scout, deep, mission.
 - Shared references.
 - Local CLI: list, status, verify, doctor, examples, path, install, uninstall.
+- Transactional skill install with rollback, SHA-256 receipt, install lock, and status drift detection. Done.
 - CLI helpers: detect, budget, template, tune-log, version.
 - Optional advisory `yam-lite` hook with status/enable/disable. Done.
 - Opt-in project memory: init, add, list, summary, resolve.
@@ -94,6 +95,7 @@ Tasks:
 
 - Add symlink-friendly local install.
 - Add version command. Done.
+- Add staged transactional install, rollback, receipt, and drift-aware status. Done.
 - Consider npm packaging only after route behavior stabilizes.
 
 ### 8. Scout / Research Workflow

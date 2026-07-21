@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 
 const pairs = [
   ['src/bin/yam.ts', 'dist/bin/yam.js'],
+  ['src/lib/skill-installation.ts', 'dist/lib/skill-installation.js'],
   ['src/lib/trust-kernel.ts', 'dist/lib/trust-kernel.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
 ];

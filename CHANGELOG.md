@@ -2,6 +2,28 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.3.1 - 2026-07-21
+
+### Added
+
+- Added a transactional skill installer that stages and SHA-256 verifies the complete managed skill set before replacing the active installation.
+- Added `yam.install-receipt.v1` with the installed package version, source identity, timestamp, destination, skill inventory, per-file hashes, and aggregate source digest.
+- Added deterministic install transaction smoke coverage for successful commit, forced mid-commit rollback, drift detection and repair, mirror cleanup, and concurrent-install locking.
+
+### Improved
+
+- `yam status` now detects missing files, unexpected files, hash drift, receipt drift, and package-version drift instead of checking only for `SKILL.md` and `references/` existence.
+- Failed commits restore the previous managed skill set and receipt; legacy and retired skill cleanup now participates in the same rollback boundary.
+- Unfinished transaction artifacts are surfaced by `yam status` and block a new install so recovery backups are not silently overwritten.
+- `yam uninstall` removes the install receipt and refuses to run while an install lock is present.
+
+### Verification
+
+- `npm run verify:self`
+- `npm run dist:freshness`
+- `npm run package-boundary:check`
+- `npm run cli-smoke`
+
 ## v2.3.0 - 2026-07-13
 
 ### Added

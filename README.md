@@ -96,21 +96,13 @@ cd ~/Documents/Codex/tools/yam
 yam install
 ```
 
-This copies each skill plus the shared `references/` directory into `~/.agents/skills/`, which is the user skill root used by this Codex desktop setup.
+`yam install` stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and only then replaces the active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt.
 
-Manual install is also possible by copying selected skill folders into your active Codex user skill root, but make sure each installed skill also receives a `references/` folder.
+A successful install writes `~/.agents/skills/.yam-flow-install-receipt.json`. The receipt records the package version, source identity, install timestamp, destination, managed skill inventory, and per-file hashes. `yam status` independently recomputes source and installed hashes, so a stale package install, local file change, unexpected file, or modified receipt is reported as drift.
 
-Recommended v0:
+An ordinary install error rolls back automatically. An abrupt process or machine termination can leave `.yam-flow-install.lock` and a hidden transaction directory; `yam status` surfaces the unfinished transaction and yam refuses another mutation while recovery state remains. Remove the lock only after confirming no install is running, and preserve any transaction directory until the previous installation state has been inspected.
 
-```bash
-mkdir -p ~/.agents/skills
-for skill in quick ueye question scout deep mission; do
-  rm -rf "$HOME/.agents/skills/$skill"
-  mkdir -p "$HOME/.agents/skills/$skill"
-  cp "skills/$skill/SKILL.md" "$HOME/.agents/skills/$skill/SKILL.md"
-  cp -R references "$HOME/.agents/skills/$skill/references"
-done
-```
+Manual copying can still make a skill loadable, but it intentionally remains unverified: without a matching receipt, `yam status` exits non-zero and recommends `yam install`.
 
 Restart Codex after installing so skills reload.
 
@@ -186,6 +178,8 @@ npx -y --package yam-flow yam install
 npm install -g yam-flow
 yam status
 ```
+
+After `yam status` reports all skills and the install receipt as `ok`, restart Codex so the refreshed skills reload.
 
 Publishing still requires confirming the final npm package name and account access.
 

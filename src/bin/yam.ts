@@ -33,6 +33,12 @@ import {
   verifyUeyeAssetManifest,
   verifyUeyeRevisionHistory
 } from '../lib/ueye-artifacts.js';
+import {
+  INSTALL_LOCK_NAME,
+  INSTALL_RECEIPT_NAME,
+  inspectSkillInstallation,
+  installSkillSetTransactional
+} from '../lib/skill-installation.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -199,75 +205,73 @@ async function rmrf(target) {
   await fsp.rm(target, { recursive: true, force: true });
 }
 
-async function copyDir(source, target) {
-  await fsp.mkdir(target, { recursive: true });
-  const entries = await fsp.readdir(source, { withFileTypes: true });
-  for (const entry of entries) {
-    const from = path.join(source, entry.name);
-    const to = path.join(target, entry.name);
-    if (entry.isDirectory()) {
-      await copyDir(from, to);
-    } else if (entry.isFile()) {
-      await fsp.copyFile(from, to);
-    }
-  }
-}
-
-async function installSkill(skill) {
-  const source = path.join(ROOT, 'skills', skill);
-  const target = path.join(DEST, skill);
-  const references = path.join(ROOT, 'references');
-
-  if (!await exists(path.join(source, 'SKILL.md'))) {
-    throw new Error(`missing skill source: ${source}`);
-  }
-
-  await rmrf(target);
-  await fsp.mkdir(target, { recursive: true });
-  await fsp.copyFile(path.join(source, 'SKILL.md'), path.join(target, 'SKILL.md'));
-  await copyDir(references, path.join(target, 'references'));
-}
-
 async function install() {
-  await fsp.mkdir(DEST, { recursive: true });
-  for (const skill of SKILLS) {
-    await installSkill(skill);
-  }
-  for (const legacySkill of LEGACY_SKILLS) {
-    await rmrf(path.join(DEST, legacySkill));
-  }
-  for (const retiredSkill of RETIRED_SKILLS) {
-    await rmrf(path.join(DEST, retiredSkill));
-  }
-  if (CODEX_MIRROR !== DEST && fs.existsSync(CODEX_MIRROR)) {
-    for (const skill of [...SKILLS, ...LEGACY_SKILLS, ...RETIRED_SKILLS]) {
-      await rmrf(path.join(CODEX_MIRROR, skill));
-    }
-  }
+  const result = await installSkillSetTransactional({
+    sourceRoot: ROOT,
+    destination: DEST,
+    codexMirror: CODEX_MIRROR,
+    packageName: String(PACKAGE_JSON.name || 'yam-flow'),
+    version: VERSION,
+    skills: SKILLS,
+    legacySkills: LEGACY_SKILLS,
+    retiredSkills: RETIRED_SKILLS
+  });
   console.log(`yam installed to ${DEST}`);
+  console.log(`install receipt: ${result.receiptPath}`);
+  console.log(`integrity: ${result.installedFiles} files, sha256:${result.sourceDigest}`);
+  for (const warning of result.cleanupWarnings) console.warn(`warning: ${warning}`);
   console.log('Restart Codex to reload skills.');
 }
 
 async function uninstall() {
+  const lockPath = path.join(DEST, INSTALL_LOCK_NAME);
+  if (await exists(lockPath)) {
+    throw new Error(`cannot uninstall while an install lock exists: ${lockPath}`);
+  }
   for (const skill of [...SKILLS, ...LEGACY_SKILLS, ...RETIRED_SKILLS]) {
     await rmrf(path.join(DEST, skill));
     if (CODEX_MIRROR !== DEST) {
       await rmrf(path.join(CODEX_MIRROR, skill));
     }
   }
+  await rmrf(path.join(DEST, INSTALL_RECEIPT_NAME));
   console.log(`yam removed from ${DEST}`);
   if (CODEX_MIRROR !== DEST) console.log(`yam mirror entries removed from ${CODEX_MIRROR}`);
   console.log('Restart Codex to unload skills.');
 }
 
 async function status({ quiet = false } = {}) {
-  let missing = 0;
-  for (const skill of SKILLS) {
-    const ok = await exists(path.join(DEST, skill, 'SKILL.md')) && await exists(path.join(DEST, skill, 'references'));
-    if (!quiet) console.log(`${ok ? 'ok     ' : 'missing'} ${skill}`);
-    if (!ok) missing += 1;
+  const report = await inspectSkillInstallation({
+    sourceRoot: ROOT,
+    destination: DEST,
+    packageName: String(PACKAGE_JSON.name || 'yam-flow'),
+    version: VERSION,
+    skills: SKILLS
+  });
+  if (!quiet) {
+    for (const skill of report.skills) {
+      const label = skill.status === 'ok' ? 'ok     ' : skill.status === 'missing' ? 'missing' : 'drift  ';
+      console.log(`${label} ${skill.skill}`);
+    }
+    if (report.receiptStatus === 'ok' && report.receipt) {
+      console.log(`ok      install receipt ${report.receipt.package.name}@${report.receipt.package.version}`);
+      console.log(`        sha256:${report.receipt.integrity.source_digest}`);
+    } else {
+      console.log(`${report.receiptStatus === 'missing' ? 'missing' : 'drift  '} install receipt`);
+    }
+    if (report.issues.length) {
+      console.log('');
+      console.log('Install integrity issues:');
+      for (const issue of report.issues.slice(0, 12)) console.log(`- ${issue}`);
+      if (report.issues.length > 12) console.log(`- ... ${report.issues.length - 12} more issue(s)`);
+      if (report.recoveryArtifacts.length) {
+        console.log('Confirm no install is running, then inspect and preserve the transaction backup before retrying.');
+      } else {
+        console.log('Run `yam install` to restore the package-bundled skill set.');
+      }
+    }
   }
-  return missing;
+  return report.ok ? 0 : Math.max(1, report.issues.length);
 }
 
 async function list() {
@@ -316,6 +320,7 @@ async function verify({ quiet = false } = {}) {
 
   if (!manifest) return failOrReport('yam verify', issues, quiet);
   if (manifest.name !== 'yam') issues.push('manifest name must be yam');
+  if (manifest.version !== VERSION) issues.push(`manifest version must match package version: ${manifest.version || 'missing'} != ${VERSION}`);
   if (manifest.defaultHooks !== false) issues.push('manifest defaultHooks must be false');
   if (!Array.isArray(manifest.routes) || manifest.routes.length !== SKILLS.length) {
     issues.push(`manifest routes must contain ${SKILLS.length} routes`);
