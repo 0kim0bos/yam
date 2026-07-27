@@ -51,8 +51,8 @@ Tasks:
 
 - Read `package.json` scripts.
 - Detect common commands: typecheck, lint, test, build. Done.
-- Map changed files to likely checks. Partial: route-level suggestions added.
-- Keep this advisory, not mandatory.
+- Map changed files to likely checks. Done: dirty, staged, and untracked paths now map to focused rules with confidence, reason, fallback, and available commands.
+- Keep this advisory, not mandatory. Done.
 
 ### 4. Token Budget Reporter
 

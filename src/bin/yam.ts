@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -34,10 +35,9 @@ import {
   verifyUeyeRevisionHistory
 } from '../lib/ueye-artifacts.js';
 import {
-  INSTALL_LOCK_NAME,
-  INSTALL_RECEIPT_NAME,
   inspectSkillInstallation,
-  installSkillSetTransactional
+  installSkillSetTransactional,
+  uninstallSkillSetSafely
 } from '../lib/skill-installation.js';
 
 type AnyRecord = Record<string, any>;
@@ -84,6 +84,13 @@ const VERSION = String(PACKAGE_JSON.version || '0.0.0');
 const PROJECT_PACK = 'yam.project.md';
 const LEGACY_PROJECT_PACK = 'timeto.project.md';
 const PACK_STALE_DAYS = 30;
+const INSTRUCTION_DUPLICATION_LIMITS = {
+  maxFiles: 24,
+  maxBytesPerFile: 128000,
+  maxGroups: 8,
+  maxDepth: 6,
+  minDirectiveChars: 40
+};
 const YAM_HOOK_ENTRYPOINT = path.join(ROOT, 'dist', 'bin', 'yam.js');
 const YAM_LITE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run lite`;
 const YAM_STUDY_NOTE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run study-note`;
@@ -151,7 +158,7 @@ Usage:
   yam list
   yam status
   yam verify
-  yam detect [dir]
+  yam detect [dir] [--json]
   yam pack [dir]
   yam context pressure [dir] [--json]
   yam cleanup scan [dir] [--json]
@@ -180,7 +187,7 @@ Usage:
   yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
   yam template <project|ueye|mission|proof|tuning>
   yam tune-log [dir]
-  yam install
+  yam install [--replace-user-skill name]
   yam uninstall
   yam doctor [--json]
   yam examples
@@ -206,7 +213,32 @@ async function rmrf(target) {
   await fsp.rm(target, { recursive: true, force: true });
 }
 
-async function install() {
+function installReplacementSkills(args: string[] = []) {
+  const skills: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index] || '');
+    if (arg === '--replace-user-skill') {
+      const skill = String(args[index + 1] || '');
+      if (!skill || skill.startsWith('--')) {
+        throw new Error('missing skill name after --replace-user-skill');
+      }
+      skills.push(skill);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--replace-user-skill=')) {
+      const skill = arg.slice('--replace-user-skill='.length);
+      if (!skill) throw new Error('missing skill name after --replace-user-skill=');
+      skills.push(skill);
+      continue;
+    }
+    throw new Error(`unknown yam install argument: ${arg}`);
+  }
+  return [...new Set(skills)];
+}
+
+async function install(args: string[] = []) {
+  const replaceSkills = installReplacementSkills(args);
   const result = await installSkillSetTransactional({
     sourceRoot: ROOT,
     destination: DEST,
@@ -214,6 +246,7 @@ async function install() {
     packageName: String(PACKAGE_JSON.name || 'yam-flow'),
     version: VERSION,
     skills: SKILLS,
+    replaceSkills,
     legacySkills: LEGACY_SKILLS,
     retiredSkills: RETIRED_SKILLS
   });
@@ -224,20 +257,20 @@ async function install() {
   console.log('Restart Codex to reload skills.');
 }
 
-async function uninstall() {
-  const lockPath = path.join(DEST, INSTALL_LOCK_NAME);
-  if (await exists(lockPath)) {
-    throw new Error(`cannot uninstall while an install lock exists: ${lockPath}`);
-  }
-  for (const skill of [...SKILLS, ...LEGACY_SKILLS, ...RETIRED_SKILLS]) {
-    await rmrf(path.join(DEST, skill));
-    if (CODEX_MIRROR !== DEST) {
-      await rmrf(path.join(CODEX_MIRROR, skill));
-    }
-  }
-  await rmrf(path.join(DEST, INSTALL_RECEIPT_NAME));
+async function uninstall(args: string[] = []) {
+  if (args.length) throw new Error(`unknown yam uninstall argument: ${args[0]}`);
+  const result = await uninstallSkillSetSafely({
+    destination: DEST,
+    codexMirror: CODEX_MIRROR,
+    packageName: String(PACKAGE_JSON.name || 'yam-flow'),
+    skills: SKILLS
+  });
   console.log(`yam removed from ${DEST}`);
-  if (CODEX_MIRROR !== DEST) console.log(`yam mirror entries removed from ${CODEX_MIRROR}`);
+  console.log(`removed receipt: ${result.receiptPath}`);
+  for (const warning of result.cleanupWarnings) console.warn(`warning: ${warning}`);
+  if (CODEX_MIRROR !== DEST) {
+    console.log(`unowned legacy, retired, and Codex mirror entries were preserved`);
+  }
   console.log('Restart Codex to unload skills.');
 }
 
@@ -426,12 +459,20 @@ async function doctor(args = []) {
     console.log('yam doctor: ok');
     console.log('No hooks, automations, or global config are required.');
     console.log('Skill install state is reported by `yam status`.');
+    if (report.preservedUnprovenSkillEntries.length) {
+      console.log(`Preserved unproven legacy/retired/mirror entries: ${report.preservedUnprovenSkillEntries.length}`);
+    }
     console.log(`yam-lite hook: ${report.yamLiteHook} (optional)`);
     return;
   }
 
   console.log('yam doctor: issues');
   for (const issue of report.issues) console.log(`- ${issue}`);
+  if (report.preservedUnprovenSkillEntries.length) {
+    console.log('');
+    console.log('Preserved unproven skill entries:');
+    for (const entry of report.preservedUnprovenSkillEntries) console.log(`- ${entry}`);
+  }
   if (report.nextActions.length) {
     console.log('');
     console.log('Next actions:');
@@ -442,6 +483,7 @@ async function doctor(args = []) {
 
 async function buildDoctorReport() {
   const issues = [];
+  const preservedUnprovenSkillEntries = [];
   for (const skill of SKILLS) {
     if (!await exists(path.join(ROOT, 'skills', skill, 'SKILL.md'))) issues.push(`missing source skill: ${skill}`);
   }
@@ -450,15 +492,21 @@ async function buildDoctorReport() {
   if (await exists(path.join(os.homedir(), '.codex', 'automations', 'yam'))) issues.push('unexpected yam automation');
   if (await exists(path.join(os.homedir(), '.codex', 'automations', 'timeto'))) issues.push('unexpected legacy timeto automation');
   for (const legacySkill of LEGACY_SKILLS) {
-    if (await exists(path.join(DEST, legacySkill, 'SKILL.md'))) issues.push(`unexpected legacy installed skill: ${legacySkill}`);
-    if (CODEX_MIRROR !== DEST && await exists(path.join(CODEX_MIRROR, legacySkill, 'SKILL.md'))) {
-      issues.push(`unexpected legacy mirror skill: ${legacySkill}`);
+    if (await exists(path.join(DEST, legacySkill, 'SKILL.md'))) {
+      preservedUnprovenSkillEntries.push(`legacy-named destination entry: ${legacySkill}`);
     }
   }
   for (const retiredSkill of RETIRED_SKILLS) {
-    if (await exists(path.join(DEST, retiredSkill, 'SKILL.md'))) issues.push(`unexpected retired installed skill: ${retiredSkill}`);
-    if (CODEX_MIRROR !== DEST && await exists(path.join(CODEX_MIRROR, retiredSkill, 'SKILL.md'))) {
-      issues.push(`unexpected retired mirror skill: ${retiredSkill}`);
+    if (await exists(path.join(DEST, retiredSkill, 'SKILL.md'))) {
+      preservedUnprovenSkillEntries.push(`retired-name destination entry: ${retiredSkill}`);
+    }
+  }
+  if (CODEX_MIRROR !== DEST) {
+    const mirrorSkillNames = [...new Set([...SKILLS, ...LEGACY_SKILLS, ...RETIRED_SKILLS])];
+    for (const skill of mirrorSkillNames) {
+      if (!await exists(path.join(CODEX_MIRROR, skill, 'SKILL.md'))) continue;
+      const nameKind = SKILLS.includes(skill) ? 'active-name' : LEGACY_SKILLS.includes(skill) ? 'legacy-named' : 'retired-name';
+      preservedUnprovenSkillEntries.push(`${nameKind} Codex mirror entry: ${skill}`);
     }
   }
   const verifyIssues = await verify({ quiet: true });
@@ -470,6 +518,7 @@ async function buildDoctorReport() {
     generatedAt: new Date().toISOString(),
     ok: issues.length === 0,
     issues,
+    preservedUnprovenSkillEntries,
     nextActions: nextActionDetails.map((action) => action.next_action),
     nextActionDetails,
     yamLiteHook: hookConfigHasYamLite(globalHook) ? 'enabled' : 'disabled'
@@ -487,7 +536,6 @@ function doctorNextActionDetails(issues = []) {
     else if (/missing truth matrix/i.test(issue)) actions.push(nextActionDetail('restore-truth-matrix', 'warning', issue, 'restore references/truth-matrix.md before publishing', 'git checkout -- references/truth-matrix.md'));
     else if (/unexpected local hooks/i.test(issue)) actions.push(nextActionDetail('remove-project-hook', 'warning', issue, 'remove project hooks unless this repo is intentionally dogfooding them', 'inspect .codex/hooks.json and remove only intentional stale hooks'));
     else if (/unexpected .*automation/i.test(issue)) actions.push(nextActionDetail('remove-stale-automation', 'warning', issue, 'remove stale yam/timeto automations before claiming clean install state', 'inspect ~/.codex/automations and remove stale entries manually'));
-    else if (/legacy|retired/i.test(issue)) actions.push(nextActionDetail('replace-old-skills', 'warning', issue, 'run `yam install` to replace old skill entries', 'yam install'));
     else if (/verify reported/i.test(issue)) actions.push(nextActionDetail('run-verify', 'error', issue, 'run `npm run verify` and fix the reported package boundary or metadata issue', 'npm run verify'));
   }
   return uniqueNextActionDetails(actions);
@@ -765,19 +813,28 @@ async function studyNoteCheck(args = []) {
 }
 
 async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'not_provided') {
-  const changedFiles = await gitChangedFiles(dir);
-  const needsStudyNote = changedFiles.length > 0;
+  const changedFileDetection = gitChangedFileSnapshot(dir);
+  const changedFiles = changedFileDetection.files;
+  const changeScopeAvailable = changedFileDetection.available;
+  const needsStudyNote = changeScopeAvailable && changedFiles.length > 0;
+  const scopeAwareStatus = (passes) => changeScopeAvailable ? (!needsStudyNote || passes ? 'pass' : 'fail') : 'partial';
   const hygieneRequirements = studyNoteHygieneRequirements(changedFiles);
   const checks = [
-    studyNoteGuardCheck('changed_files', needsStudyNote ? 'pass' : 'skipped', needsStudyNote ? 'changed files detected; Study Note is required before final completion' : 'no changed files detected'),
-    studyNoteGuardCheck('study_note_present', !needsStudyNote || hasStudyNoteMarker(reportText) ? 'pass' : 'fail', 'final report should include a Study Note when project artifacts changed'),
-    studyNoteGuardCheck('role_or_responsibility', !needsStudyNote || /(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what the touched code/artifact does'),
-    studyNoteGuardCheck('execution_point', !needsStudyNote || /(execution|\bruns?\b|\bloads?\b|\brenders?\b|validates?|builds?|publishes?|read by|실행|로드|렌더|검사|검증|빌드|게시|배포|읽)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain where or when the touched code/artifact runs or is read'),
-    studyNoteGuardCheck('before_after_or_change', !needsStudyNote || /(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should explain what changed from before to after'),
-    studyNoteGuardCheck('expected_behavior', !needsStudyNote || /(expected|should|will|result|behavior|예상|기대|결과|동작|되어야|하게 됨)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should describe the expected behavior or result'),
-    studyNoteGuardCheck('syntax_or_structure', !needsStudyNote || /(syntax|structure|schema|\bapi\b|function|array|field|type|condition|문법|구조|스키마|함수|배열|필드|타입|조건)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should include one useful syntax or structure insight'),
-    studyNoteGuardCheck('verification', !needsStudyNote || /(verification|verified|checked|tested|검증|확인|테스트)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what was checked'),
-    studyNoteGuardCheck('limits_or_uncertainty', !needsStudyNote || /(limits?|uncertain|unknown|not checked|remaining|한계|불확실|모르는|미확인|남은)/i.test(reportText) ? 'pass' : 'fail', 'Study Note should say what remains uncertain or explicitly state that no meaningful uncertainty remains')
+    studyNoteGuardCheck(
+      'changed_files',
+      changeScopeAvailable ? (needsStudyNote ? 'pass' : 'skipped') : 'partial',
+      changeScopeAvailable
+        ? (needsStudyNote ? 'changed files detected; Study Note is required before final completion' : 'no changed files detected')
+        : 'Git changed-file scope is unavailable; do not treat this project as clean and determine Study Note need manually'
+    ),
+    studyNoteGuardCheck('study_note_present', scopeAwareStatus(hasStudyNoteMarker(reportText)), 'final report should include a Study Note when project artifacts changed'),
+    studyNoteGuardCheck('role_or_responsibility', scopeAwareStatus(/(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(reportText)), 'Study Note should explain what the touched code/artifact does'),
+    studyNoteGuardCheck('execution_point', scopeAwareStatus(/(execution|\bruns?\b|\bloads?\b|\brenders?\b|validates?|builds?|publishes?|read by|실행|로드|렌더|검사|검증|빌드|게시|배포|읽)/i.test(reportText)), 'Study Note should explain where or when the touched code/artifact runs or is read'),
+    studyNoteGuardCheck('before_after_or_change', scopeAwareStatus(/(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(reportText)), 'Study Note should explain what changed from before to after'),
+    studyNoteGuardCheck('expected_behavior', scopeAwareStatus(/(expected|should|will|result|behavior|예상|기대|결과|동작|되어야|하게 됨)/i.test(reportText)), 'Study Note should describe the expected behavior or result'),
+    studyNoteGuardCheck('syntax_or_structure', scopeAwareStatus(/(syntax|structure|schema|\bapi\b|function|array|field|type|condition|문법|구조|스키마|함수|배열|필드|타입|조건)/i.test(reportText)), 'Study Note should include one useful syntax or structure insight'),
+    studyNoteGuardCheck('verification', scopeAwareStatus(/(verification|verified|checked|tested|검증|확인|테스트)/i.test(reportText)), 'Study Note should say what was checked'),
+    studyNoteGuardCheck('limits_or_uncertainty', scopeAwareStatus(/(limits?|uncertain|unknown|not checked|remaining|한계|불확실|모르는|미확인|남은)/i.test(reportText)), 'Study Note should say what remains uncertain or explicitly state that no meaningful uncertainty remains')
   ];
   for (const requirement of hygieneRequirements) {
     checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(reportText, requirement), requirement.note));
@@ -787,13 +844,18 @@ async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'n
     schema: 'yam.study-note-guard.v1',
     generated_at: new Date().toISOString(),
     project: dir,
+    changed_file_detection: changedFileDetection,
     changed_files: changedFiles,
     changed_file_count: changedFiles.length,
     report_source: reportSource,
     checks,
     blockers,
-    next_action: blockers[0] || (needsStudyNote ? 'Study Note guard passed for the supplied report text' : 'no Study Note required because no changed files were detected'),
-    truth_status: blockers.length ? 'blocked' : needsStudyNote ? 'verified' : 'skipped'
+    next_action: blockers[0] || (!changeScopeAvailable
+      ? 'Git change scope is unavailable; inspect changed artifacts manually and include a Study Note when anything changed'
+      : needsStudyNote
+        ? 'Study Note guard passed for the supplied report text'
+        : 'no Study Note required because no changed files were detected'),
+    truth_status: blockers.length ? 'blocked' : !changeScopeAvailable ? 'partial' : needsStudyNote ? 'verified' : 'skipped'
   };
   return result;
 }
@@ -811,14 +873,35 @@ function firstPositional(args = []) {
   return '';
 }
 
-async function gitChangedFiles(dir) {
-  const output = runReadOnlyCommandIn(dir, 'git', ['status', '--short']);
-  return output
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => line.replace(/^..\s+/, '').replace(/^.* -> /, ''))
-    .map((line) => line.trim())
-    .filter((file) => file && !file.startsWith('dist/') && !file.endsWith('.tgz'));
+function gitChangedFileSnapshot(dir) {
+  const result = spawnSync('git', ['status', '--short', '-z', '--untracked-files=all'], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    timeout: 30000
+  });
+  if (result.status !== 0) {
+    return {
+      available: false,
+      source: 'git status --short -z --untracked-files=all',
+      files: []
+    };
+  }
+  const records = String(result.stdout || '').split('\0');
+  const files = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!record || record.length < 4) continue;
+    const status = record.slice(0, 2);
+    const file = record.slice(3);
+    if (/[RC]/.test(status)) index += 1;
+    if (file && !file.startsWith('dist/') && !file.endsWith('.tgz')) files.push(file);
+  }
+  return {
+    available: true,
+    source: 'git status --short -z --untracked-files=all',
+    files
+  };
 }
 
 async function readStudyNoteReportText(flags, dir) {
@@ -911,12 +994,22 @@ async function buildCleanupScanReport(targetDir = process.cwd()) {
   for (const artifact of await staleYamArtifacts(dir)) {
     findings.push(cleanupFinding('low', artifact.file, artifact.reason, 'archive or refresh only if it misleads the current work'));
   }
+  const instructionDuplicationBudget = await buildInstructionDuplicationBudget(dir);
+  if (instructionDuplicationBudget.duplicate_group_count > 0) {
+    findings.push(cleanupFinding(
+      'low',
+      'AGENTS.md/SKILL.md directive duplication budget',
+      `${instructionDuplicationBudget.duplicate_group_count} normalized directive group(s) repeat across separate instruction surfaces; exact normalized matches are advisory and may be intentional`,
+      'review the reported source files and consolidate only repetition that causes drift or conflicting maintenance'
+    ));
+  }
   return {
     schema: 'yam.cleanup-scan.v1',
     generated_at: new Date().toISOString(),
     project: dir,
     destructive: false,
     findings,
+    instruction_duplication_budget: instructionDuplicationBudget,
     risk_level: overallCleanupRisk(findings),
     safe_next_action: findings.length ? 'review findings and make explicit user-approved cleanup decisions' : 'no cleanup action needed',
     truth_status: 'partial'
@@ -968,6 +1061,163 @@ async function staleYamArtifacts(dir) {
     }
   }
   return artifacts;
+}
+
+async function buildInstructionDuplicationBudget(
+  rootDir = process.cwd(),
+  limits = INSTRUCTION_DUPLICATION_LIMITS
+) {
+  const root = path.resolve(rootDir || process.cwd());
+  const inventory = await collectInstructionFiles(root, limits);
+  const directives = new Map<string, AnyRecord[]>();
+  let candidateDirectiveCount = 0;
+  for (const relativeFile of inventory.files) {
+    const absolute = path.join(root, relativeFile);
+    const text = await readBoundedUtf8File(absolute, limits.maxBytesPerFile);
+    for (const directive of instructionDirectives(text, relativeFile, limits.minDirectiveChars)) {
+      candidateDirectiveCount += 1;
+      directives.set(directive.normalized, [...(directives.get(directive.normalized) || []), directive]);
+    }
+  }
+
+  const allGroups = [...directives.entries()]
+    .map(([normalized, occurrences]) => {
+      const surfaces = [...new Set(occurrences.map((item) => item.file))];
+      if (surfaces.length < 2) return null;
+      return {
+        directive_digest: createHash('sha256').update(normalized).digest('hex').slice(0, 16),
+        directive_preview: redactSensitiveText(String(occurrences[0]?.text || '')).slice(0, 180),
+        occurrence_count: occurrences.length,
+        surface_count: surfaces.length,
+        surfaces,
+        occurrences: occurrences.slice(0, 8).map((item) => ({
+          file: item.file,
+          line: item.line
+        }))
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => (
+      right.surface_count - left.surface_count
+      || right.occurrence_count - left.occurrence_count
+      || left.directive_digest.localeCompare(right.directive_digest)
+    ));
+  const duplicateGroups = allGroups.slice(0, limits.maxGroups);
+  return {
+    schema: 'yam.instruction-duplication-budget.v1',
+    scope: 'project AGENTS.md and SKILL.md files only',
+    advisory_only: true,
+    hard_gate: false,
+    destructive: false,
+    normalization: 'exact normalized markdown directive text; no semantic similarity inference',
+    limits: {
+      max_files: limits.maxFiles,
+      max_bytes_per_file: limits.maxBytesPerFile,
+      max_groups: limits.maxGroups,
+      max_depth: limits.maxDepth,
+      min_directive_chars: limits.minDirectiveChars
+    },
+    files_scanned: inventory.files.length,
+    scanned_files: inventory.files,
+    candidate_directive_count: candidateDirectiveCount,
+    duplicate_group_count: allGroups.length,
+    duplicate_groups: duplicateGroups,
+    file_limit_reached: inventory.fileLimitReached,
+    group_limit_reached: allGroups.length > duplicateGroups.length,
+    truth_status: 'partial',
+    note: allGroups.length
+      ? 'repetition may be intentional; review before consolidating'
+      : 'no cross-surface exact normalized directive repetition found within the bounded scan'
+  };
+}
+
+async function collectInstructionFiles(root, limits) {
+  const files: string[] = [];
+  let fileLimitReached = false;
+
+  async function walk(current, depth) {
+    if (depth > limits.maxDepth || fileLimitReached) return;
+    let entries = [];
+    try {
+      entries = await fsp.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const absolute = path.join(current, entry.name);
+      const relative = path.relative(root, absolute);
+      if (shouldSkipScanPath(relative, entry.name) || entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        await walk(absolute, depth + 1);
+        if (fileLimitReached) return;
+        continue;
+      }
+      if (!entry.isFile() || !['AGENTS.md', 'SKILL.md'].includes(entry.name)) continue;
+      if (files.length >= limits.maxFiles) {
+        fileLimitReached = true;
+        return;
+      }
+      files.push(relative);
+    }
+  }
+
+  await walk(root, 0);
+  return { files, fileLimitReached };
+}
+
+async function readBoundedUtf8File(file, maxBytes) {
+  const handle = await fsp.open(file, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+function instructionDirectives(text = '', relativeFile = '', minChars = 40) {
+  const directives = [];
+  const lines = String(text || '').split(/\r?\n/);
+  let inFence = false;
+  let inFrontmatter = lines[0]?.trim() === '---';
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
+    const trimmed = raw.trim();
+    if (index === 0 && inFrontmatter) continue;
+    if (inFrontmatter) {
+      if (trimmed === '---') inFrontmatter = false;
+      continue;
+    }
+    if (/^(```|~~~)/.test(trimmed)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || !trimmed || /^#{1,6}\s/.test(trimmed)) continue;
+    const match = trimmed.match(/^(?:[-*+]|\d+[.)])\s+(.+)$/);
+    if (!match) continue;
+    const normalized = normalizeInstructionDirective(match[1]);
+    if (normalized.length < minChars) continue;
+    directives.push({
+      file: relativeFile,
+      line: index + 1,
+      text: match[1].trim().slice(0, 240),
+      normalized
+    });
+  }
+  return directives;
+}
+
+function normalizeInstructionDirective(value = '') {
+  return String(value || '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[`*_~]/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[.;:,!?。，、；：！？]+$/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 function printCleanupScanReport(report) {
@@ -1829,10 +2079,16 @@ async function buildYamLiteContext({ cwd, prompt }) {
 
 async function buildStudyNoteHookContext({ cwd }) {
   const dir = path.resolve(cwd || process.cwd());
-  const changedFiles = await gitChangedFiles(dir);
+  const changedFileDetection = gitChangedFileSnapshot(dir);
+  const changedFiles = changedFileDetection.files;
   const lines = [
     'yam Study Note guard active: if this turn changes code, config, release metadata, docs, or project artifacts, include a Study Note in the final response.'
   ];
+  if (!changedFileDetection.available) {
+    lines.push('Git changed-file scope is unavailable at prompt time; do not treat this as a clean project.');
+    lines.push('Determine manually whether artifacts changed and include the Study Note when they did; the Stop hook will keep this uncertainty visible.');
+    return lines.join('\n');
+  }
   if (!changedFiles.length) {
     lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add the Study Note before final.');
     lines.push('The Study Note Stop hook will check the final response if artifacts are changed later in the turn.');
@@ -1852,6 +2108,12 @@ async function buildStudyNoteHookContext({ cwd }) {
 async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd()) {
   const lastAssistantMessage = String(input?.last_assistant_message || input?.lastAssistantMessage || '');
   const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message');
+  if (result.truth_status === 'partial' && !result.changed_file_detection.available) {
+    return {
+      continue: true,
+      systemMessage: 'yam Study Note guard could not read Git changed-file scope; do not treat this project as clean. Confirm manually whether artifacts changed and include a complete Study Note when they did.'
+    };
+  }
   if (!result.blockers.length) return { continue: true };
   const summary = result.blockers.slice(0, 4).join('; ');
   if (Boolean(input?.stop_hook_active || input?.stopHookActive)) {
@@ -4324,7 +4586,10 @@ function pickScript(scripts = {}, groups = []) {
 async function detectProject(targetDir = process.cwd(), { quiet = false } = {}) {
   const dir = path.resolve(targetDir || process.cwd());
   const packageJson = path.join(dir, 'package.json');
+  const changedFileDetection = gitChangedFileSnapshot(dir);
+  const changedFiles = changedFileDetection.files;
   const result = {
+    schema: 'yam.project-detection.v1',
     dir,
     packageJson: await exists(packageJson),
     packageManager: 'npm',
@@ -4335,12 +4600,26 @@ async function detectProject(targetDir = process.cwd(), { quiet = false } = {}) 
       test: null,
       build: null
     },
-    frameworkChecklist: null
+    frameworkChecklist: null,
+    changedFileDetection,
+    changedFiles,
+    verificationRecommendations: [],
+    verificationCommandPlan: []
   };
   if (!result.packageJson) {
+    result.verificationRecommendations = buildChangedFileVerificationRecommendations({
+      packageManager: result.packageManager,
+      scripts: {},
+      commands: result.commands,
+      changedFiles,
+      changedFilesAvailable: changedFileDetection.available,
+      packageJson: false
+    });
+    result.verificationCommandPlan = buildVerificationCommandPlan(result.verificationRecommendations);
     if (!quiet) {
       console.log(`No package.json found in ${dir}`);
       console.log('Suggested verification: use project pack or local framework conventions.');
+      printChangedFileVerificationRecommendations(result.verificationRecommendations, result.verificationCommandPlan);
     }
     return result;
   }
@@ -4354,9 +4633,253 @@ async function detectProject(targetDir = process.cwd(), { quiet = false } = {}) 
   result.commands.test = runCommand(result.packageManager, pickScript(scripts, ['test', 'spec']));
   result.commands.build = runCommand(result.packageManager, pickScript(scripts, ['build']));
   result.frameworkChecklist = await detectFrameworkChecklist(dir, pkg);
+  result.verificationRecommendations = buildChangedFileVerificationRecommendations({
+    packageManager: result.packageManager,
+    scripts,
+    commands: result.commands,
+    changedFiles,
+    changedFilesAvailable: changedFileDetection.available,
+    packageJson: true
+  });
+  result.verificationCommandPlan = buildVerificationCommandPlan(result.verificationRecommendations);
 
   if (!quiet) printDetection(result);
   return result;
+}
+
+async function detectCommand(args = []) {
+  const flags = parseSimpleFlags(args, new Set(['json']));
+  const dir = path.resolve(firstPositional(args) || process.cwd());
+  const result = await detectProject(dir, { quiet: true });
+  if (flags.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  printDetection(result);
+}
+
+function buildChangedFileVerificationRecommendations({
+  packageManager = 'npm',
+  scripts = {},
+  commands = {},
+  changedFiles = [],
+  changedFilesAvailable = true,
+  packageJson = false
+}: AnyRecord) {
+  const safeFallbackCommands = uniqueStrings([
+    commands.typecheck,
+    commands.lint,
+    commands.test,
+    commands.build
+  ]);
+  if (!changedFilesAvailable) {
+    return [{
+      matched_rule: 'git-status-unavailable',
+      confidence: 'low',
+      reason: 'Git change status was unavailable, so yam cannot prove that the project has no changed files',
+      fallback: packageJson
+        ? 'run all available non-publish typecheck, lint, test, and build checks or use project-pack conventions'
+        : 'use yam.project.md or local framework conventions; no Git change scope or executable package scripts were detected',
+      files: [],
+      suggested_commands: safeFallbackCommands
+    }];
+  }
+  if (!changedFiles.length) {
+    return [{
+      matched_rule: 'no-changes',
+      confidence: 'high',
+      reason: 'git reports no dirty, staged, or untracked project files',
+      fallback: 'rerun `yam detect --json` after files change; use project-pack conventions if Git is unavailable',
+      files: [],
+      suggested_commands: []
+    }];
+  }
+
+  const rules = [
+    {
+      id: 'package-release-metadata',
+      confidence: 'high',
+      matches: (file) => /^(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|yam\.manifest\.json|CHANGELOG\.md|scripts\/check-(?:package-boundary|registry-version|dist-freshness)\.mjs)$/i.test(file),
+      reason: 'package or release metadata changed, so package contents and release readiness can drift',
+      commandNames: ['package-boundary:check', 'release:check'],
+      fallback: 'run the available typecheck/build/package checks and perform the public release workflow separately'
+    },
+    {
+      id: 'src-lib',
+      confidence: 'high',
+      matches: (file) => /^src\/lib\//i.test(file),
+      reason: 'shared library code changed, so compile safety and a focused behavior smoke are the narrowest honest checks',
+      commandNames: ['typecheck'],
+      fallback: 'run typecheck plus the closest available test/smoke; use the full safe fallback when the library crosses package boundaries'
+    },
+    {
+      id: 'scripts',
+      confidence: 'medium',
+      matches: (file) => /^scripts\//i.test(file),
+      reason: 'an executable verification or maintenance script changed, so its direct npm wrapper or closest smoke should run',
+      commandNames: [],
+      fallback: 'run the changed script in an isolated fixture, then use the full safe fallback if no direct wrapper exists'
+    },
+    {
+      id: 'unknown-safe-fallback',
+      confidence: packageJson ? 'medium' : 'low',
+      matches: () => true,
+      reason: 'no focused changed-file rule matched, so skipping verification would be weaker than the available project-wide safe checks',
+      commandNames: [],
+      fallback: packageJson
+        ? 'run all available non-publish typecheck, lint, test, and build checks'
+        : 'use yam.project.md or local framework conventions; no executable package scripts were detected'
+    }
+  ];
+
+  const grouped = new Map<string, string[]>();
+  for (const rawFile of changedFiles) {
+    const file = String(rawFile || '').replaceAll('\\', '/');
+    const rule = rules.find((candidate) => candidate.matches(file)) || rules[rules.length - 1];
+    grouped.set(rule.id, [...(grouped.get(rule.id) || []), file]);
+  }
+
+  const recommendations = [];
+  for (const rule of rules) {
+    const files = grouped.get(rule.id) || [];
+    if (!files.length) continue;
+    let commandEvidence: AnyRecord[] = rule.commandNames.map((name) => ({
+      name,
+      files,
+      basis: 'rule-wide'
+    }));
+    if (rule.id === 'src-lib') {
+      commandEvidence = [
+        { name: 'typecheck', files, basis: 'rule-wide' },
+        ...focusedSmokeScriptEvidenceForFiles(scripts, files)
+      ];
+    } else if (rule.id === 'scripts') {
+      const directEvidence = files.flatMap((file) => (
+        directScriptNamesForFile(scripts, file).map((name) => ({
+          name,
+          files: [file],
+          basis: 'direct-script-wrapper'
+        }))
+      ));
+      commandEvidence = directEvidence.length
+        ? directEvidence
+        : focusedSmokeScriptNames(scripts).slice(0, 1).map((name) => ({
+          name,
+          files,
+          basis: 'group-fallback'
+        }));
+    } else if (rule.id === 'unknown-safe-fallback') {
+      commandEvidence = safeFallbackCommands.map((command) => ({
+        command,
+        files,
+        basis: 'safe-fallback'
+      }));
+    }
+    const commandSources = commandEvidence
+      .map((evidence) => ({
+        command: evidence.command || scriptCommandIfPresent(packageManager, scripts, evidence.name),
+        files: [...new Set(evidence.files || [])].sort(),
+        basis: evidence.basis
+      }))
+      .filter((evidence) => evidence.command);
+    const suggestedCommands = uniqueStrings(commandSources.map((evidence) => evidence.command));
+    recommendations.push({
+      matched_rule: rule.id,
+      confidence: rule.confidence,
+      reason: rule.reason,
+      fallback: rule.fallback,
+      files: [...new Set(files)].sort(),
+      suggested_commands: suggestedCommands,
+      command_sources: commandSources
+    });
+  }
+  return recommendations;
+}
+
+function focusedSmokeScriptNames(scripts = {}) {
+  return Object.keys(scripts)
+    .filter((name) => /(?:^|[-:])(?:smoke|test)(?:$|[-:])/i.test(name) || /smoke/i.test(String(scripts[name] || '')))
+    .sort();
+}
+
+function focusedSmokeScriptEvidenceForFiles(scripts = {}, files = []) {
+  const candidates = focusedSmokeScriptNames(scripts);
+  const selected = [];
+  for (const file of files) {
+    const stem = path.posix.basename(String(file || '').replaceAll('\\', '/')).replace(/\.[^.]+$/, '');
+    const direct = candidates.find((name) => {
+      const command = String(scripts[name] || '');
+      return name.includes(stem)
+        || command.includes(stem)
+        || (stem === 'skill-installation' && /install.*smoke|smoke.*install/i.test(`${name} ${command}`))
+        || (['trust-kernel', 'ueye-artifacts'].includes(stem) && /cli.*smoke|smoke.*cli/i.test(`${name} ${command}`));
+    });
+    if (direct) selected.push({
+      name: direct,
+      files: [file],
+      basis: 'focused-file-match'
+    });
+  }
+  if (!selected.length && candidates.length) {
+    selected.push({
+      name: candidates[0],
+      files,
+      basis: 'group-fallback'
+    });
+  }
+  return selected;
+}
+
+function directScriptNamesForFile(scripts = {}, changedFile = '') {
+  const normalized = String(changedFile || '').replaceAll('\\', '/');
+  const basename = path.posix.basename(normalized);
+  return Object.entries(scripts)
+    .filter(([, command]) => {
+      const text = String(command || '').replaceAll('\\', '/');
+      return text.includes(normalized) || text.includes(`/${basename}`) || text.includes(` ${basename}`);
+    })
+    .map(([name]) => name)
+    .sort();
+}
+
+function scriptCommandIfPresent(packageManager, scripts = {}, name = '') {
+  return name && Object.prototype.hasOwnProperty.call(scripts, name)
+    ? runCommand(packageManager, name)
+    : null;
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()))];
+}
+
+function buildVerificationCommandPlan(recommendations = []) {
+  const commands = new Map<string, AnyRecord>();
+  for (const recommendation of recommendations) {
+    const sources = recommendation.command_sources?.length
+      ? recommendation.command_sources
+      : (recommendation.suggested_commands || []).map((command) => ({
+        command,
+        files: recommendation.files || [],
+        basis: 'recommendation-fallback'
+      }));
+    for (const source of sources) {
+      const current = commands.get(source.command) || {
+        command: source.command,
+        matched_rules: [],
+        files: [],
+        provenance: []
+      };
+      current.matched_rules = uniqueStrings([...current.matched_rules, recommendation.matched_rule]);
+      current.files = uniqueStrings([...current.files, ...(source.files || [])]).sort();
+      current.provenance.push({
+        matched_rule: recommendation.matched_rule,
+        files: [...new Set(source.files || [])].sort(),
+        basis: source.basis
+      });
+      commands.set(source.command, current);
+    }
+  }
+  return [...commands.values()];
 }
 
 function printDetection(result) {
@@ -4372,12 +4895,36 @@ function printDetection(result) {
   console.log(`- $quick: ${result.commands.typecheck || result.commands.lint || result.commands.test || result.commands.build || 'L1 inspected; no command detected'}`);
   console.log(`- $ueye: ${result.commands.typecheck || result.commands.build || 'Browser/screenshot check; no command detected'}`);
   console.log(`- $deep: ${[result.commands.typecheck, result.commands.lint, result.commands.test, result.commands.build].filter(Boolean).join(' && ') || `No command detected; define in ${PROJECT_PACK}`}`);
+  printChangedFileVerificationRecommendations(result.verificationRecommendations, result.verificationCommandPlan);
   if (result.frameworkChecklist?.detected) {
     console.log('');
     console.log(`Framework checklist: ${result.frameworkChecklist.framework}`);
     for (const check of result.frameworkChecklist.checks) {
       console.log(`- ${check.id}: ${check.label} (${check.route})`);
     }
+  }
+}
+
+function printChangedFileVerificationRecommendations(recommendations = [], commandPlan = []) {
+  console.log('');
+  console.log('Changed-file verification recommendations (advisory; commands were not run):');
+  for (const recommendation of recommendations) {
+    console.log(`- ${recommendation.matched_rule} [confidence: ${recommendation.confidence}]`);
+    console.log(`  files: ${recommendation.files.length ? recommendation.files.join(', ') : '(none)'}`);
+    console.log(`  reason: ${recommendation.reason}`);
+    console.log(`  commands: ${recommendation.suggested_commands.length ? recommendation.suggested_commands.join(' && ') : '(none detected)'}`);
+    console.log(`  fallback: ${recommendation.fallback}`);
+  }
+  console.log('');
+  console.log('Verification command plan (deduplicated; advisory; commands were not run):');
+  if (!commandPlan.length) {
+    console.log('- (none detected)');
+    return;
+  }
+  for (const item of commandPlan) {
+    console.log(`- ${item.command}`);
+    console.log(`  rules: ${item.matched_rules.join(', ')}`);
+    console.log(`  files: ${item.files.join(', ') || '(none)'}`);
   }
 }
 
@@ -4768,16 +5315,39 @@ function findSensitivePattern(text = '') {
 function showPath() {
   console.log(`root: ${ROOT}`);
   console.log(`skills: ${DEST}`);
-  console.log(`codex mirror cleanup: ${CODEX_MIRROR}`);
+  console.log(`codex mirror (preserved without an ownership receipt): ${CODEX_MIRROR}`);
+}
+
+function showRequestedHelp(args: string[]) {
+  if (!args.some((arg) => arg === '--help' || arg === '-h')) return false;
+
+  const commandUsage: Record<string, () => void> = {
+    context: contextUsage,
+    cleanup: cleanupUsage,
+    'study-note': studyNoteUsage,
+    tools: toolsUsage,
+    hook: hookUsage,
+    loop: loopUsage,
+    ueye: ueyeUsage,
+    media: mediaUsage,
+    runtime: runtimeUsage,
+    mission: missionUsage,
+    benchmark: benchmarkUsage,
+    memory: memoryUsage
+  };
+  (commandUsage[args[0]] || usage)();
+  return true;
 }
 
 async function main() {
-  const command = process.argv[2] || 'help';
-  if (command === 'help' || command === '--help' || command === '-h') return usage();
-  if (command === 'install') return install();
-  if (command === 'uninstall') return uninstall();
+  const args = process.argv.slice(2);
+  const command = args[0] || 'help';
+  if (showRequestedHelp(args)) return;
+  if (command === 'help') return usage();
+  if (command === 'install') return install(args.slice(1));
+  if (command === 'uninstall') return uninstall(args.slice(1));
   if (command === 'version') return console.log(VERSION);
-  if (command === 'detect') return detectProject(process.argv[3]);
+  if (command === 'detect') return detectCommand(args.slice(1));
   if (command === 'pack') return inspectProjectPack(process.argv[3]);
   if (command === 'context') return context(process.argv.slice(3));
   if (command === 'cleanup') return cleanup(process.argv.slice(3));

@@ -97,7 +97,7 @@ yam hook enable study-note --global
 yam hook status --global
 ```
 
-The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam checks the latest assistant message with the same read-only Study Note Guard used by `yam study-note check`. If changed artifacts lack the required role, execution point, before/after, expected behavior, syntax/structure, verification, limits, or relevant architecture hygiene, Codex receives one correction prompt. A second failed check warns but does not loop forever. The hook never writes the Study Note or runs verification for the agent.
+The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam checks the latest assistant message with the same read-only Study Note Guard used by `yam study-note check`. If changed artifacts lack the required role, execution point, before/after, expected behavior, syntax/structure, verification, limits, or relevant architecture hygiene, Codex receives one correction prompt. A second failed check warns but does not loop forever. If Git change scope is unavailable, the guard reports partial truth and keeps a manual-inspection warning visible instead of claiming the project is clean. The hook never writes the Study Note or runs verification for the agent.
 
 `yam hook status` reports stale or missing command targets as `broken` and exits nonzero. Run `yam hook enable <profile> --global` again to create a timestamped backup, preserve unrelated hooks, and migrate that profile to the current installed path and event coverage. Restart Codex or open a new task after changing hooks.
 
@@ -110,9 +110,19 @@ cd ~/Documents/Codex/tools/yam
 yam install
 ```
 
-`yam install` stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and only then replaces the active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt.
+`yam install` first checks ownership of every existing active skill. A skill is replaced automatically only when the previous yam receipt names it and its complete regular-file inventory and content hashes still match the receipt. The installer then stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and replaces the verified active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt.
+
+If an existing active directory is user-owned, locally modified, or cannot be proven yam-owned, installation stops before staging and preserves it. After reviewing the files, replace only the intended conflicting name explicitly:
+
+```bash
+yam install --replace-user-skill quick
+```
+
+Repeat `--replace-user-skill <name>` for each reviewed conflict. Unproven legacy, retired, and Codex mirror directories are preserved rather than deleted by name.
 
 A successful install writes `~/.agents/skills/.yam-flow-install-receipt.json`. The receipt records the package version, source identity, install timestamp, destination, managed skill inventory, and per-file hashes. `yam status` independently recomputes source and installed hashes, so a stale package install, local file change, unexpected file, or modified receipt is reported as drift.
+
+The receipt is local integrity provenance, not a cryptographic signature or a security boundary against another process running as the same OS user. An actor that can rewrite both the receipt and every recorded file can forge local ownership evidence.
 
 An ordinary install error rolls back automatically. An abrupt process or machine termination can leave `.yam-flow-install.lock` and a hidden transaction directory; `yam status` surfaces the unfinished transaction and yam refuses another mutation while recovery state remains. Remove the lock only after confirming no install is running, and preserve any transaction directory until the previous installation state has been inspected.
 
@@ -127,6 +137,8 @@ cd ~/Documents/Codex/tools/yam
 yam uninstall
 ```
 
+`yam uninstall` verifies the receipt, complete active inventory, and current file hashes before deleting anything. A missing receipt or locally modified active skill blocks the whole uninstall. Verified active skills and the receipt are removed transactionally; unproven legacy, retired, and Codex mirror entries remain untouched.
+
 No hooks, automations, or global config files are installed.
 
 ## Manage
@@ -140,6 +152,7 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
+yam detect /path/to/project --json
 yam study-note check /path/to/project --text "Study Note: ..." --json
 yam proof /path/to/project
 yam proof write /path/to/project --route quick --truth verified --command "npm run verify:self: pass"
@@ -161,7 +174,6 @@ yam mission gate --expected-thread reviewer-1 --receipt .yam/mission/reviewer-1.
 yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam release report --json
 yam safety "supabase db reset"
-yam detect /path/to/project
 yam pack /path/to/project
 yam hook status --global
 yam hook enable lite --global
@@ -246,7 +258,8 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.
 - Publish readiness evidence: release reports run read-only registry/auth/version probes, redact account/token details, keep npm publish outside the report, and include a `yam.release-readiness-receipt.v1` basis for the readiness judgment.
 - Context pressure: `yam context pressure` explains when project context is getting stale, broad, or confusing enough to summarize, refresh, narrow scope, or deepen route.
-- Cleanup scan: `yam cleanup scan` is read-only and advisory; it reports confusing hooks, local skill folders, stale traces, or old proof artifacts without deleting anything.
+- Changed-file verification detector: `yam detect [dir] --json` reads dirty, staged, and untracked Git paths and returns advisory `matched_rule`, `confidence`, `reason`, `fallback`, source files, and only commands that exist in the project. Its deduplicated command plan retains the contributing rules and files, but never runs the commands. If Git status is unavailable, it reports a low-confidence fallback instead of claiming the project is clean.
+- Cleanup scan: `yam cleanup scan` is read-only and advisory; it reports confusing hooks, local skill folders, stale traces, or old proof artifacts without deleting anything. Its bounded AGENTS/SKILL duplication budget scans at most 24 files and 128 KB per file, reports exact normalized cross-surface directive matches with redacted previews and provenance, and never becomes a hard gate.
 - Benchmark optimization loop lite: use `yam measure <route>` and `yam template tuning` to record baseline, one route wording change, rerun result, keep/revert decision, and stop condition.
 - Structured diagnostic next action: every doctor/release diagnostic should say what was observed, what evidence supports it, what to do next, owner route, severity, and truth status.
 - Ueye review continuity/comparison report: `$ueye` run reports can link a previous review, current evidence, comparison delta, design quality result, and next action.

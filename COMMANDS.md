@@ -152,6 +152,7 @@ yam tools doctor /path/to/project
 yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
+yam detect /path/to/project --json
 yam study-note check /path/to/project --text "Study Note: The hook handler's role is final-report validation. It runs at Codex Stop. Before it only reminded; after it requests one correction pass. Expected behavior is a complete note. Structure insight: decision=block creates a continuation prompt. Verification checked the packaged CLI. Limits: a restarted real task remains to be observed." --json
 yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
@@ -213,7 +214,8 @@ Supported report shapes:
 - Ueye design brief/anti-slop: brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom P0 blockers.
 - Ueye deep visual review: acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and state matrix.
 - Context pressure: project pack age/size, memory summary, dirty scope, scripts, instruction surfaces, and route hint.
-- Cleanup scan: advisory-only list of confusing surfaces with destructive=false.
+- Changed-file verification detector: dirty/staged/untracked Git paths grouped into advisory rules with confidence, reason, fallback, source files, and available project commands; the command plan is deduplicated while retaining rule/file provenance, Git-unavailable scope stays low confidence, and no recommendation is executed.
+- Cleanup scan: advisory-only list of confusing surfaces with `destructive=false`, plus a bounded exact-normalized AGENTS/SKILL cross-surface duplication budget with file/line provenance.
 
 ## Hooks
 

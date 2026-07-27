@@ -1,13 +1,13 @@
 {
   "name": "yam",
-  "version": "2.3.2",
+  "version": "2.4.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
     "Deepen deliberately.",
     "Basic direction fit and honest verification always.",
     "Honest by design.",
-    "Stage and verify the complete managed skill set before replacement, then record install integrity for later drift checks.",
+    "Replace or uninstall skills only when receipt ownership plus the complete regular-file inventory and content hashes prove they are yam-managed; preserve unproven user files by default.",
     "Heavy proof when risk or user intent calls for it.",
     "Token-aware by default.",
     "Context-reuse first.",

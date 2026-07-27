@@ -36,7 +36,14 @@ export type InstallReceipt = {
 };
 
 export type InstallFailpointEvent = {
-  phase: 'after-stage' | 'after-backup' | 'skill-installed' | 'receipt-installed' | 'mirror-cleaned' | 'before-verify';
+  phase:
+    | 'after-stage'
+    | 'before-mutation'
+    | 'after-backup'
+    | 'skill-installed'
+    | 'receipt-installed'
+    | 'mirror-cleaned'
+    | 'before-verify';
   skill?: string;
 };
 
@@ -47,6 +54,7 @@ export type TransactionalInstallOptions = {
   packageName: string;
   version: string;
   skills: string[];
+  replaceSkills?: string[];
   legacySkills?: string[];
   retiredSkills?: string[];
   now?: () => Date;
@@ -87,9 +95,51 @@ export type TransactionalInstallResult = {
   cleanupWarnings: string[];
 };
 
+export type SafeUninstallOptions = {
+  destination: string;
+  codexMirror?: string;
+  packageName: string;
+  skills: string[];
+  failpoint?: (event: SafeUninstallFailpointEvent) => void | Promise<void>;
+};
+
+export type SafeUninstallFailpointEvent = {
+  phase: 'before-mutation' | 'after-backup' | 'before-verify';
+};
+
+export type SafeUninstallResult = {
+  receiptPath: string;
+  removedSkills: string[];
+  cleanupWarnings: string[];
+};
+
 type MovedEntry = {
   original: string;
   backup: string;
+};
+
+type OwnershipPreflight = {
+  receipt?: InstallReceipt;
+  replaceNames: string[];
+};
+
+type TreeMutationSnapshot = {
+  name: string;
+  files: InstallFileDigest[];
+};
+
+type ReceiptMutationSnapshot =
+  | { exists: false }
+  | {
+      exists: true;
+      bytes: Buffer;
+      sha256: string;
+      receipt: InstallReceipt;
+    };
+
+type MutationSnapshot = {
+  trees: TreeMutationSnapshot[];
+  receipt: ReceiptMutationSnapshot;
 };
 
 function message(error: unknown) {
@@ -118,9 +168,10 @@ function safeRoot(value: string, label: string) {
 
 async function exists(target: string) {
   try {
-    await fsp.access(target);
+    await fsp.lstat(target);
     return true;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return false;
   }
 }
@@ -272,25 +323,356 @@ function isFileDigest(value: unknown): value is InstallFileDigest {
     && /^[a-f0-9]{64}$/.test(file.sha256);
 }
 
+function isSafeManifestPath(value: string) {
+  if (!value || value.includes('\\') || path.posix.isAbsolute(value)) return false;
+  const parts = value.split('/');
+  return parts.every((part) => part && part !== '.' && part !== '..')
+    && path.posix.normalize(value) === value;
+}
+
+function ownershipReceiptIssues(
+  receipt: unknown,
+  packageName: string,
+  destination: string
+) {
+  const issues: string[] = [];
+  if (!receipt || typeof receipt !== 'object') return ['install receipt must be a JSON object'];
+  const value = receipt as Record<string, any>;
+  if (value.schema !== INSTALL_RECEIPT_SCHEMA) issues.push(`install receipt schema mismatch: ${value.schema || 'missing'}`);
+  if (value.package?.name !== packageName) issues.push(`install receipt package mismatch: ${value.package?.name || 'missing'}`);
+  if (typeof value.package?.version !== 'string' || !value.package.version) issues.push('install receipt package version missing');
+  if (value.source?.kind !== 'package-bundled-skills') issues.push('install receipt source kind mismatch');
+  if (value.source?.identity !== `${value.package?.name}@${value.package?.version}`) {
+    issues.push('install receipt source identity mismatch');
+  }
+  if (typeof value.destination !== 'string' || path.resolve(value.destination) !== destination) {
+    issues.push('install receipt destination mismatch');
+  }
+  if (typeof value.installed_at !== 'string' || Number.isNaN(Date.parse(value.installed_at))) {
+    issues.push('install receipt timestamp missing or invalid');
+  }
+  if (typeof value.transaction_id !== 'string' || !value.transaction_id) {
+    issues.push('install receipt transaction id missing');
+  }
+  if (
+    !Array.isArray(value.skills)
+    || value.skills.length === 0
+    || !value.skills.every((skill: unknown) => typeof skill === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(skill))
+    || unique(value.skills).length !== value.skills.length
+  ) {
+    issues.push('install receipt skill inventory is malformed');
+  }
+  if (value.integrity?.algorithm !== 'sha256') issues.push('install receipt integrity algorithm mismatch');
+  if (!Array.isArray(value.integrity?.files) || !value.integrity.files.every(isFileDigest)) {
+    issues.push('install receipt file manifest is malformed');
+    return issues;
+  }
+
+  const files = value.integrity.files as InstallFileDigest[];
+  const paths = files.map((file) => file.path);
+  if (files.some((file) => !isSafeManifestPath(file.path))) {
+    issues.push('install receipt file manifest contains an unsafe path');
+  }
+  if (unique(paths).length !== paths.length) {
+    issues.push('install receipt file manifest contains duplicate paths');
+  }
+  if (value.integrity?.file_count !== files.length) {
+    issues.push('install receipt file count does not match its manifest');
+  }
+  if (value.integrity?.source_digest !== manifestDigest(files)) {
+    issues.push('install receipt source digest does not match its manifest');
+  }
+  if (Array.isArray(value.skills)) {
+    const inventory = new Set<string>(value.skills);
+    for (const file of files) {
+      if (!inventory.has(file.path.split('/')[0])) {
+        issues.push(`install receipt file is outside its skill inventory: ${file.path}`);
+      }
+    }
+    for (const skill of inventory) {
+      if (!files.some((file) => file.path.startsWith(`${skill}/`))) {
+        issues.push(`install receipt has no file manifest for skill: ${skill}`);
+      }
+    }
+  }
+  return issues;
+}
+
+async function readOwnershipReceipt(
+  destination: string,
+  packageName: string
+): Promise<{ exists: boolean; receipt?: InstallReceipt; issues: string[] }> {
+  const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
+  if (!await exists(receiptPath)) {
+    return { exists: false, issues: [`install receipt missing: ${receiptPath}`] };
+  }
+  try {
+    const stat = await fsp.lstat(receiptPath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      return { exists: true, issues: [`install receipt must be a regular file: ${receiptPath}`] };
+    }
+    const parsed = JSON.parse(await fsp.readFile(receiptPath, 'utf8'));
+    const issues = ownershipReceiptIssues(parsed, packageName, destination);
+    return issues.length
+      ? { exists: true, issues }
+      : { exists: true, receipt: parsed as InstallReceipt, issues: [] };
+  } catch (error) {
+    return { exists: true, issues: [`install receipt unreadable: ${message(error)}`] };
+  }
+}
+
+function receiptFilesForSkill(receipt: InstallReceipt, skill: string) {
+  return receipt.integrity.files.filter((file) => file.path.startsWith(`${skill}/`));
+}
+
+async function verifyReceiptOwnedSkill(
+  root: string,
+  skill: string,
+  receipt: InstallReceipt
+) {
+  if (!receipt.skills.includes(skill)) {
+    return [`install receipt does not own active skill: ${skill}`];
+  }
+  const expected = receiptFilesForSkill(receipt, skill);
+  if (expected.length === 0) return [`install receipt has no file manifest for skill: ${skill}`];
+  const target = path.join(root, skill);
+  if (!await exists(target)) return [`receipt-owned skill is missing: ${skill}`];
+  try {
+    const actual = await collectTreeManifest(target, skill);
+    return manifestIssues(expected, actual, `installed ${skill}`);
+  } catch (error) {
+    return [`installed ${skill} cannot be verified: ${message(error)}`];
+  }
+}
+
+async function preflightInstallOwnership(
+  destination: string,
+  packageName: string,
+  skills: string[],
+  cleanupCandidates: string[],
+  replaceSkills: string[]
+): Promise<OwnershipPreflight> {
+  const invalidOverrides = replaceSkills.filter((skill) => !skills.includes(skill));
+  if (invalidOverrides.length) {
+    throw new Error(`replacement override must name an active skill: ${invalidOverrides.join(', ')}`);
+  }
+  const existingActive: string[] = [];
+  for (const skill of skills) {
+    if (await exists(path.join(destination, skill))) existingActive.push(skill);
+  }
+  const receiptState = await readOwnershipReceipt(destination, packageName);
+  const conflicts: string[] = [];
+  if (receiptState.exists && !receiptState.receipt) {
+    conflicts.push(`existing install receipt is unproven: ${receiptState.issues.join('; ')}`);
+  }
+  for (const skill of existingActive) {
+    if (replaceSkills.includes(skill)) continue;
+    if (!receiptState.receipt) {
+      conflicts.push(
+        `${skill} is user-owned or cannot be proven yam-owned: ${receiptState.issues.join('; ')}`
+      );
+      continue;
+    }
+    const ownershipIssues = await verifyReceiptOwnedSkill(destination, skill, receiptState.receipt);
+    if (ownershipIssues.length) {
+      conflicts.push(`${skill} is user-owned or locally modified: ${ownershipIssues.join('; ')}`);
+    }
+  }
+  if (conflicts.length) {
+    throw new Error(
+      `active skill ownership conflict; no files were changed: ${conflicts.join('; ')}. `
+      + 'Use an explicit per-skill replacement override only after reviewing the existing files.'
+    );
+  }
+
+  const replaceNames = [...existingActive];
+  if (receiptState.receipt) {
+    for (const skill of cleanupCandidates) {
+      if (!await exists(path.join(destination, skill))) continue;
+      const ownershipIssues = await verifyReceiptOwnedSkill(destination, skill, receiptState.receipt);
+      if (ownershipIssues.length === 0) replaceNames.push(skill);
+    }
+  }
+  return {
+    receipt: receiptState.receipt,
+    replaceNames: unique(replaceNames)
+  };
+}
+
+async function preflightSafeUninstallOwnership(
+  destination: string,
+  packageName: string,
+  skills: string[]
+) {
+  const receiptState = await readOwnershipReceipt(destination, packageName);
+  if (!receiptState.receipt) {
+    throw new Error(
+      `safe uninstall cannot prove yam ownership; no files were changed: ${receiptState.issues.join('; ')}`
+    );
+  }
+  const receipt = receiptState.receipt;
+  const inventoryMatches = receipt.skills.length === skills.length
+    && skills.every((skill) => receipt.skills.includes(skill));
+  if (!inventoryMatches) {
+    throw new Error(
+      'safe uninstall cannot prove ownership of the complete active skill inventory; no files were changed: '
+      + `receipt has [${receipt.skills.join(', ')}], expected [${skills.join(', ')}]`
+    );
+  }
+
+  const conflicts: string[] = [];
+  for (const skill of skills) {
+    const ownershipIssues = await verifyReceiptOwnedSkill(destination, skill, receipt);
+    if (ownershipIssues.length) conflicts.push(`${skill}: ${ownershipIssues.join('; ')}`);
+  }
+  if (conflicts.length) {
+    throw new Error(
+      `safe uninstall found a user-owned or locally modified active skill; no files were changed: ${conflicts.join('; ')}`
+    );
+  }
+  return receipt;
+}
+
+async function readRegularFileBytes(file: string) {
+  const before = await fsp.lstat(file);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error(`expected a regular file: ${file}`);
+  const handle = await fsp.open(file, 'r');
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error(`expected a regular file: ${file}`);
+    const bytes = await handle.readFile();
+    const after = await fsp.lstat(file);
+    if (
+      !after.isFile()
+      || after.isSymbolicLink()
+      || before.dev !== opened.dev
+      || before.ino !== opened.ino
+      || after.dev !== opened.dev
+      || after.ino !== opened.ino
+    ) {
+      throw new Error(`regular file changed identity while being captured: ${file}`);
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function captureReceiptMutationSnapshot(
+  destination: string,
+  packageName: string
+): Promise<ReceiptMutationSnapshot> {
+  const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
+  let bytes: Buffer;
+  try {
+    bytes = await readRegularFileBytes(receiptPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { exists: false };
+    throw new Error(`cannot capture install receipt ownership boundary: ${message(error)}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch (error) {
+    throw new Error(`cannot capture malformed install receipt: ${message(error)}`);
+  }
+  const issues = ownershipReceiptIssues(parsed, packageName, destination);
+  if (issues.length) {
+    throw new Error(`cannot capture unproven install receipt: ${issues.join('; ')}`);
+  }
+  return {
+    exists: true,
+    bytes,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    receipt: parsed as InstallReceipt
+  };
+}
+
+async function captureMutationSnapshot(
+  destination: string,
+  packageName: string,
+  names: string[],
+  explicitReplacements: string[]
+): Promise<MutationSnapshot> {
+  const receipt = await captureReceiptMutationSnapshot(destination, packageName);
+  const trees: TreeMutationSnapshot[] = [];
+  for (const name of names) {
+    const files = await collectTreeManifest(path.join(destination, name), name);
+    if (!explicitReplacements.includes(name)) {
+      if (!receipt.exists) {
+        throw new Error(`cannot capture receipt-owned skill without an install receipt: ${name}`);
+      }
+      if (!receipt.receipt.skills.includes(name)) {
+        throw new Error(`captured install receipt does not own skill: ${name}`);
+      }
+      const issues = manifestIssues(receiptFilesForSkill(receipt.receipt, name), files, `captured ${name}`);
+      if (issues.length) {
+        throw new Error(`captured managed skill changed after ownership preflight: ${issues.join('; ')}`);
+      }
+    }
+    trees.push({ name, files });
+  }
+  return { trees, receipt };
+}
+
+async function verifyMovedMutationSnapshot(
+  destination: string,
+  snapshot: MutationSnapshot,
+  moved: MovedEntry[],
+  receiptBackedUp: boolean,
+  receiptBackupPath: string
+) {
+  const issues: string[] = [];
+  const movedByOriginal = new Map(moved.map((entry) => [entry.original, entry]));
+  for (const tree of snapshot.trees) {
+    const original = path.join(destination, tree.name);
+    const movedEntry = movedByOriginal.get(original);
+    if (!movedEntry) {
+      issues.push(`captured entry was not moved: ${tree.name}`);
+      continue;
+    }
+    try {
+      const actual = await collectTreeManifest(movedEntry.backup, tree.name);
+      issues.push(...manifestIssues(tree.files, actual, `moved backup ${tree.name}`));
+    } catch (error) {
+      issues.push(`moved backup ${tree.name} cannot be verified: ${message(error)}`);
+    }
+  }
+
+  if (snapshot.receipt.exists !== receiptBackedUp) {
+    issues.push(
+      snapshot.receipt.exists
+        ? 'captured install receipt was not moved'
+        : 'an install receipt appeared after the ownership snapshot'
+    );
+  } else if (snapshot.receipt.exists && receiptBackedUp) {
+    try {
+      const bytes = await readRegularFileBytes(receiptBackupPath);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      if (sha256 !== snapshot.receipt.sha256 || !bytes.equals(snapshot.receipt.bytes)) {
+        issues.push('moved install receipt differs from the captured bytes');
+      }
+    } catch (error) {
+      issues.push(`moved install receipt cannot be verified: ${message(error)}`);
+    }
+  }
+  if (issues.length) {
+    throw new Error(`ownership snapshot mismatch after backup: ${issues.join('; ')}`);
+  }
+}
+
 function receiptIssues(
   receipt: unknown,
   options: InstallationInspectionOptions,
   destination: string,
   expected: InstallFileDigest[]
 ) {
-  const issues: string[] = [];
-  if (!receipt || typeof receipt !== 'object') return ['install receipt must be a JSON object'];
+  const issues = ownershipReceiptIssues(receipt, options.packageName, destination);
+  if (!receipt || typeof receipt !== 'object') return issues;
   const value = receipt as Record<string, any>;
-  if (value.schema !== INSTALL_RECEIPT_SCHEMA) issues.push(`install receipt schema mismatch: ${value.schema || 'missing'}`);
-  if (value.package?.name !== options.packageName) issues.push(`install receipt package mismatch: ${value.package?.name || 'missing'}`);
   if (value.package?.version !== options.version) issues.push(`install receipt version drift: ${value.package?.version || 'missing'} != ${options.version}`);
-  if (value.source?.kind !== 'package-bundled-skills') issues.push('install receipt source kind mismatch');
   if (value.source?.identity !== `${options.packageName}@${options.version}`) issues.push('install receipt source identity drift');
-  if (typeof value.destination !== 'string' || path.resolve(value.destination) !== destination) issues.push('install receipt destination drift');
-  if (typeof value.installed_at !== 'string' || Number.isNaN(Date.parse(value.installed_at))) issues.push('install receipt timestamp missing or invalid');
-  if (typeof value.transaction_id !== 'string' || !value.transaction_id) issues.push('install receipt transaction id missing');
   if (JSON.stringify(value.skills) !== JSON.stringify(options.skills)) issues.push('install receipt skill inventory drift');
-  if (value.integrity?.algorithm !== 'sha256') issues.push('install receipt integrity algorithm mismatch');
   if (value.integrity?.file_count !== expected.length) issues.push('install receipt file count drift');
   const expectedDigest = manifestDigest(expected);
   if (value.integrity?.source_digest !== expectedDigest) issues.push('install receipt source digest drift');
@@ -446,10 +828,11 @@ async function removeInstalledEntries(entries: string[]) {
 export async function installSkillSetTransactional(options: TransactionalInstallOptions): Promise<TransactionalInstallResult> {
   const sourceRoot = path.resolve(options.sourceRoot);
   const destination = safeRoot(options.destination, 'skill destination');
-  const mirror = options.codexMirror ? safeRoot(options.codexMirror, 'Codex mirror') : undefined;
+  if (options.codexMirror) safeRoot(options.codexMirror, 'Codex mirror');
   const skills = unique(options.skills);
-  const managedNames = unique([...skills, ...(options.legacySkills || []), ...(options.retiredSkills || [])]);
-  validateManagedNames(managedNames);
+  const cleanupCandidates = unique([...(options.legacySkills || []), ...(options.retiredSkills || [])]);
+  const replaceSkills = unique(options.replaceSkills || []);
+  validateManagedNames([...skills, ...cleanupCandidates, ...replaceSkills]);
   await fsp.mkdir(destination, { recursive: true });
 
   const lock = await acquireInstallLock(destination);
@@ -457,16 +840,20 @@ export async function installSkillSetTransactional(options: TransactionalInstall
   let result: TransactionalInstallResult | undefined;
   let primaryError: unknown;
   try {
-    const recoveryArtifacts = [
-      ...await findInstallRecoveryArtifacts(destination),
-      ...(mirror && mirror !== destination ? await findInstallRecoveryArtifacts(mirror) : [])
-    ];
+    const recoveryArtifacts = await findInstallRecoveryArtifacts(destination);
     if (recoveryArtifacts.length) {
       throw new Error(
         `unfinished yam install transaction found: ${recoveryArtifacts.join(', ')}. `
         + 'Inspect and preserve any backup state before removing the transaction artifact and retrying.'
       );
     }
+    await preflightInstallOwnership(
+      destination,
+      options.packageName,
+      skills,
+      cleanupCandidates,
+      replaceSkills
+    );
     const expected = await expectedInstallManifest(sourceRoot, skills);
     const transactionId = options.transactionId || randomUUID();
     const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-'));
@@ -475,11 +862,8 @@ export async function installSkillSetTransactional(options: TransactionalInstall
     const stagedReceiptPath = path.join(transactionRoot, 'receipt.json');
     const destinationReceiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
     const receiptBackupPath = path.join(transactionRoot, 'receipt.backup');
-    let mirrorTransactionRoot: string | undefined;
-    let mirrorBackupRoot: string | undefined;
     const installedEntries: string[] = [];
     let destinationBackups: MovedEntry[] = [];
-    let mirrorBackups: MovedEntry[] = [];
     let receiptBackedUp = false;
     let receiptInstalled = false;
     let mutationStarted = false;
@@ -514,18 +898,33 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       await fsp.writeFile(stagedReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
       await options.failpoint?.({ phase: 'after-stage' });
 
-      if (mirror && mirror !== destination && await exists(mirror)) {
-        mirrorTransactionRoot = await fsp.mkdtemp(path.join(mirror, '.yam-flow-install-'));
-        await fsp.chmod(mirrorTransactionRoot, 0o700);
-        mirrorBackupRoot = path.join(mirrorTransactionRoot, 'backup');
-      }
-
+      const mutationOwnership = await preflightInstallOwnership(
+        destination,
+        options.packageName,
+        skills,
+        cleanupCandidates,
+        replaceSkills
+      );
+      const mutationSnapshot = await captureMutationSnapshot(
+        destination,
+        options.packageName,
+        mutationOwnership.replaceNames,
+        replaceSkills
+      );
+      await options.failpoint?.({ phase: 'before-mutation' });
       mutationStarted = true;
-      await moveExistingEntries(destination, managedNames, backupRoot, destinationBackups);
+      await moveExistingEntries(destination, mutationOwnership.replaceNames, backupRoot, destinationBackups);
       if (await exists(destinationReceiptPath)) {
         await fsp.rename(destinationReceiptPath, receiptBackupPath);
         receiptBackedUp = true;
       }
+      await verifyMovedMutationSnapshot(
+        destination,
+        mutationSnapshot,
+        destinationBackups,
+        receiptBackedUp,
+        receiptBackupPath
+      );
       await options.failpoint?.({ phase: 'after-backup' });
 
       for (const skill of skills) {
@@ -538,11 +937,6 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       receiptInstalled = true;
       await options.failpoint?.({ phase: 'receipt-installed' });
 
-      if (mirror && mirrorBackupRoot) {
-        await moveExistingEntries(mirror, managedNames, mirrorBackupRoot, mirrorBackups);
-        await options.failpoint?.({ phase: 'mirror-cleaned' });
-      }
-
       await options.failpoint?.({ phase: 'before-verify' });
       const inspection = await inspectSkillInstallation({
         sourceRoot,
@@ -554,7 +948,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       });
       if (!inspection.ok) throw new Error(`post-install verification failed: ${inspection.issues.join('; ')}`);
 
-      for (const cleanup of [transactionRoot, mirrorTransactionRoot]) {
+      for (const cleanup of [transactionRoot]) {
         if (!cleanup) continue;
         try {
           await fsp.rm(cleanup, { recursive: true, force: true });
@@ -583,12 +977,11 @@ export async function installSkillSetTransactional(options: TransactionalInstall
             rollbackErrors.push(message(receiptError));
           }
         }
-        rollbackErrors.push(...await restoreMovedEntries(mirrorBackups));
       }
 
       if (rollbackErrors.length === 0) {
         const cleanupErrors: string[] = [];
-        for (const cleanup of [transactionRoot, mirrorTransactionRoot]) {
+        for (const cleanup of [transactionRoot]) {
           if (!cleanup) continue;
           try {
             await fsp.rm(cleanup, { recursive: true, force: true });
@@ -606,7 +999,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       }
       throw new Error(
         `yam install failed and rollback is incomplete: ${message(error)}. `
-        + `Recovery artifacts were kept at ${transactionRoot}${mirrorTransactionRoot ? ` and ${mirrorTransactionRoot}` : ''}. `
+        + `Recovery artifacts were kept at ${transactionRoot}. `
         + `Rollback errors: ${rollbackErrors.join('; ')}`
       );
     }
@@ -633,6 +1026,134 @@ export async function installSkillSetTransactional(options: TransactionalInstall
 
   if (primaryError) throw primaryError;
   if (!result) throw new Error('yam install ended without a result');
+  result.cleanupWarnings = cleanupWarnings;
+  return result;
+}
+
+export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Promise<SafeUninstallResult> {
+  const destination = safeRoot(options.destination, 'skill destination');
+  if (options.codexMirror) safeRoot(options.codexMirror, 'Codex mirror');
+  const skills = unique(options.skills);
+  validateManagedNames(skills);
+  if (!await exists(destination)) {
+    throw new Error(`safe uninstall requires a verified yam install receipt: ${path.join(destination, INSTALL_RECEIPT_NAME)}`);
+  }
+
+  const lock = await acquireInstallLock(destination);
+  const cleanupWarnings: string[] = [];
+  let result: SafeUninstallResult | undefined;
+  let primaryError: unknown;
+  try {
+    const recoveryArtifacts = await findInstallRecoveryArtifacts(destination);
+    if (recoveryArtifacts.length) {
+      throw new Error(
+        `unfinished yam install transaction found: ${recoveryArtifacts.join(', ')}. `
+        + 'Inspect and preserve any backup state before removing the transaction artifact and retrying.'
+      );
+    }
+    await preflightSafeUninstallOwnership(destination, options.packageName, skills);
+
+    const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-uninstall-'));
+    const backupRoot = path.join(transactionRoot, 'backup');
+    const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
+    const receiptBackup = path.join(transactionRoot, INSTALL_RECEIPT_NAME);
+    const moved: MovedEntry[] = [];
+    let receiptMoved = false;
+    let mutationStarted = false;
+    try {
+      await preflightSafeUninstallOwnership(destination, options.packageName, skills);
+      const mutationSnapshot = await captureMutationSnapshot(
+        destination,
+        options.packageName,
+        skills,
+        []
+      );
+      await options.failpoint?.({ phase: 'before-mutation' });
+      mutationStarted = true;
+      await moveExistingEntries(destination, skills, backupRoot, moved);
+      await fsp.rename(receiptPath, receiptBackup);
+      receiptMoved = true;
+      await verifyMovedMutationSnapshot(
+        destination,
+        mutationSnapshot,
+        moved,
+        receiptMoved,
+        receiptBackup
+      );
+      await options.failpoint?.({ phase: 'after-backup' });
+      await options.failpoint?.({ phase: 'before-verify' });
+
+      const remaining = [];
+      for (const skill of skills) {
+        if (await exists(path.join(destination, skill))) remaining.push(skill);
+      }
+      if (await exists(receiptPath)) remaining.push(INSTALL_RECEIPT_NAME);
+      if (remaining.length) {
+        throw new Error(`post-uninstall verification found active entries: ${remaining.join(', ')}`);
+      }
+
+      try {
+        await fsp.rm(transactionRoot, { recursive: true, force: true });
+      } catch (error) {
+        cleanupWarnings.push(`verified uninstall retained cleanup artifact ${transactionRoot}: ${message(error)}`);
+      }
+      result = {
+        receiptPath,
+        removedSkills: skills,
+        cleanupWarnings
+      };
+    } catch (error) {
+      const rollbackErrors: string[] = [];
+      if (mutationStarted) {
+        if (receiptMoved) {
+          try {
+            if (await exists(receiptPath)) throw new Error(`rollback target unexpectedly exists: ${receiptPath}`);
+            await fsp.rename(receiptBackup, receiptPath);
+          } catch (receiptError) {
+            rollbackErrors.push(message(receiptError));
+          }
+        }
+        rollbackErrors.push(...await restoreMovedEntries(moved));
+      }
+      if (rollbackErrors.length === 0) {
+        try {
+          await fsp.rm(transactionRoot, { recursive: true, force: true });
+        } catch (cleanupError) {
+          throw new Error(
+            `yam uninstall failed; previous installation state restored, but transaction cleanup is incomplete: ${message(error)}. `
+            + `Cleanup error: ${message(cleanupError)}`
+          );
+        }
+        throw new Error(`yam uninstall failed; previous installation state restored: ${message(error)}`);
+      }
+      throw new Error(
+        `yam uninstall failed and rollback is incomplete: ${message(error)}. `
+        + `Recovery artifacts were kept at ${transactionRoot}. Rollback errors: ${rollbackErrors.join('; ')}`
+      );
+    }
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const lockCleanupErrors: string[] = [];
+  try {
+    await lock.handle.close();
+  } catch (error) {
+    lockCleanupErrors.push(message(error));
+  }
+  try {
+    await fsp.rm(lock.lockPath, { force: true });
+  } catch (error) {
+    lockCleanupErrors.push(message(error));
+  }
+  if (lockCleanupErrors.length) {
+    const warning = `install lock cleanup failed at ${lock.lockPath}: ${lockCleanupErrors.join('; ')}`;
+    if (primaryError) primaryError = new Error(`${message(primaryError)}. ${warning}`);
+    else cleanupWarnings.push(warning);
+  }
+
+  if (primaryError) throw primaryError;
+  if (!result) throw new Error('yam uninstall ended without a result');
   result.cleanupWarnings = cleanupWarnings;
   return result;
 }

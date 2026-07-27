@@ -2,6 +2,28 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.4.0 - 2026-07-27
+
+### Added
+
+- Added ownership-aware skill replacement: an existing active skill is replaced only when the previous yam receipt and complete regular-file inventory and content hashes prove yam ownership, unless the operator explicitly names that skill with `--replace-user-skill`.
+- Added a central CLI help contract so `--help` and `-h` return usage before any command dispatch, including install and uninstall.
+- Added deterministic smoke coverage for user-owned conflicts, explicit replacement, prior-version upgrades, local drift, safe uninstall and rollback, preserved legacy/mirror entries, and help-path state immutability.
+- Added `yam detect [dir] --json` changed-file verification recommendations for dirty, staged, and untracked Git paths. Each advisory records its matched rule, confidence, reason, fallback, and source files; its command plan deduplicates available project commands while retaining rule/file provenance, and unavailable Git scope cannot masquerade as a clean project.
+- Added a deterministic packaged-hook latency and read-only regression smoke for zero, one, and many changed files, including the eight-file prompt cap and bounded Study Note `Stop` behavior.
+
+### Improved
+
+- `yam uninstall` now requires a valid receipt and matching active skill hashes, then removes the verified set transactionally. User-owned, locally modified, legacy, retired, and Codex mirror entries that cannot be proven yam-owned are preserved.
+- Install ownership is checked before staging and again immediately before mutation so conflicts fail closed without replacing the existing skill or receipt.
+- `yam doctor` reports safely preserved legacy/retired/mirror entries as informational unproven entries instead of failing with an ineffective reinstall recommendation.
+- `yam cleanup scan` now includes a bounded, advisory-only AGENTS/SKILL directive-duplication budget with exact normalized matching, digests, redacted limited previews, and file/line provenance. It remains non-destructive and never becomes a hard gate.
+- Study Note check, prompt, and `Stop` paths now preserve Git change-scope availability. A non-Git or failed Git probe reports partial truth and a manual-inspection warning instead of silently claiming that no artifacts changed.
+
+### Verification
+
+- Passed TypeScript typecheck, clean build, hook latency/read-only smoke, the 174-file install/uninstall transaction smoke, packaged CLI smoke, self-verification, forbidden-name scan, distribution freshness, package-boundary validation, and diff whitespace checks.
+
 ## v2.3.2 - 2026-07-21
 
 ### Added

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,6 +23,10 @@ try {
   const bin = binCandidates.find((candidate) => existsSync(candidate));
   if (!bin) throw new Error(`yam binary not found after install. Tried: ${binCandidates.join(', ')}`);
   const version = execFileSync(bin, ['version'], { encoding: 'utf8' }).trim();
+  verifyHelpContract(bin, prefix, env);
+  verifyOwnershipCliContract(bin, prefix, env);
+  verifyDetectionRecommendationContract(bin, prefix, env);
+  verifyInstructionDuplicationContract(bin, prefix, env);
   execFileSync(bin, ['verify'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor', '--json'], { stdio: 'ignore' });
@@ -37,6 +41,28 @@ try {
   const completeStudyNote = 'Study Note: Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains.';
   const passingStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', root, '--text', completeStudyNote, '--json'], { encoding: 'utf8' }));
   assert(passingStudyNoteGuard.truth_status === 'verified', 'study note guard should pass supplied Study Note text');
+  const nonGitProject = join(prefix, 'study-note-no-git');
+  mkdirSync(nonGitProject, { recursive: true });
+  writeFileSync(join(nonGitProject, 'artifact.txt'), 'Git scope intentionally unavailable\n');
+  const nonGitBefore = snapshotVisibleTree(nonGitProject);
+  const unavailableStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', nonGitProject, '--json'], { encoding: 'utf8' }));
+  assert(unavailableStudyNoteGuard.changed_file_detection?.available === false, 'Study Note guard should expose unavailable Git scope');
+  assert(unavailableStudyNoteGuard.checks?.find((item) => item.id === 'changed_files')?.status === 'partial', 'unavailable Git scope should not be reported as clean or skipped');
+  assert(unavailableStudyNoteGuard.truth_status === 'partial', 'unavailable Git scope should cap Study Note truth to partial');
+  assert(unavailableStudyNoteGuard.next_action?.includes('inspect changed artifacts manually'), 'unavailable Git scope should provide a manual inspection next action');
+  const unavailableStudyNotePrompt = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], {
+    input: JSON.stringify({ cwd: nonGitProject, hook_event_name: 'UserPromptSubmit' }),
+    encoding: 'utf8'
+  }));
+  assert(unavailableStudyNotePrompt.hookSpecificOutput?.additionalContext?.includes('scope is unavailable'), 'Study Note prompt should warn when Git scope is unavailable');
+  assert(unavailableStudyNotePrompt.hookSpecificOutput?.additionalContext?.includes('do not treat this as a clean project'), 'Study Note prompt should not silently fail open outside Git');
+  const unavailableStudyNoteStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], {
+    input: JSON.stringify({ cwd: nonGitProject, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Done.' }),
+    encoding: 'utf8'
+  }));
+  assert(unavailableStudyNoteStop.continue === true && !unavailableStudyNoteStop.decision, 'unavailable Git scope should remain advisory instead of inventing changed files');
+  assert(unavailableStudyNoteStop.systemMessage?.includes('could not read Git changed-file scope'), 'Study Note Stop should keep unavailable scope visible');
+  assert(snapshotVisibleTree(nonGitProject) === nonGitBefore, 'non-Git Study Note check and hooks must remain read-only');
   const toolsDoctor = JSON.parse(execFileSync(bin, ['tools', 'doctor', root, '--json'], { encoding: 'utf8' }));
   assert(toolsDoctor.contextPressure?.schema === 'yam.context-pressure.v1', 'tools doctor missing contextPressure');
   assert(toolsDoctor.realProbe?.schema === 'yam.real-probe.v1', 'tools doctor missing realProbe');
@@ -245,4 +271,372 @@ function spawnFailureText(bin, args) {
 
 function assert(condition, label) {
   if (!condition) throw new Error(label);
+}
+
+function verifyHelpContract(bin, prefix, baseEnv) {
+  const helpRoot = join(prefix, 'help-contract');
+  const helpProject = join(helpRoot, 'project');
+  const skillsHome = join(helpRoot, 'skills-home');
+  const codexMirror = join(helpRoot, 'codex-mirror');
+  const proofOut = join(helpProject, 'proof.json');
+  const missionOut = join(helpProject, 'mission.json');
+  const assetManifest = join(helpProject, 'assets.json');
+  const revisionRoot = join(helpProject, 'revisions');
+  const image = join(helpProject, 'reference.png');
+  mkdirSync(join(skillsHome, 'quick'), { recursive: true });
+  mkdirSync(join(codexMirror, 'quick'), { recursive: true });
+  mkdirSync(helpProject, { recursive: true });
+  writeFileSync(join(skillsHome, 'quick', 'sentinel.txt'), 'skills-home sentinel\n');
+  writeFileSync(join(codexMirror, 'quick', 'sentinel.txt'), 'codex-mirror sentinel\n');
+  writeFileSync(join(helpProject, 'sentinel.txt'), 'project sentinel\n');
+  writeFileSync(image, 'not an image because help must not inspect it\n');
+
+  const helpEnv = {
+    ...baseEnv,
+    YAM_SKILLS_HOME: skillsHome,
+    YAM_CODEX_MIRROR: codexMirror
+  };
+  const runHelp = (args) => {
+    const output = execFileSync(bin, args, { cwd: helpProject, env: helpEnv, encoding: 'utf8' });
+    assert(output.includes('Usage:'), `help should print usage for: yam ${args.join(' ')}`);
+  };
+
+  for (const args of [
+    [],
+    ['help'],
+    ['--help'],
+    ['-h'],
+    ['install', '--help'],
+    ['install', '-h'],
+    ['uninstall', '--help'],
+    ['uninstall', '-h']
+  ]) {
+    const before = snapshotTree(helpRoot);
+    runHelp(args);
+    assert(snapshotTree(helpRoot) === before, `help mutated isolated state: yam ${args.join(' ')}`);
+  }
+
+  const topLevelCommands = [
+    'help',
+    'install',
+    'uninstall',
+    'version',
+    'detect',
+    'pack',
+    'context',
+    'cleanup',
+    'budget',
+    'measure',
+    'tools',
+    'proof',
+    'study-note',
+    'loop',
+    'ueye',
+    'media',
+    'runtime',
+    'mission',
+    'benchmark',
+    'release',
+    'safety',
+    'memory',
+    'hook',
+    'template',
+    'tune-log',
+    'status',
+    'list',
+    'verify',
+    'doctor',
+    'examples',
+    'path',
+    'init-project'
+  ];
+  const nestedCommands = [
+    ['context', 'pressure'],
+    ['cleanup', 'scan'],
+    ['tools', 'doctor'],
+    ['proof', 'write', '--out', proofOut],
+    ['study-note', 'check'],
+    ['loop', 'report'],
+    ['ueye', 'capture'],
+    ['ueye', 'compare'],
+    ['ueye', 'preflight'],
+    ['ueye', 'report'],
+    ['ueye', 'asset', 'add', '--manifest', assetManifest],
+    ['ueye', 'asset', 'verify', '--manifest', assetManifest],
+    ['ueye', 'revision', 'archive', '--file', image, '--root', revisionRoot],
+    ['ueye', 'revision', 'verify', '--root', revisionRoot],
+    ['media', 'proof'],
+    ['runtime', 'evidence'],
+    ['mission', 'queue', '--out', missionOut],
+    ['mission', 'receipt', '--out', missionOut],
+    ['mission', 'gate', '--out', missionOut],
+    ['benchmark', 'report'],
+    ['release', 'report'],
+    ['memory', 'init'],
+    ['memory', 'add'],
+    ['memory', 'list'],
+    ['memory', 'summary'],
+    ['memory', 'resolve'],
+    ['hook', 'status'],
+    ['hook', 'enable', 'study-note'],
+    ['hook', 'disable', 'study-note'],
+    ['hook', 'run', 'study-note']
+  ];
+  const before = snapshotTree(helpRoot);
+  for (const flag of ['--help', '-h']) {
+    for (const command of topLevelCommands) runHelp([command, flag]);
+    for (const command of nestedCommands) runHelp([...command, flag]);
+  }
+  assert(snapshotTree(helpRoot) === before, 'comprehensive help contract mutated isolated state');
+}
+
+function verifyOwnershipCliContract(bin, prefix, baseEnv) {
+  const contractRoot = join(prefix, 'ownership-cli-contract');
+  const skillsHome = join(contractRoot, 'skills-home');
+  const codexMirror = join(contractRoot, 'codex-mirror');
+  const userQuick = '# user-owned quick sentinel\n';
+  const userLegacy = '# user-owned legacy sentinel\n';
+  const userMirror = '# user-owned mirror sentinel\n';
+  mkdirSync(join(skillsHome, 'quick'), { recursive: true });
+  mkdirSync(join(skillsHome, 'fast'), { recursive: true });
+  mkdirSync(join(codexMirror, 'quick'), { recursive: true });
+  writeFileSync(join(skillsHome, 'quick', 'SKILL.md'), userQuick);
+  writeFileSync(join(skillsHome, 'fast', 'SKILL.md'), userLegacy);
+  writeFileSync(join(codexMirror, 'quick', 'SKILL.md'), userMirror);
+  const ownershipEnv = {
+    ...baseEnv,
+    YAM_SKILLS_HOME: skillsHome,
+    YAM_CODEX_MIRROR: codexMirror
+  };
+
+  const conflict = spawnFailureTextWithEnv(bin, ['install'], ownershipEnv);
+  assert(conflict.includes('active skill ownership conflict'), 'CLI install should fail closed on a user-owned active skill');
+  assert(readFileSync(join(skillsHome, 'quick', 'SKILL.md'), 'utf8') === userQuick, 'failed CLI install should preserve user-owned active skill');
+  assert(!existsSync(join(skillsHome, '.yam-flow-install-receipt.json')), 'failed CLI install should not write a receipt');
+
+  execFileSync(bin, ['install', '--replace-user-skill', 'quick'], { env: ownershipEnv, stdio: 'ignore' });
+  execFileSync(bin, ['status'], { env: ownershipEnv, stdio: 'ignore' });
+  const ownershipDoctor = JSON.parse(execFileSync(bin, ['doctor', '--json'], { env: ownershipEnv, encoding: 'utf8' }));
+  assert(ownershipDoctor.ok === true, 'doctor should not fail on safely preserved unproven entries');
+  assert(ownershipDoctor.preservedUnprovenSkillEntries?.length >= 2, 'doctor should report preserved unproven entries separately');
+  assert(ownershipDoctor.preservedUnprovenSkillEntries?.includes('retired-name destination entry: fast'), 'doctor should report preserved destination entries');
+  assert(ownershipDoctor.preservedUnprovenSkillEntries?.includes('active-name Codex mirror entry: quick'), 'doctor should report preserved active-name mirror entries');
+  assert(readFileSync(join(skillsHome, 'fast', 'SKILL.md'), 'utf8') === userLegacy, 'CLI install should preserve unowned retired skill');
+  assert(readFileSync(join(codexMirror, 'quick', 'SKILL.md'), 'utf8') === userMirror, 'CLI install should preserve unowned mirror skill');
+
+  execFileSync(bin, ['uninstall'], { env: ownershipEnv, stdio: 'ignore' });
+  assert(!existsSync(join(skillsHome, '.yam-flow-install-receipt.json')), 'safe CLI uninstall should remove its receipt');
+  assert(readFileSync(join(skillsHome, 'fast', 'SKILL.md'), 'utf8') === userLegacy, 'safe CLI uninstall should preserve unowned retired skill');
+  assert(readFileSync(join(codexMirror, 'quick', 'SKILL.md'), 'utf8') === userMirror, 'safe CLI uninstall should preserve unowned mirror skill');
+}
+
+function verifyDetectionRecommendationContract(bin, prefix, baseEnv) {
+  const project = join(prefix, 'detect-recommendations');
+  const scriptsDir = join(project, 'scripts');
+  mkdirSync(join(project, 'src', 'lib'), { recursive: true });
+  mkdirSync(scriptsDir, { recursive: true });
+  mkdirSync(join(project, 'notes'), { recursive: true });
+  const packageData = {
+    name: 'yam-detect-fixture',
+    private: true,
+    scripts: {
+      typecheck: 'node -e "require(\'node:fs\').writeFileSync(\'typecheck-ran\', \'unexpected\')"',
+      build: 'node -e "require(\'node:fs\').writeFileSync(\'build-ran\', \'unexpected\')"',
+      'custom-smoke': 'node ./scripts/custom-smoke.mjs',
+      'secondary-smoke': 'node ./scripts/secondary-smoke.mjs',
+      'package-boundary:check': 'node -e "require(\'node:fs\').writeFileSync(\'boundary-ran\', \'unexpected\')"',
+      'release:check': 'node -e "require(\'node:fs\').writeFileSync(\'release-ran\', \'unexpected\')"'
+    }
+  };
+  writeFileSync(join(project, 'package.json'), `${JSON.stringify(packageData, null, 2)}\n`);
+  writeFileSync(join(project, 'src', 'lib', 'feature.ts'), 'export const feature = 1;\n');
+  writeFileSync(join(scriptsDir, 'custom-smoke.mjs'), 'require("node:fs").writeFileSync("script-ran", "unexpected");\n');
+  writeFileSync(join(scriptsDir, 'secondary-smoke.mjs'), 'require("node:fs").writeFileSync("secondary-ran", "unexpected");\n');
+  writeFileSync(join(project, 'notes', 'tracked.md'), 'baseline\n');
+  execFileSync('git', ['init', '-q'], { cwd: project });
+  execFileSync('git', ['add', '.'], { cwd: project });
+  execFileSync('git', ['-c', 'user.name=yam-smoke', '-c', 'user.email=yam-smoke@example.com', 'commit', '-qm', 'baseline'], { cwd: project });
+
+  writeFileSync(join(project, 'src', 'lib', 'feature.ts'), 'export const feature = 2;\n');
+  writeFileSync(join(scriptsDir, 'custom-smoke.mjs'), 'require("node:fs").writeFileSync("script-ran", "still unexpected");\n');
+  writeFileSync(join(scriptsDir, 'secondary-smoke.mjs'), 'require("node:fs").writeFileSync("secondary-ran", "still unexpected");\n');
+  execFileSync('git', ['add', 'scripts/custom-smoke.mjs'], { cwd: project });
+  execFileSync('git', ['mv', 'notes/tracked.md', 'notes/renamed note.md'], { cwd: project });
+  writeFileSync(join(project, 'package.json'), `${JSON.stringify({ ...packageData, description: 'release metadata changed' }, null, 2)}\n`);
+  writeFileSync(join(project, 'notes', 'untracked plan.md'), 'unknown path fallback\n');
+
+  const before = snapshotTree(project);
+  const detection = JSON.parse(execFileSync(bin, ['detect', project, '--json'], {
+    cwd: project,
+    env: baseEnv,
+    encoding: 'utf8'
+  }));
+  assert(detection.schema === 'yam.project-detection.v1', 'detect JSON schema missing');
+  assert(detection.changedFileDetection?.available === true, 'detect should identify an available Git change source');
+  for (const ruleName of ['src-lib', 'scripts', 'package-release-metadata', 'unknown-safe-fallback']) {
+    const row = detection.verificationRecommendations?.find((item) => item.matched_rule === ruleName);
+    assert(row, `detect recommendation missing ${ruleName}`);
+    assert(row.confidence, `${ruleName} recommendation missing confidence`);
+    assert(row.reason, `${ruleName} recommendation missing reason`);
+    assert(row.fallback, `${ruleName} recommendation missing fallback`);
+  }
+  const libRow = detection.verificationRecommendations.find((item) => item.matched_rule === 'src-lib');
+  assert(libRow.suggested_commands?.includes('npm run typecheck'), 'src/lib rule should recommend available typecheck');
+  assert(libRow.suggested_commands?.includes('npm run custom-smoke'), 'src/lib rule should recommend an available focused smoke');
+  const scriptsRow = detection.verificationRecommendations.find((item) => item.matched_rule === 'scripts');
+  assert(scriptsRow.suggested_commands?.includes('npm run custom-smoke'), 'scripts rule should recommend its direct npm wrapper');
+  const packageRow = detection.verificationRecommendations.find((item) => item.matched_rule === 'package-release-metadata');
+  assert(packageRow.suggested_commands?.includes('npm run package-boundary:check'), 'package rule missing boundary check');
+  assert(packageRow.suggested_commands?.includes('npm run release:check'), 'package rule missing release check');
+  const fallbackRow = detection.verificationRecommendations.find((item) => item.matched_rule === 'unknown-safe-fallback');
+  assert(fallbackRow.suggested_commands?.includes('npm run typecheck'), 'unknown rule should keep a full safe fallback');
+  assert(fallbackRow.files?.includes('notes/untracked plan.md'), 'unknown rule should preserve the source file evidence');
+  assert(fallbackRow.files?.includes('notes/renamed note.md'), 'rename rule should preserve the destination path with spaces');
+  assert(!detection.changedFiles?.includes('notes/tracked.md'), 'rename parsing should not treat the old source path as another changed file');
+  const plannedCommands = detection.verificationCommandPlan?.map((item) => item.command) || [];
+  assert(plannedCommands.length === new Set(plannedCommands).size, 'verification command plan should deduplicate commands');
+  const customSmokePlan = detection.verificationCommandPlan?.find((item) => item.command === 'npm run custom-smoke');
+  assert(customSmokePlan?.matched_rules?.includes('src-lib'), 'deduplicated command plan should preserve src/lib rule provenance');
+  assert(customSmokePlan?.matched_rules?.includes('scripts'), 'deduplicated command plan should preserve scripts rule provenance');
+  assert(customSmokePlan?.files?.includes('src/lib/feature.ts'), 'deduplicated command plan should preserve src/lib file provenance');
+  assert(customSmokePlan?.files?.includes('scripts/custom-smoke.mjs'), 'deduplicated command plan should preserve scripts file provenance');
+  const customScriptSource = customSmokePlan?.provenance?.find((item) => item.matched_rule === 'scripts');
+  assert(JSON.stringify(customScriptSource?.files) === JSON.stringify(['scripts/custom-smoke.mjs']), 'custom smoke direct-wrapper provenance should name only its changed script');
+  assert(customScriptSource?.basis === 'direct-script-wrapper', 'custom smoke should record direct-wrapper provenance');
+  const secondarySmokePlan = detection.verificationCommandPlan?.find((item) => item.command === 'npm run secondary-smoke');
+  const secondaryScriptSource = secondarySmokePlan?.provenance?.find((item) => item.matched_rule === 'scripts');
+  assert(JSON.stringify(secondaryScriptSource?.files) === JSON.stringify(['scripts/secondary-smoke.mjs']), 'secondary smoke direct-wrapper provenance should name only its changed script');
+  const human = execFileSync(bin, ['detect', project], { cwd: project, env: baseEnv, encoding: 'utf8' });
+  assert(human.includes('Changed-file verification recommendations'), 'detect human output missing recommendation section');
+  assert(human.includes('Verification command plan (deduplicated'), 'detect human output missing deduplicated command plan');
+  assert(human.includes('confidence: high'), 'detect human output missing confidence');
+  assert(human.includes('fallback:'), 'detect human output missing fallback');
+  assert(snapshotTree(project) === before, 'detect recommendations must not mutate project files or Git metadata');
+  for (const sentinel of ['typecheck-ran', 'build-ran', 'script-ran', 'secondary-ran', 'boundary-ran', 'release-ran']) {
+    assert(!existsSync(join(project, sentinel)), `detect must not execute recommended command: ${sentinel}`);
+  }
+
+  const cleanProject = join(prefix, 'detect-clean');
+  mkdirSync(cleanProject, { recursive: true });
+  writeFileSync(join(cleanProject, 'package.json'), `${JSON.stringify(packageData, null, 2)}\n`);
+  execFileSync('git', ['init', '-q'], { cwd: cleanProject });
+  execFileSync('git', ['add', 'package.json'], { cwd: cleanProject });
+  execFileSync('git', ['-c', 'user.name=yam-smoke', '-c', 'user.email=yam-smoke@example.com', 'commit', '-qm', 'baseline'], { cwd: cleanProject });
+  const cleanDetection = JSON.parse(execFileSync(bin, ['detect', cleanProject, '--json'], { env: baseEnv, encoding: 'utf8' }));
+  assert(cleanDetection.verificationRecommendations?.length === 1, 'clean detect should emit one explicit no-changes row');
+  assert(cleanDetection.verificationRecommendations[0].matched_rule === 'no-changes', 'clean detect should not invent changed-file checks');
+  assert(cleanDetection.verificationCommandPlan?.length === 0, 'clean detect should not invent a command plan');
+
+  const noPackageProject = join(prefix, 'detect-no-package');
+  mkdirSync(noPackageProject, { recursive: true });
+  const noPackage = JSON.parse(execFileSync(bin, ['detect', noPackageProject, '--json'], { env: baseEnv, encoding: 'utf8' }));
+  assert(noPackage.packageJson === false, 'detect should report a missing package.json honestly');
+  assert(noPackage.changedFileDetection?.available === false, 'non-Git detect should report unavailable change scope');
+  assert(noPackage.verificationRecommendations?.[0]?.matched_rule === 'git-status-unavailable', 'non-Git detect should not claim a clean scope');
+  assert(noPackage.verificationRecommendations?.[0]?.confidence === 'low', 'unavailable Git scope should use low confidence');
+  assert(noPackage.verificationRecommendations?.[0]?.suggested_commands?.length === 0, 'detect should not invent unavailable package commands');
+}
+
+function verifyInstructionDuplicationContract(bin, prefix, baseEnv) {
+  const project = join(prefix, 'instruction-duplication');
+  const skillDir = join(project, 'skills', 'quick');
+  mkdirSync(skillDir, { recursive: true });
+  const fakeSecret = 'sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const repeated = `Keep every completion claim tied to concrete verification evidence from the current project state; token=${fakeSecret}`;
+  writeFileSync(join(project, 'AGENTS.md'), [
+    '# Project instructions',
+    '',
+    `- **${repeated}.**`,
+    '',
+    '```md',
+    `- ${repeated}.`,
+    '```',
+    ''
+  ].join('\n'));
+  writeFileSync(join(skillDir, 'SKILL.md'), [
+    '---',
+    'name: quick',
+    '---',
+    '',
+    '## Rules',
+    '',
+    `1. ${repeated}`,
+    '- Keep reports short.',
+    ''
+  ].join('\n'));
+  const before = snapshotVisibleTree(project);
+  const report = JSON.parse(execFileSync(bin, ['cleanup', 'scan', project, '--json'], { env: baseEnv, encoding: 'utf8' }));
+  const budget = report.instruction_duplication_budget;
+  assert(budget?.schema === 'yam.instruction-duplication-budget.v1', 'cleanup scan missing duplication budget');
+  assert(budget.advisory_only === true && budget.hard_gate === false, 'duplication budget must stay advisory');
+  assert(budget.destructive === false && report.destructive === false, 'duplication scan must stay read-only');
+  assert(budget.duplicate_group_count === 1, 'duplicate fixture should produce one cross-surface group');
+  assert(budget.duplicate_groups?.[0]?.surface_count === 2, 'duplicate group should identify both instruction surfaces');
+  assert(budget.duplicate_groups?.[0]?.occurrence_count === 2, 'code-fence copy must not count as a directive');
+  assert(!JSON.stringify(budget).includes(fakeSecret), 'directive duplication output should redact token-like preview content');
+  assert(budget.duplicate_groups?.[0]?.directive_preview?.includes('[redacted]'), 'directive preview should retain a visible redaction marker');
+  assert(report.findings?.some((item) => item.risk_level === 'low' && item.surface.includes('directive duplication')), 'cleanup scan should add a low-risk advisory finding');
+  assert(report.truth_status === 'partial', 'advisory duplication scan must not claim release-gate verification');
+  assert(snapshotVisibleTree(project) === before, 'cleanup duplication scan must not mutate project files');
+
+  const uniqueProject = join(prefix, 'instruction-unique');
+  mkdirSync(join(uniqueProject, 'skills', 'quick'), { recursive: true });
+  writeFileSync(join(uniqueProject, 'AGENTS.md'), '# Project\n\n- Keep project direction visible before changing implementation files.\n');
+  writeFileSync(join(uniqueProject, 'skills', 'quick', 'SKILL.md'), '---\nname: quick\n---\n\n- Run the smallest focused check that supports the requested claim.\n');
+  const uniqueReport = JSON.parse(execFileSync(bin, ['cleanup', 'scan', uniqueProject, '--json'], { env: baseEnv, encoding: 'utf8' }));
+  assert(uniqueReport.instruction_duplication_budget?.duplicate_group_count === 0, 'unique directives should not be reported as duplicates');
+
+  const cappedProject = join(prefix, 'instruction-cap');
+  for (let index = 0; index < 28; index += 1) {
+    const dir = join(cappedProject, 'skills', `skill-${String(index).padStart(2, '0')}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'SKILL.md'), `---\nname: skill-${index}\n---\n\n- This intentionally unique directive belongs only to bounded fixture number ${index} and should not repeat elsewhere.\n`);
+  }
+  const cappedReport = JSON.parse(execFileSync(bin, ['cleanup', 'scan', cappedProject, '--json'], { env: baseEnv, encoding: 'utf8' }));
+  const cappedBudget = cappedReport.instruction_duplication_budget;
+  assert(cappedBudget.files_scanned === cappedBudget.limits.max_files, 'instruction scan should honor its file budget');
+  assert(cappedBudget.file_limit_reached === true, 'instruction scan should report file-budget truncation');
+  assert(cappedBudget.duplicate_groups?.length <= cappedBudget.limits.max_groups, 'instruction scan should honor its group budget');
+}
+
+function snapshotTree(root) {
+  const rows = [];
+  const visit = (current, relative = '.') => {
+    const stat = statSync(current);
+    rows.push(`${relative}\t${stat.isDirectory() ? 'dir' : 'file'}\t${stat.mode}\t${stat.size}\t${stat.mtimeMs}`);
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync(current).sort()) visit(join(current, entry), join(relative, entry));
+    } else {
+      rows.push(readFileSync(current).toString('base64'));
+    }
+  };
+  visit(root);
+  return rows.join('\n');
+}
+
+function snapshotVisibleTree(root) {
+  const rows = [];
+  const visit = (current, relative = '.') => {
+    const stat = statSync(current);
+    rows.push(`${relative}\t${stat.isDirectory() ? 'dir' : 'file'}\t${stat.mode}\t${stat.size}\t${stat.mtimeMs}`);
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync(current).sort()) {
+        if (entry === '.git') continue;
+        visit(join(current, entry), join(relative, entry));
+      }
+    } else {
+      rows.push(readFileSync(current).toString('base64'));
+    }
+  };
+  visit(root);
+  return rows.join('\n');
+}
+
+function spawnFailureTextWithEnv(bin, args, env) {
+  try {
+    execFileSync(bin, args, { env, encoding: 'utf8' });
+  } catch (error) {
+    return [error.stdout, error.stderr].filter(Boolean).map(String).join('\n');
+  }
+  throw new Error(`Expected failure for ${args.join(' ')}`);
 }
