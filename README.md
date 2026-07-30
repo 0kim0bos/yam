@@ -130,6 +130,54 @@ Manual copying can still make a skill loadable, but it intentionally remains unv
 
 Restart Codex after installing so skills reload.
 
+## External Updates
+
+Update checks are read-only and never authorize a mutation by themselves:
+
+```bash
+yam update check
+yam update check --json
+```
+
+Apply requires an explicit component or `--all`:
+
+```bash
+yam update apply --component scrapling
+yam update apply --component insane-search
+yam update apply --component yam
+yam update apply --all --json
+```
+
+`--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. Each attempt writes a component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, checks, side effects, outcome, and rollback guidance. A lock prevents concurrent apply runs.
+
+Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
+
+There is no unattended updater. The exact project trigger in `AGENTS.md` grants one-time authorization for a checked `--all` run, and Codex is never restarted automatically.
+
+### Scrapling Usage
+
+The isolated executable can be used directly from the shell:
+
+```bash
+scrapling --version
+scrapling extract get https://example.com example.txt --css-selector h1
+scrapling extract stealthy-fetch https://example.com example-browser.txt --css-selector h1 --headless
+```
+
+From Python inside the installed environment:
+
+```python
+from scrapling.fetchers import Fetcher, StealthyFetcher
+
+page = Fetcher.get("https://example.com")
+print(page.css("h1::text").get())
+
+browser_page = StealthyFetcher.fetch("https://example.com", headless=True)
+print(browser_page.css("h1::text").get())
+```
+
+Use `Fetcher` for ordinary HTTP pages and `StealthyFetcher` only when a real browser or stronger anti-bot behavior is needed; the browser path is heavier.
+
 ## Uninstall
 
 ```bash

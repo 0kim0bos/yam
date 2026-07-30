@@ -33,6 +33,8 @@ const required = [
   'dist/bin/yam.js',
   'dist/lib/skill-installation.js',
   'dist/lib/skill-installation.d.ts',
+  'dist/lib/external-updates.js',
+  'dist/lib/external-updates.d.ts',
   'dist/lib/trust-kernel.js',
   'dist/lib/trust-kernel.d.ts',
   'README.md',

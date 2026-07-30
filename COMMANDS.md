@@ -143,6 +143,19 @@ yam measure quick --files 3 --commands 1 --report-lines 5 --seconds 40
 yam template tuning
 ```
 
+## External Updates
+
+```bash
+yam update check
+yam update check --json
+yam update apply --component scrapling --json
+yam update apply --component insane-search --json
+yam update apply --component yam --json
+yam update apply --all --json
+```
+
+`yam update check` is read-only. Every `apply` needs explicit authorization, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. Insane Search is never remove-first and `.codex/plugins/cache` is never edited directly.
+
 ## Tool Doctor / Proof / Safety
 
 Read-only readiness and evidence helpers. These do not install, deploy, query databases, or run verification by themselves.

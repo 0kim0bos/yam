@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
@@ -43,7 +43,7 @@
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/bin/yam.js',0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "install:skills": "node ./dist/bin/yam.js install",
     "uninstall:skills": "node ./dist/bin/yam.js uninstall",
@@ -52,7 +52,7 @@
     "doctor": "node ./dist/bin/yam.js doctor",
     "list": "node ./dist/bin/yam.js list",
     "examples": "node ./dist/bin/yam.js examples",
-    "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node --check ./dist/lib/skill-installation.js && npm run hook-latency-smoke && node ./scripts/install-transaction-smoke.mjs && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
+    "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node --check ./dist/lib/skill-installation.js && node --check ./dist/lib/external-updates.js && npm run hook-latency-smoke && node ./scripts/external-updates-smoke.mjs && node ./scripts/install-transaction-smoke.mjs && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
     "prepare": "npm run build",
     "prepack": "npm run verify:self",
     "prepublishOnly": "npm run verify:self",
@@ -64,6 +64,7 @@
     "dist:freshness": "node ./scripts/check-dist-freshness.mjs",
     "registry:check": "node ./scripts/check-registry-version.mjs",
     "cli-smoke": "node ./scripts/cli-smoke.mjs",
+    "external-updates-smoke": "npm run build && node ./scripts/external-updates-smoke.mjs",
     "hook-latency-smoke": "node ./scripts/hook-latency-smoke.mjs",
     "install-transaction-smoke": "npm run build && node ./scripts/install-transaction-smoke.mjs",
     "release:check": "npm run typecheck && npm run forbidden-names:check && npm run verify:self && npm run dist:freshness && npm run package-boundary:check && npm run registry:check && npm run cli-smoke",

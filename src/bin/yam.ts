@@ -39,6 +39,12 @@ import {
   installSkillSetTransactional,
   uninstallSkillSetSafely
 } from '../lib/skill-installation.js';
+import {
+  EXTERNAL_UPDATE_COMPONENTS,
+  applyExternalUpdates,
+  checkExternalUpdates
+} from '../lib/external-updates.js';
+import type { ExternalUpdateComponent } from '../lib/external-updates.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -180,6 +186,9 @@ Usage:
   yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
   yam mission receipt [--thread-id id] [--role reviewer] [--lifecycle stopped] [--outcome passed] [--evidence text] [--json]
   yam mission gate [--expected-thread id] [--receipt file] [--json]
+  yam update check [--json]
+  yam update apply --component yam|scrapling|insane-search [--json]
+  yam update apply --all [--json]
   yam benchmark report [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--json]
   yam release report [--json]
   yam safety [text...]
@@ -3564,6 +3573,83 @@ async function mission(args = []) {
   return missionUsage();
 }
 
+async function updateCommand(args: string[] = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return updateUsage();
+  if (subcommand === 'check') {
+    const rest = args.slice(1);
+    const invalid = rest.filter((arg) => arg !== '--json');
+    if (invalid.length || rest.filter((arg) => arg === '--json').length > 1) {
+      throw new Error(`invalid update check option: ${invalid[0] || '--json repeated'}`);
+    }
+    const report = await checkExternalUpdates(VERSION);
+    printJsonOrHuman(report, rest.includes('--json'), 'External update check');
+    if (!report.success) process.exitCode = 1;
+    return;
+  }
+  if (subcommand !== 'apply') {
+    throw new Error(`unknown update command: ${subcommand}`);
+  }
+
+  const parsed = parseUpdateApplyArgs(args.slice(1));
+  const report = await applyExternalUpdates(VERSION, {
+    component: parsed.component,
+    all: parsed.all
+  });
+  printJsonOrHuman(report, parsed.json, 'External update apply');
+  if (!report.success) process.exitCode = 1;
+}
+
+function parseUpdateApplyArgs(args: string[]) {
+  let component: ExternalUpdateComponent | undefined;
+  let all = false;
+  let json = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index] || '');
+    if (arg === '--json') {
+      if (json) throw new Error('--json may be supplied only once');
+      json = true;
+      continue;
+    }
+    if (arg === '--all') {
+      if (all) throw new Error('--all may be supplied only once');
+      all = true;
+      continue;
+    }
+    if (arg === '--component' || arg.startsWith('--component=')) {
+      if (component) throw new Error('--component may be supplied only once');
+      const value = arg === '--component' ? String(args[index + 1] || '') : arg.slice('--component='.length);
+      if (arg === '--component') index += 1;
+      if (!EXTERNAL_UPDATE_COMPONENTS.includes(value as ExternalUpdateComponent)) {
+        throw new Error('component must be one of: yam, scrapling, insane-search');
+      }
+      component = value as ExternalUpdateComponent;
+      continue;
+    }
+    throw new Error(`invalid update apply option: ${arg}`);
+  }
+  if ((all && component) || (!all && !component)) {
+    throw new Error('choose exactly one of --component yam|scrapling|insane-search or --all');
+  }
+  return { component, all, json };
+}
+
+function updateUsage() {
+  console.log(`yam update
+
+Usage:
+  yam update check [--json]
+  yam update apply --component yam|scrapling|insane-search [--json]
+  yam update apply --all [--json]
+
+Safety:
+  check is read-only. apply requires an explicit component or --all.
+  --all updates Scrapling and Insane Search before yam, then stops at the first failed/manual component.
+  Insane Search is updated only through the official Codex CLI; plugin caches are never edited directly.
+  Every apply attempt records component checks, outcome, side effects, and rollback guidance.
+`);
+}
+
 function missionUsage() {
   console.log(`yam mission
 
@@ -5332,6 +5418,7 @@ function showRequestedHelp(args: string[]) {
     media: mediaUsage,
     runtime: runtimeUsage,
     mission: missionUsage,
+    update: updateUsage,
     benchmark: benchmarkUsage,
     memory: memoryUsage
   };
@@ -5361,6 +5448,7 @@ async function main() {
   if (command === 'media') return media(process.argv.slice(3));
   if (command === 'runtime') return runtime(process.argv.slice(3));
   if (command === 'mission') return mission(process.argv.slice(3));
+  if (command === 'update') return updateCommand(process.argv.slice(3));
   if (command === 'benchmark') return benchmark(process.argv.slice(3));
   if (command === 'release') return release(process.argv.slice(3));
   if (command === 'safety') return safety(process.argv.slice(3));

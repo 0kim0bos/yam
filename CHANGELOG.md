@@ -2,6 +2,34 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.5.0 - 2026-07-30
+
+### Added
+
+- Added read-only `yam update check [--json]` for yam, Scrapling, and Insane Search with official registry/manifest versions and source-revision metadata.
+- Added explicitly authorized component/all update application with per-component receipts, a concurrent-run lock, exact stable versions, verification evidence, and rollback guidance.
+- Added isolated Scrapling version environments with `pip check`, HTTP extraction, browser extraction, and atomic executable switching; the previous environment remains available for rollback.
+- Added deterministic temp-only updater smoke coverage, including receipt-failure symlink rollback, manual Codex plugin fallback, strict no-remove/cache behavior, and yam-last `--all` ordering.
+
+### Improved
+
+- The build now preserves executable mode on `dist/bin/yam.js`, and dist freshness fails if a global npm install would expose a non-executable `yam` target.
+
+### Security
+
+- Insane Search updates pin the official manifest to the exact observed Git revision and use only official Codex CLI commands. A missing safe in-place path returns `manual_plugin_update_required`; an unreadable post-upgrade state fails closed before `add`; yam never removes the plugin first or writes `.codex/plugins/cache` directly.
+- External commands use argument arrays without a shell, version/component allowlists, redacted captured output, and fail-closed apply locking.
+- Existing Scrapling links require a matching yam ownership marker, and an unwritable receipt stops `--all` before any later component mutation.
+
+### Verification
+
+- `npm run external-updates-smoke`
+- `npm run typecheck`
+- `npm run verify:self`
+- `npm run cli-smoke`
+- `npm run dist:freshness`
+- `npm run package-boundary:check`
+
 ## v2.4.0 - 2026-07-27
 
 ### Added

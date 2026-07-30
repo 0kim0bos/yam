@@ -24,18 +24,20 @@
 
 ## Latest Update Trigger
 
-When the user says exactly `yam 최신 업데이트 사항 반영해줘` in a chat for this project, treat that phrase as explicit authorization to update the globally installed package and refresh the installed yam skills.
+When the user says exactly `yam 최신 업데이트 사항 반영해줘` in a chat for this project, treat that phrase as explicit authorization to check and apply reviewed updates for yam, Scrapling, and Insane Search.
 
 Run these commands sequentially from the yam project directory:
 
 ```bash
-npm install -g yam-flow
-yam install
+yam update check --json
+yam update apply --all --json
 yam version
 yam status
 ```
 
 - Request any environment approval required for network access or writes outside the workspace.
 - Stop at the first failed command, report the blocker, and do not claim that later steps ran.
-- After all four commands pass, report the installed version and skill status, then tell the user that Codex can be restarted to reload the updated skills.
+- Treat that exact phrase as one-time authorization for this run only; do not create an unattended updater, hook, or automation.
+- Never edit `.codex/plugins/cache` directly. If Insane Search cannot be updated in place through the official Codex CLI, report `manual_plugin_update_required` and stop.
+- After all four commands pass, summarize every component receipt, report the installed yam version and skill status, then tell the user that Codex can be restarted to reload updated skills/plugins.
 - Do not restart Codex automatically.

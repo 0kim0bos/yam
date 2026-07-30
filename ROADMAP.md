@@ -97,6 +97,7 @@ Tasks:
 - Add symlink-friendly local install.
 - Add version command. Done.
 - Add staged transactional install, rollback, receipt, and drift-aware status. Done.
+- Add checked component updates for yam, Scrapling, and Insane Search with explicit authorization, receipts, and rollback guidance. Done.
 - Consider npm packaging only after route behavior stabilizes.
 
 ### 8. Scout / Research Workflow
