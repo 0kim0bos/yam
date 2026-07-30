@@ -1,0 +1,8 @@
+{
+  "name": "yam-ab-reuse-helper",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

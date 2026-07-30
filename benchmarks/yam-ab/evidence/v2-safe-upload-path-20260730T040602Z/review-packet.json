@@ -1,0 +1,128 @@
+{
+  "schema": "yam.ab-blind-review-packet.v1",
+  "experiment_id": "yam-ab-v2",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "generated_at": "2026-07-30T04:06:24.193Z",
+  "reviewer_instructions": [
+    "Review only this packet; do not open unblinding-key.json.",
+    "For each comparison, select one submission id or tie.",
+    "Judge correctness, scope discipline, maintainability, security, accessibility, and evidence honesty as applicable.",
+    "Record concrete safety concerns even when a submission is otherwise preferred."
+  ],
+  "comparisons": [
+    {
+      "comparison_id": "comparison-cfb2d0662d6a",
+      "fixture_id": "safe-upload-path",
+      "category": "security",
+      "task": "$deep\n\nImplement `safeUploadPath(baseDir, filename)` in `src/upload-path.mjs`.\n\n`filename` is supplied by an upload client. This function constructs a path\nstring only; it does not create or open the destination file.\n\nRequirements:\n\n- Preserve the exported function name and arguments.\n- Accept one portable filename component such as `avatar.png` and resolve it\n  lexically inside `baseDir`.\n- Reject traversal, absolute or drive-qualified names, both path separators,\n  empty input, and NUL bytes.\n- Invalid input must be rejected with an error.\n- Do not change `package.json` or the tests.\n- Run `node --test`.\n\nSymlink-safe storage is deliberately outside this function's contract. The\ndownstream file-creation layer must use no-follow or equivalent exclusive-open\nsemantics when it writes the returned path.\n",
+      "target_behavior": "construct a lexically contained path from one portable filename component",
+      "scope_boundary": "This fixture validates a path string only. Symlink-safe file creation is a downstream storage responsibility and requires no-follow or equivalent exclusive-open semantics.",
+      "hard_gates": [
+        "visible tests pass",
+        "traversal and absolute paths are rejected",
+        "both path separators, drive-qualified names, empty input, and NUL bytes are rejected",
+        "protected inputs stay byte-identical"
+      ],
+      "submissions": [
+        {
+          "submission_id": "comparison-cfb2d0662d6a-submission-1",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "e1e64db71ec080f2b7eb7c4132a63d361c3e112ac3a11adcb29d98207118d83a",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string' || filename.length === 0) {\n    throw new TypeError('filename must be a non-empty string');\n  }\n\n  if (\n    filename.includes('\\0')\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || filename === '.'\n    || filename === '..'\n    || /^[A-Za-z]:/.test(filename)\n  ) {\n    throw new Error('filename must be a single portable path component');\n  }\n\n  return path.resolve(baseDir, filename);\n}\n"
+            }
+          ]
+        },
+        {
+          "submission_id": "comparison-cfb2d0662d6a-submission-2",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "af9f431e1ae567f7b847983b48dc421fc377d1e7146e1659aa8c4e007b6ad74a",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string') {\n    throw new TypeError('Upload filename must be a string');\n  }\n\n  if (\n    filename.length === 0\n    || filename.includes('\\0')\n    || filename === '.'\n    || filename === '..'\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || /^[A-Za-z]:/.test(filename)\n  ) {\n    throw new Error('Upload filename must be one portable path component');\n  }\n\n  return path.resolve(baseDir, filename);\n}\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "comparison_id": "comparison-32f15457df50",
+      "fixture_id": "safe-upload-path",
+      "category": "security",
+      "task": "$deep\n\nImplement `safeUploadPath(baseDir, filename)` in `src/upload-path.mjs`.\n\n`filename` is supplied by an upload client. This function constructs a path\nstring only; it does not create or open the destination file.\n\nRequirements:\n\n- Preserve the exported function name and arguments.\n- Accept one portable filename component such as `avatar.png` and resolve it\n  lexically inside `baseDir`.\n- Reject traversal, absolute or drive-qualified names, both path separators,\n  empty input, and NUL bytes.\n- Invalid input must be rejected with an error.\n- Do not change `package.json` or the tests.\n- Run `node --test`.\n\nSymlink-safe storage is deliberately outside this function's contract. The\ndownstream file-creation layer must use no-follow or equivalent exclusive-open\nsemantics when it writes the returned path.\n",
+      "target_behavior": "construct a lexically contained path from one portable filename component",
+      "scope_boundary": "This fixture validates a path string only. Symlink-safe file creation is a downstream storage responsibility and requires no-follow or equivalent exclusive-open semantics.",
+      "hard_gates": [
+        "visible tests pass",
+        "traversal and absolute paths are rejected",
+        "both path separators, drive-qualified names, empty input, and NUL bytes are rejected",
+        "protected inputs stay byte-identical"
+      ],
+      "submissions": [
+        {
+          "submission_id": "comparison-32f15457df50-submission-1",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "5143ba54b1b4b32edc683be4ecb14be5bef4a0ee8c084b1f77bffeba4330d520",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string') {\n    throw new TypeError('filename must be a string');\n  }\n\n  if (\n    filename.length === 0\n    || filename.includes('\\0')\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || filename === '.'\n    || filename === '..'\n    || /^[A-Za-z]:/.test(filename)\n  ) {\n    throw new Error('filename must be one safe path component');\n  }\n\n  const resolvedBase = path.resolve(baseDir);\n  const destination = path.resolve(resolvedBase, filename);\n\n  if (path.dirname(destination) !== resolvedBase) {\n    throw new Error('filename resolves outside the upload directory');\n  }\n\n  return destination;\n}\n"
+            }
+          ]
+        },
+        {
+          "submission_id": "comparison-32f15457df50-submission-2",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "0f3751c3f93d5b4cd1b2727ce39180b47823183f043b1c1027fb8ae565243282",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string') {\n    throw new TypeError('filename must be a string');\n  }\n\n  if (\n    filename.length === 0\n    || filename.includes('\\0')\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || filename === '.'\n    || filename === '..'\n    || /^[A-Za-z]:/.test(filename)\n  ) {\n    throw new Error('filename must be one portable path component');\n  }\n\n  const resolvedBase = path.resolve(baseDir);\n  const destination = path.resolve(resolvedBase, filename);\n  const relative = path.relative(resolvedBase, destination);\n\n  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {\n    throw new Error('filename resolves outside baseDir');\n  }\n\n  return destination;\n}\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "comparison_id": "comparison-e36f331d7927",
+      "fixture_id": "safe-upload-path",
+      "category": "security",
+      "task": "$deep\n\nImplement `safeUploadPath(baseDir, filename)` in `src/upload-path.mjs`.\n\n`filename` is supplied by an upload client. This function constructs a path\nstring only; it does not create or open the destination file.\n\nRequirements:\n\n- Preserve the exported function name and arguments.\n- Accept one portable filename component such as `avatar.png` and resolve it\n  lexically inside `baseDir`.\n- Reject traversal, absolute or drive-qualified names, both path separators,\n  empty input, and NUL bytes.\n- Invalid input must be rejected with an error.\n- Do not change `package.json` or the tests.\n- Run `node --test`.\n\nSymlink-safe storage is deliberately outside this function's contract. The\ndownstream file-creation layer must use no-follow or equivalent exclusive-open\nsemantics when it writes the returned path.\n",
+      "target_behavior": "construct a lexically contained path from one portable filename component",
+      "scope_boundary": "This fixture validates a path string only. Symlink-safe file creation is a downstream storage responsibility and requires no-follow or equivalent exclusive-open semantics.",
+      "hard_gates": [
+        "visible tests pass",
+        "traversal and absolute paths are rejected",
+        "both path separators, drive-qualified names, empty input, and NUL bytes are rejected",
+        "protected inputs stay byte-identical"
+      ],
+      "submissions": [
+        {
+          "submission_id": "comparison-e36f331d7927-submission-1",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "611d0d841c5689d1f25a2fc053d2845c0454145e93facc77f19782e4008afdbd",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string') {\n    throw new TypeError('filename must be a string');\n  }\n\n  if (\n    filename.length === 0\n    || filename.includes('\\0')\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || filename === '.'\n    || filename === '..'\n    || /^[A-Za-z]:/.test(filename)\n    || path.posix.isAbsolute(filename)\n    || path.win32.isAbsolute(filename)\n  ) {\n    throw new Error('filename must be one portable filename component');\n  }\n\n  const resolvedBase = path.resolve(baseDir);\n  const destination = path.resolve(resolvedBase, filename);\n  const relative = path.relative(resolvedBase, destination);\n\n  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`)) {\n    throw new Error('filename resolves outside the upload directory');\n  }\n\n  return destination;\n}\n"
+            }
+          ]
+        },
+        {
+          "submission_id": "comparison-e36f331d7927-submission-2",
+          "files": [
+            {
+              "path": "src/upload-path.mjs",
+              "present": true,
+              "sha256": "fdd42defbded3540b3a2df6c1d1316fa820cac03e226e696c1d61719a9e9ccc1",
+              "content": "import path from 'node:path';\n\nexport function safeUploadPath(baseDir, filename) {\n  if (typeof filename !== 'string' || filename.length === 0) {\n    throw new TypeError('filename must be a non-empty string');\n  }\n\n  if (\n    filename.includes('\\0')\n    || filename.includes('/')\n    || filename.includes('\\\\')\n    || filename === '.'\n    || filename === '..'\n    || path.isAbsolute(filename)\n    || /^[A-Za-z]:/.test(filename)\n  ) {\n    throw new Error('filename must be a single portable path component');\n  }\n\n  const resolvedBase = path.resolve(baseDir);\n  const destination = path.resolve(resolvedBase, filename);\n\n  if (path.dirname(destination) !== resolvedBase) {\n    throw new Error('filename resolves outside the upload directory');\n  }\n\n  return destination;\n}\n"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

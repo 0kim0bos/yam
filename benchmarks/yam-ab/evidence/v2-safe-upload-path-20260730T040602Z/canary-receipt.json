@@ -1,0 +1,20 @@
+{
+  "schema": "yam.ab-canary.v1",
+  "pass": true,
+  "failure_reason": null,
+  "duration_ms": 16044,
+  "exit_code": 0,
+  "event_types": {
+    "thread.started": 1,
+    "turn.started": 1,
+    "item.completed": 4,
+    "item.started": 2,
+    "turn.completed": 1
+  },
+  "safety_violations": [],
+  "diagnostics": {
+    "stderr_tail": "",
+    "error_events": []
+  },
+  "raw_jsonl_retained": false
+}

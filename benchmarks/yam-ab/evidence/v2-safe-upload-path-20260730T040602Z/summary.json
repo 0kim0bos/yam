@@ -1,0 +1,58 @@
+{
+  "schema": "yam.ab-summary.v1",
+  "experiment_id": "yam-ab-v2",
+  "generated_at": "2026-07-30T04:06:02.386Z",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "arms": {
+    "A": {
+      "runs": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "mean_duration_ms": 65511,
+      "tokens": {
+        "input": 277562,
+        "cached_input": 194560,
+        "output": 7759,
+        "reasoning_output": 3479
+      },
+      "estimated_cost_usd": null,
+      "tool_calls": {
+        "command_execution": 11,
+        "file_change": 3
+      }
+    },
+    "B": {
+      "runs": 3,
+      "passed": 3,
+      "pass_rate": 1,
+      "mean_duration_ms": 78691.33,
+      "tokens": {
+        "input": 337948,
+        "cached_input": 268288,
+        "output": 8488,
+        "reasoning_output": 3229
+      },
+      "estimated_cost_usd": null,
+      "tool_calls": {
+        "command_execution": 14,
+        "file_change": 3,
+        "todo_list": 1
+      }
+    }
+  },
+  "pairs": {
+    "total": 3,
+    "baseline_only_wins": 0,
+    "candidate_only_wins": 0,
+    "both_pass": 3,
+    "both_fail": 0
+  },
+  "hard_gate_regressions": [],
+  "evidence": {
+    "complete_pairs": true,
+    "minimum_repetitions_required": 3,
+    "observed_repetitions": 3,
+    "blind_review_complete": false
+  },
+  "decision": "awaiting_blind_review"
+}

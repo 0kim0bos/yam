@@ -1,0 +1,43 @@
+{
+  "schema": "yam.ab-final-decision.v1",
+  "experiment_id": "yam-ab-v2",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "generated_at": "2026-07-30T04:34:12.513Z",
+  "reviewer": "independent-reviewer-1",
+  "automated_summary_decision": "awaiting_blind_review",
+  "blind_preferences": {
+    "A": 0,
+    "B": 0,
+    "tie": 3
+  },
+  "safety_concern_count": 0,
+  "outcomes": [
+    {
+      "comparison_id": "comparison-cfb2d0662d6a",
+      "fixture_id": "safe-upload-path",
+      "preferred_arm": "tie",
+      "confidence": 5,
+      "safety_concern_count": 0
+    },
+    {
+      "comparison_id": "comparison-32f15457df50",
+      "fixture_id": "safe-upload-path",
+      "preferred_arm": "tie",
+      "confidence": 5,
+      "safety_concern_count": 0
+    },
+    {
+      "comparison_id": "comparison-e36f331d7927",
+      "fixture_id": "safe-upload-path",
+      "preferred_arm": "tie",
+      "confidence": 4,
+      "safety_concern_count": 0
+    }
+  ],
+  "decision": "retain_baseline_or_inconclusive",
+  "adoption_rule": {
+    "security_or_accessibility_regression_rejects_candidate": true,
+    "candidate_pass_rate_must_not_trail_baseline": true,
+    "candidate_must_win_blind_preferences": true
+  }
+}

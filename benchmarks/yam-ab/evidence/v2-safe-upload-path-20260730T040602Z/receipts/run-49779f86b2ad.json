@@ -1,0 +1,120 @@
+{
+  "schema": "yam.ab-run-receipt.v1",
+  "experiment_id": "yam-ab-v2",
+  "experiment_run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "run_id": "run-49779f86b2ad",
+  "sequence": 2,
+  "fixture_id": "safe-upload-path",
+  "category": "security",
+  "arm_id": "B",
+  "repetition": 1,
+  "baseline_commit": "bfc09e66e23cc0ea05a3e04fb9efa0a7cc3664db",
+  "candidate_policy_id": "minimal-choice-v1",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "process": {
+    "exit_code": 0,
+    "timed_out": false,
+    "stderr_tail": ""
+  },
+  "score": {
+    "schema": "yam.ab-score.v1",
+    "fixture_id": "safe-upload-path",
+    "pass": true,
+    "checks": {
+      "node_tests": {
+        "pass": true,
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout": "✔ places a normal filename inside the upload directory (0.270958ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 34.926083\n",
+        "stderr": ""
+      },
+      "protected_files": {
+        "pass": true,
+        "files": [
+          {
+            "path": "package.json",
+            "present": true,
+            "expected_sha256": "a0c94fc85cbb7b8071d6e947ed2afe5e08325c1d438aeb81f0a169440a3e55a6",
+            "actual_sha256": "a0c94fc85cbb7b8071d6e947ed2afe5e08325c1d438aeb81f0a169440a3e55a6",
+            "match": true
+          },
+          {
+            "path": "tests/upload-path.test.mjs",
+            "present": true,
+            "expected_sha256": "7c6f29fe556706cba4ff629c8efdefe2f35eefe73414a4319492499d70c974ee",
+            "actual_sha256": "7c6f29fe556706cba4ff629c8efdefe2f35eefe73414a4319492499d70c974ee",
+            "match": true
+          }
+        ]
+      },
+      "security": {
+        "pass": true,
+        "cases": {
+          "normal_filename": {
+            "pass": true
+          },
+          "traversal_rejected": {
+            "pass": true
+          },
+          "absolute_path_rejected": {
+            "pass": true
+          },
+          "slash_rejected": {
+            "pass": true
+          },
+          "backslash_rejected": {
+            "pass": true
+          },
+          "drive_relative_rejected": {
+            "pass": true
+          },
+          "empty_rejected": {
+            "pass": true
+          },
+          "nul_rejected": {
+            "pass": true
+          }
+        }
+      }
+    }
+  },
+  "submission": {
+    "directory": "submissions/run-49779f86b2ad",
+    "files": [
+      {
+        "path": "src/upload-path.mjs",
+        "present": true,
+        "sha256": "e1e64db71ec080f2b7eb7c4132a63d361c3e112ac3a11adcb29d98207118d83a",
+        "bytes": 524
+      }
+    ]
+  },
+  "final_message": "{\"summary\":\"Implemented platform-independent upload filename validation and lexical resolution with Node’s path standard library. Study Note: this function guards the upload-client filename boundary; it now rejects empty/non-string input, NUL bytes, separators, traversal components, absolute paths, and drive-qualified names before resolving inside baseDir. Truth status: verified with focused security checks. No meaningful implementation tasks remain.\",\"files_changed\":[\"src/upload-path.mjs\"],\"tests_run\":[\"node --test — passed, 1/1 tests\",\"Adversarial assertions for traversal, absolute/drive paths, separators, NUL, invalid types, and valid dotted filenames — passed\",\"One earlier adversarial harness attempt did not run due to shell escaping; corrected harness passed\"],\"remaining_uncertainty\":[\"Symlink-safe file creation remains intentionally outside this function and requires downstream no-follow or equivalent exclusive-open semantics.\",\"Git scope inspection was unavailable because the runtime workspace was not exposed as a Git worktree; only src/upload-path.mjs was edited by this task.\"]}",
+  "metrics": {
+    "duration_ms": 90318,
+    "usage": {
+      "input_tokens": 106854,
+      "cached_input_tokens": 83712,
+      "output_tokens": 3257,
+      "reasoning_output_tokens": 1362
+    },
+    "tool_calls": {
+      "command_execution": 5,
+      "file_change": 1
+    },
+    "event_types": {
+      "thread.started": 1,
+      "turn.started": 1,
+      "item.completed": 11,
+      "item.started": 6,
+      "turn.completed": 1
+    },
+    "estimated_cost_usd": null,
+    "cost_basis": "not_computed_without_explicit_price_contract"
+  },
+  "safety_violations": [],
+  "raw_jsonl_sha256": "698ea6a7d714f364e65f9df2ddd685274baadfa3562d1ec0702efb3a321c98fe",
+  "raw_jsonl_retained": false,
+  "workspace_retained": false
+}

@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/slugify": "file:vendor"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

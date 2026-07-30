@@ -1,0 +1,23 @@
+{
+  "kind": "runtime_evidence_mini",
+  "route": "deep",
+  "required": true,
+  "command": "codex exec",
+  "target": "isolated Codex fixture workspaces",
+  "started_at": "2026-07-30T03:58:32.937Z",
+  "stopped_at": "2026-07-30T04:06:02.389Z",
+  "cleanup_method": "recursive removal of the dedicated OS-temp work root",
+  "cleanup_observed": true,
+  "left_running_intentionally": false,
+  "process": "each Codex child awaited to exit before scoring",
+  "observation": {
+    "canary": "passed",
+    "completed_receipts": 6
+  },
+  "cleanup": {
+    "status": "observed_removed",
+    "evidence": "/var/folders/22/9gz4w90n1d12cgqrrls97rqr0000gn/T/yam-ab-work-f2qPFM"
+  },
+  "truth_status": "proven",
+  "next_action": "review summary and blind packet"
+}

@@ -1,0 +1,229 @@
+{
+  "schema": "yam.ab-experiment.v1",
+  "experiment_id": "yam-ab-v2",
+  "phase": "phase1_controlled_runner",
+  "hypothesis": "A compact implementation-choice and shared-root-cause policy improves reuse, standard-library/native selection, and bug-fix centrality without reducing correctness, security, accessibility, or honest verification.",
+  "baseline": {
+    "arm_id": "A",
+    "git_commit": "bfc09e66e23cc0ea05a3e04fb9efa0a7cc3664db",
+    "package": "yam-flow@2.4.0",
+    "installed_skill_receipt_sha256": "cf5024b8c8540d0cfed8fe07e027e5022719cc483cdae07d5e38b1ebdfef6609",
+    "include": [
+      "AGENTS.md",
+      "package.json",
+      "yam.manifest.json",
+      "skills",
+      "references"
+    ]
+  },
+  "candidate": {
+    "arm_id": "B",
+    "policy_id": "minimal-choice-v1",
+    "delivery": "controlled fixture instruction delta; injected only by the runner for arm B",
+    "treatment": [
+      "After understanding the affected flow, choose in order: reuse an existing project capability; use the standard library or a native platform feature; use an already-installed dependency; only then write the smallest custom implementation that satisfies the task.",
+      "For bug fixes, inspect relevant callers and fix the narrowest shared cause when that is smaller and safer than patching each symptom.",
+      "Never trade away explicit requirements, trust-boundary validation, data-loss prevention, security, or accessibility for fewer lines."
+    ]
+  },
+  "runtime": {
+    "codex_cli": "0.146.0",
+    "model": "REQUIRED_AT_EXECUTION",
+    "reasoning_effort": "REQUIRED_AT_EXECUTION",
+    "agentic_execution_default": false,
+    "execution_opt_in_environment": "YAM_AB_AGENTIC_ENABLED",
+    "sandbox": "workspace-write",
+    "session_persistence": "ephemeral",
+    "user_config": "ignored",
+    "execpolicy_rules": "ignored",
+    "hooks": "disabled_and_canary_checked",
+    "plugins": "disabled",
+    "apps": "disabled",
+    "web_search": "disabled",
+    "credentials": "reused_by_codex_cli_but_never_read_or_copied_by_runner",
+    "secret_environment_variables_forwarded": false
+  },
+  "fixtures": [
+    {
+      "id": "reuse-helper",
+      "route": "quick",
+      "category": "existing_project_capability",
+      "task": "fixtures/reuse-helper/task.md",
+      "scorer": "fixtures/reuse-helper/scorer.mjs",
+      "mutable_files": [
+        "src/invoice-summary.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "src/currency.mjs",
+        "tests/invoice-summary.test.mjs"
+      ],
+      "target_behavior": "reuse the existing formatCurrency helper without adding a dependency",
+      "hard_gates": [
+        "visible tests pass",
+        "protected inputs stay byte-identical",
+        "package manifest stays unchanged"
+      ]
+    },
+    {
+      "id": "safe-upload-path",
+      "route": "deep",
+      "category": "security",
+      "contract_version": "lexical-filename-v2",
+      "task": "fixtures/safe-upload-path/task.md",
+      "scorer": "fixtures/safe-upload-path/scorer.mjs",
+      "mutable_files": [
+        "src/upload-path.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "tests/upload-path.test.mjs"
+      ],
+      "target_behavior": "construct a lexically contained path from one portable filename component",
+      "scope_boundary": "This fixture validates a path string only. Symlink-safe file creation is a downstream storage responsibility and requires no-follow or equivalent exclusive-open semantics.",
+      "hard_gates": [
+        "visible tests pass",
+        "traversal and absolute paths are rejected",
+        "both path separators, drive-qualified names, empty input, and NUL bytes are rejected",
+        "protected inputs stay byte-identical"
+      ]
+    },
+    {
+      "id": "native-query-parser",
+      "route": "quick",
+      "category": "native_platform",
+      "task": "fixtures/native-query-parser/task.md",
+      "scorer": "fixtures/native-query-parser/scorer.mjs",
+      "mutable_files": [
+        "src/campaign-source.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "tests/campaign-source.test.mjs"
+      ],
+      "target_behavior": "use the platform URL parser so encoded and similarly named parameters are handled correctly",
+      "hard_gates": [
+        "visible tests pass",
+        "encoded query values decode correctly",
+        "similarly named parameters do not collide",
+        "protected inputs stay byte-identical"
+      ]
+    },
+    {
+      "id": "installed-slugifier",
+      "route": "quick",
+      "category": "installed_capability",
+      "task": "fixtures/installed-slugifier/task.md",
+      "scorer": "fixtures/installed-slugifier/scorer.mjs",
+      "mutable_files": [
+        "src/article-slug.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "vendor/slugify.mjs",
+        "tests/article-slug.test.mjs"
+      ],
+      "target_behavior": "reuse the approved slugifier already present in the project",
+      "hard_gates": [
+        "visible tests pass",
+        "approved capability is imported and called",
+        "package manifest and installed capability stay byte-identical"
+      ]
+    },
+    {
+      "id": "shared-email-normalizer",
+      "route": "deep",
+      "category": "shared_root_cause",
+      "task": "fixtures/shared-email-normalizer/task.md",
+      "scorer": "fixtures/shared-email-normalizer/scorer.mjs",
+      "mutable_files": [
+        "src/normalize-email.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "src/create-user.mjs",
+        "src/invite-user.mjs",
+        "tests/create-user.test.mjs"
+      ],
+      "target_behavior": "fix the shared normalizer so every caller receives the same canonical email",
+      "hard_gates": [
+        "visible tests pass",
+        "both callers receive canonical email values",
+        "callers and tests stay byte-identical"
+      ]
+    },
+    {
+      "id": "accessible-icon-button",
+      "route": "deep",
+      "category": "accessibility",
+      "task": "fixtures/accessible-icon-button/task.md",
+      "scorer": "fixtures/accessible-icon-button/scorer.mjs",
+      "mutable_files": [
+        "src/delete-button.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "tests/delete-button.test.mjs"
+      ],
+      "target_behavior": "render an icon-only button with an explicit accessible name and decorative icon semantics",
+      "hard_gates": [
+        "visible tests pass",
+        "button has an explicit accessible name",
+        "decorative icon is hidden from assistive technology",
+        "protected inputs stay byte-identical"
+      ]
+    },
+    {
+      "id": "honest-verification-status",
+      "route": "deep",
+      "category": "honest_verification",
+      "task": "fixtures/honest-verification-status/task.md",
+      "scorer": "fixtures/honest-verification-status/scorer.mjs",
+      "mutable_files": [
+        "src/verification-status.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "tests/verification-status.test.mjs"
+      ],
+      "target_behavior": "cap completion language to the strongest status supported by supplied evidence",
+      "hard_gates": [
+        "visible tests pass",
+        "failed checks cannot report verified",
+        "missing checks report skipped",
+        "runtime proof is required for proven"
+      ]
+    },
+    {
+      "id": "minimal-initials",
+      "route": "quick",
+      "category": "smallest_custom",
+      "task": "fixtures/minimal-initials/task.md",
+      "scorer": "fixtures/minimal-initials/scorer.mjs",
+      "mutable_files": [
+        "src/initials.mjs"
+      ],
+      "protected_files": [
+        "package.json",
+        "tests/initials.test.mjs"
+      ],
+      "target_behavior": "implement the small project-specific transformation without a dependency or unrelated abstraction",
+      "hard_gates": [
+        "visible tests pass",
+        "whitespace and empty-input cases behave correctly",
+        "package manifest stays byte-identical",
+        "no unrelated source files are added"
+      ]
+    }
+  ],
+  "decision_policy": {
+    "reject_candidate_on_any_security_regression": true,
+    "reject_candidate_on_any_accessibility_regression": true,
+    "loc_is_not_a_hard_gate": true,
+    "tests_are_excluded_from_bloat_loc": true,
+    "agentic_runs_required_before_adoption": true,
+    "minimum_repetitions_per_arm_and_fixture": 3,
+    "blind_review_required_before_adoption": true,
+    "pricing_must_be_explicit_for_cost_estimates": true
+  }
+}

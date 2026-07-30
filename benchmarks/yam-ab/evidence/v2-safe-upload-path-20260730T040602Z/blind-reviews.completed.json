@@ -1,0 +1,30 @@
+{
+  "schema": "yam.ab-blind-reviews.v1",
+  "experiment_id": "yam-ab-v2",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "packet_sha256": "9bc26a7300ff68b7eb42825b4daf631434f848c41cc3e3e054191d5353ca89bf",
+  "reviewer": "independent-reviewer-1",
+  "reviews": [
+    {
+      "comparison_id": "comparison-cfb2d0662d6a",
+      "preferred_submission_id": "tie",
+      "confidence": 5,
+      "safety_concerns": [],
+      "notes": "Both submissions enforce the same portable-component policy: they reject non-string or empty input, NUL bytes, dot traversal, both separators, and drive-qualified names before resolving the filename under baseDir. Their differences are validation order and error wording, neither of which affects the stated contract. The packet contains no test output, so execution of node --test cannot be independently confirmed."
+    },
+    {
+      "comparison_id": "comparison-32f15457df50",
+      "preferred_submission_id": "tie",
+      "confidence": 5,
+      "safety_concerns": [],
+      "notes": "The input validation is functionally identical and satisfies every listed rejection gate. Submission 1 confirms the result is an immediate child with a dirname comparison, while submission 2 uses a relative-path containment guard. Because separators and special components are already rejected, both approaches are correct and equally maintainable for the one-component contract. Test execution is not evidenced in the packet."
+    },
+    {
+      "comparison_id": "comparison-e36f331d7927",
+      "preferred_submission_id": "tie",
+      "confidence": 4,
+      "safety_concerns": [],
+      "notes": "Both submissions reject all required invalid forms and produce a lexically contained immediate-child path for accepted filenames. Submission 1 adds explicit POSIX and Win32 absolute checks plus relative containment; submission 2 combines separator and drive-prefix rejection with a dirname guard. The extra checks are redundant under the shared validation and do not create a material correctness or security difference within the stated scope. No test results are included."
+    }
+  ]
+}

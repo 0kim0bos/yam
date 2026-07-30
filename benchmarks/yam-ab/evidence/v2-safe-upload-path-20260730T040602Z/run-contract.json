@@ -1,0 +1,28 @@
+{
+  "schema": "yam.ab-run-contract.v1",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "experiment_id": "yam-ab-v2",
+  "baseline_commit": "bfc09e66e23cc0ea05a3e04fb9efa0a7cc3664db",
+  "started_at": "2026-07-30T03:58:32.937Z",
+  "completed_at": "2026-07-30T04:06:02.385Z",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "repetitions": 3,
+  "seed": "safe-upload-v2-targeted-gpt56-sol-v1",
+  "fixture_ids": [
+    "safe-upload-path"
+  ],
+  "pricing": null,
+  "canary_receipt": "canary-receipt.json",
+  "receipts": [
+    "receipts/run-28bab5524ea3.json",
+    "receipts/run-49779f86b2ad.json",
+    "receipts/run-494ff332e226.json",
+    "receipts/run-991add3e4adc.json",
+    "receipts/run-56da6b32629f.json",
+    "receipts/run-9da22b635de6.json"
+  ],
+  "raw_jsonl_retained": false,
+  "workspaces_retained": false,
+  "artifact_directory_intentionally_retained": true
+}

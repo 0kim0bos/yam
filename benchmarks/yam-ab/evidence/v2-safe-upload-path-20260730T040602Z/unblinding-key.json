@@ -1,0 +1,56 @@
+{
+  "schema": "yam.ab-unblinding-key.v1",
+  "experiment_id": "yam-ab-v2",
+  "run_id": "yam-ab-2026-07-30T03-58-32-936Z-9cd14cc1",
+  "packet_sha256": "9bc26a7300ff68b7eb42825b4daf631434f848c41cc3e3e054191d5353ca89bf",
+  "rows": [
+    {
+      "comparison_id": "comparison-cfb2d0662d6a",
+      "submission_id": "comparison-cfb2d0662d6a-submission-1",
+      "run_id": "run-49779f86b2ad",
+      "fixture_id": "safe-upload-path",
+      "repetition": 1,
+      "arm_id": "B"
+    },
+    {
+      "comparison_id": "comparison-cfb2d0662d6a",
+      "submission_id": "comparison-cfb2d0662d6a-submission-2",
+      "run_id": "run-9da22b635de6",
+      "fixture_id": "safe-upload-path",
+      "repetition": 1,
+      "arm_id": "A"
+    },
+    {
+      "comparison_id": "comparison-32f15457df50",
+      "submission_id": "comparison-32f15457df50-submission-1",
+      "run_id": "run-991add3e4adc",
+      "fixture_id": "safe-upload-path",
+      "repetition": 2,
+      "arm_id": "A"
+    },
+    {
+      "comparison_id": "comparison-32f15457df50",
+      "submission_id": "comparison-32f15457df50-submission-2",
+      "run_id": "run-28bab5524ea3",
+      "fixture_id": "safe-upload-path",
+      "repetition": 2,
+      "arm_id": "B"
+    },
+    {
+      "comparison_id": "comparison-e36f331d7927",
+      "submission_id": "comparison-e36f331d7927-submission-1",
+      "run_id": "run-56da6b32629f",
+      "fixture_id": "safe-upload-path",
+      "repetition": 3,
+      "arm_id": "A"
+    },
+    {
+      "comparison_id": "comparison-e36f331d7927",
+      "submission_id": "comparison-e36f331d7927-submission-2",
+      "run_id": "run-494ff332e226",
+      "fixture_id": "safe-upload-path",
+      "repetition": 3,
+      "arm_id": "B"
+    }
+  ]
+}
