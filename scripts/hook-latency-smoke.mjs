@@ -47,6 +47,7 @@ const cases = [
   { name: 'many-files', changed: 12 },
 ];
 const measurements = [];
+const rejectedInputMeasurements = [];
 let configuredHookTimeoutMs = 0;
 
 try {
@@ -54,6 +55,27 @@ try {
   assert(configuredHookTimeoutMs === 5_000, 'study-note handlers should retain the configured 5s timeout');
   assert(smokeBudgetMs < configuredHookTimeoutMs, 'smoke budget must remain below the configured hook timeout');
   for (const fixture of cases) measurements.push(runFixture(fixture));
+  const boundaryProject = join(sandbox, cases[0].name);
+  rejectedInputMeasurements.push(invokeRejectedHook(
+    boundaryProject,
+    'malformed-json',
+    'lite',
+    '{"prompt":"malformed-secret-sentinel",',
+    'invalid_hook_json',
+    'malformed-secret-sentinel',
+  ));
+  rejectedInputMeasurements.push(invokeRejectedHook(
+    boundaryProject,
+    'oversized-json',
+    'study-note',
+    JSON.stringify({
+      cwd: boundaryProject,
+      hook_event_name: 'UserPromptSubmit',
+      prompt: `oversized-secret-sentinel-${'x'.repeat(1024 * 1024)}`,
+    }),
+    'input_too_large',
+    'oversized-secret-sentinel',
+  ));
 } finally {
   rmSync(sandbox, { recursive: true, force: true });
 }
@@ -67,6 +89,9 @@ for (const measurement of measurements) {
     + `study-note Stop ${measurement.studyNoteStopMs.toFixed(1)}ms, `
     + `${measurement.changed} changed file(s)`,
   );
+}
+for (const measurement of rejectedInputMeasurements) {
+  console.log(`- ${measurement.name}: fail-open rejection ${measurement.durationMs.toFixed(1)}ms (${measurement.code})`);
 }
 console.log('- cleanup: temporary repositories and isolated config home removed');
 
@@ -169,6 +194,36 @@ function invokeHook(project, fixtureName, pathName, profile, input) {
     throw new Error(`${fixtureName} ${pathName} did not return valid JSON`);
   }
   return { output, durationMs };
+}
+
+function invokeRejectedHook(project, name, profile, input, code, forbiddenText) {
+  const before = snapshotState(project);
+  const startedAt = performance.now();
+  const raw = execFileSync(process.execPath, [bin, 'hook', 'run', profile], {
+    cwd: project,
+    encoding: 'utf8',
+    env,
+    input,
+    maxBuffer: 1024 * 1024,
+    timeout: configuredHookTimeoutMs,
+  });
+  const durationMs = performance.now() - startedAt;
+  const after = snapshotState(project);
+
+  assert(after === before, `${name} mutated the workspace, Git metadata, or isolated config`);
+  assert(durationMs < smokeBudgetMs, `${name} took ${durationMs.toFixed(1)}ms; budget is ${smokeBudgetMs}ms`);
+  assert(!raw.includes(forbiddenText), `${name} echoed rejected input`);
+
+  let output;
+  try {
+    output = JSON.parse(raw);
+  } catch {
+    throw new Error(`${name} did not return valid JSON`);
+  }
+  assert(output.continue === true, `${name} should remain fail-open`);
+  assert(String(output.systemMessage || '').includes(code), `${name} should expose ${code}`);
+  assert(!output.hookSpecificOutput, `${name} should not derive hook context from rejected input`);
+  return { name, code, durationMs };
 }
 
 function assertStudyNoteScope(context, fixtureName, expectedChanged) {

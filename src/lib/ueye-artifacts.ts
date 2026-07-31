@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { compareStableText } from './stable-order.js';
 
 export interface InspectedImageFile {
   path: string;
@@ -102,7 +103,7 @@ export async function upsertUeyeAsset(input: {
   };
   if (existingIndex >= 0) manifest.assets[existingIndex] = entry;
   else manifest.assets.push(entry);
-  manifest.assets.sort((left, right) => left.id.localeCompare(right.id));
+  manifest.assets.sort((left, right) => compareStableText(left.id, right.id));
   manifest.updated_at = new Date().toISOString();
   await writeJsonAtomic(manifestPath, manifest);
   const warnings = assetWarnings(entry);
@@ -205,7 +206,7 @@ export async function archiveUeyeRevision(input: {
   } else {
     history.revisions.push(entry);
   }
-  history.revisions.sort((left, right) => left.round - right.round || left.artifact_id.localeCompare(right.artifact_id));
+  history.revisions.sort((left, right) => left.round - right.round || compareStableText(left.artifact_id, right.artifact_id));
   history.updated_at = new Date().toISOString();
   await writeJsonAtomic(manifestPath, history);
   return {

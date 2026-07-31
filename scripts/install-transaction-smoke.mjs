@@ -12,8 +12,11 @@ import {
   symlinkSync,
   writeFileSync
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import {
   INSTALL_LOCK_NAME,
   INSTALL_RECEIPT_NAME,
@@ -40,6 +43,7 @@ const baseOptions = {
 };
 
 try {
+  assertStableManifestAcrossLocales();
   const userQuick = '# user-owned quick\n';
   mkdirSync(join(destination, 'quick'), { recursive: true });
   writeFileSync(join(destination, 'quick', 'SKILL.md'), userQuick);
@@ -77,6 +81,8 @@ try {
   const previousVersionReceipt = JSON.parse(readFileSync(firstInstall.receiptPath, 'utf8'));
   previousVersionReceipt.package.version = '2.3.1-previous';
   previousVersionReceipt.source.identity = `${packageJson.name}@2.3.1-previous`;
+  previousVersionReceipt.integrity.files.sort((left, right) => left.path.localeCompare(right.path));
+  previousVersionReceipt.integrity.source_digest = digestManifestInStoredOrder(previousVersionReceipt.integrity.files);
   writeFileSync(firstInstall.receiptPath, `${JSON.stringify(previousVersionReceipt, null, 2)}\n`, { mode: 0o600 });
   const upgradedInstall = await installSkillSetTransactional(baseOptions);
   assert(
@@ -408,6 +414,66 @@ try {
   console.log(`install-transaction-smoke: ok (${packageJson.version}, ${firstInstall.installedFiles} files)`);
 } finally {
   rmSync(root, { recursive: true, force: true });
+}
+
+function assertStableManifestAcrossLocales() {
+  const source = join(root, 'stable-manifest-source');
+  mkdirSync(join(source, 'skills', 'quick'), { recursive: true });
+  mkdirSync(join(source, 'references'), { recursive: true });
+  writeFileSync(join(source, 'skills', 'quick', 'SKILL.md'), '---\nname: quick\n---\n# stable manifest probe\n');
+  for (const name of ['Z-reference.md', 'a-reference.md', 'é-reference.md', '한국-reference.md']) {
+    writeFileSync(join(source, 'references', name), `${name}\n`);
+  }
+
+  const installationModule = pathToFileURL(join(sourceRoot, 'dist', 'lib', 'skill-installation.js')).href;
+  const probes = ['C', 'en_US.UTF-8', 'ko_KR.UTF-8'].map((locale, index) => {
+    const destination = join(root, `stable-manifest-${index}`);
+    const script = `
+      import { installSkillSetTransactional } from ${JSON.stringify(installationModule)};
+      const result = await installSkillSetTransactional({
+        sourceRoot: ${JSON.stringify(source)},
+        destination: ${JSON.stringify(destination)},
+        packageName: 'yam-stable-order-probe',
+        version: '1.0.0',
+        skills: ['quick'],
+        transactionId: ${JSON.stringify(`stable-order-${index}`)}
+      });
+      console.log(JSON.stringify({
+        source_digest: result.receipt.integrity.source_digest,
+        paths: result.receipt.integrity.files.map((file) => file.path)
+      }));
+    `;
+    return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+      encoding: 'utf8',
+      env: { ...process.env, LANG: locale, LC_ALL: locale }
+    }));
+  });
+
+  const expected = JSON.stringify(probes[0]);
+  assert(probes.every((probe) => JSON.stringify(probe) === expected), 'install manifest and digest should be locale-independent');
+  assert(
+    JSON.stringify(probes[0].paths) === JSON.stringify([
+      'quick/SKILL.md',
+      'quick/references/Z-reference.md',
+      'quick/references/a-reference.md',
+      'quick/references/é-reference.md',
+      'quick/references/한국-reference.md'
+    ]),
+    'install manifest should use stable ordinal path ordering'
+  );
+}
+
+function digestManifestInStoredOrder(files) {
+  const digest = createHash('sha256');
+  for (const file of files) {
+    digest.update(file.path);
+    digest.update('\0');
+    digest.update(String(file.bytes));
+    digest.update('\0');
+    digest.update(file.sha256);
+    digest.update('\n');
+  }
+  return digest.digest('hex');
 }
 
 function seedPreservedEntries(destinationRoot, mirrorRoot) {

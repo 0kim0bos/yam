@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { compareStableText } from './stable-order.js';
 
 export const INSTALL_RECEIPT_NAME = '.yam-flow-install-receipt.json';
 export const INSTALL_LOCK_NAME = '.yam-flow-install.lock';
@@ -211,7 +212,7 @@ async function collectTreeManifest(root: string, prefix = ''): Promise<InstallFi
   const files: InstallFileDigest[] = [];
   async function walk(current: string, relative: string): Promise<void> {
     const entries = await fsp.readdir(current, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
+    entries.sort((left, right) => compareStableText(left.name, right.name));
     for (const entry of entries) {
       const absolute = path.join(current, entry.name);
       const nextRelative = relative ? path.join(relative, entry.name) : entry.name;
@@ -226,7 +227,7 @@ async function collectTreeManifest(root: string, prefix = ''): Promise<InstallFi
   }
 
   await walk(root, '');
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  return files.sort((left, right) => compareStableText(left.path, right.path));
 }
 
 async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
@@ -253,7 +254,7 @@ async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
       });
     }
   }
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  return files.sort((left, right) => compareStableText(left.path, right.path));
 }
 
 async function copyTree(source: string, target: string): Promise<void> {
@@ -278,8 +279,12 @@ async function copyTree(source: string, target: string): Promise<void> {
 }
 
 function manifestDigest(files: InstallFileDigest[]) {
+  return digestManifestFiles([...files].sort((left, right) => compareStableText(left.path, right.path)));
+}
+
+function digestManifestFiles(files: InstallFileDigest[]) {
   const digest = createHash('sha256');
-  for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+  for (const file of files) {
     digest.update(file.path);
     digest.update('\0');
     digest.update(String(file.bytes));
@@ -288,6 +293,20 @@ function manifestDigest(files: InstallFileDigest[]) {
     digest.update('\n');
   }
   return digest.digest('hex');
+}
+
+function allowsLegacyManifestOrder(version: unknown) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(String(version || ''));
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  return major < 2 || (major === 2 && (minor < 5 || (minor === 5 && patch === 0)));
+}
+
+function receiptManifestDigestMatches(files: InstallFileDigest[], digest: unknown, version: unknown) {
+  if (digest === manifestDigest(files)) return true;
+  return allowsLegacyManifestOrder(version) && digest === digestManifestFiles(files);
 }
 
 function manifestIssues(expected: InstallFileDigest[], actual: InstallFileDigest[], label: string) {
@@ -379,7 +398,7 @@ function ownershipReceiptIssues(
   if (value.integrity?.file_count !== files.length) {
     issues.push('install receipt file count does not match its manifest');
   }
-  if (value.integrity?.source_digest !== manifestDigest(files)) {
+  if (!receiptManifestDigestMatches(files, value.integrity?.source_digest, value.package?.version)) {
     issues.push('install receipt source digest does not match its manifest');
   }
   if (Array.isArray(value.skills)) {

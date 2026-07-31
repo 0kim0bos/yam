@@ -172,7 +172,7 @@ Tasks:
 
 - Add `.yam/memory/records/*.json` storage. Done.
 - Add `yam memory init/add/list/summary/resolve`. Done.
-- Add lightweight secret-pattern blocking. Done.
+- Add lightweight secret-pattern blocking, including an actual npm dry-run packlist release guard with redacted findings. Done.
 - Teach context reuse to prefer `summary.md`, not full record reads. Done.
 - Keep memory opt-in only. Done.
 
@@ -308,6 +308,7 @@ Tasks:
 - Keep `yam-lite` advisory-only through `UserPromptSubmit`. Done.
 - Add Study Note `UserPromptSubmit` reminder plus one-pass `Stop` completion gate. Done.
 - Detect broken hook targets and migrate stale paths without replacing unrelated hooks. Done.
+- Bound hook/general stdin and fail open safely for rejected hook payloads. Done.
 - Add `references/tool-trust-layer.md`. Done.
 - Add read-only `yam tools doctor`. Done.
 - Add `yam proof` summary command. Done.
@@ -318,6 +319,8 @@ Tasks:
 - Add shallow `.sql` destructive keyword scan. Done.
 - Add `yam proof write`. Done.
 - Prepare npm/npx package metadata and dry-run packaging. Done.
+- Make integrity-critical install and Ueye manifest ordering locale-independent. Done.
+- Require a final read-only Doctor contract for yam update and rollback success. Done.
 - Add small route-scoped trust kernel: truth caps, fake/real policy, runtime truth matrix, and completion proof object. Done.
 
 ### 16. Deferred Triggers

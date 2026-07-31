@@ -479,6 +479,12 @@ async function applyYam(currentYamVersion: string, deps: ResolvedDependencies) {
       break;
     }
   }
+  if (!postFailure) {
+    const doctor = await deps.run('yam', ['doctor', '--json'], { env: deps.env, timeout: 180000 });
+    const validation = doctorValidation('yam_finalize_doctor', doctor);
+    checks.push(validation.check);
+    if (!validation.passed) postFailure = `yam_finalize_doctor failed: ${validation.error}`;
+  }
   if (postFailure) {
     const rollback = await rollbackYam(check.installed_version, deps, checks);
     return persistReceipt(baseReceipt(check, 'failed', checks, {
@@ -521,10 +527,19 @@ async function rollbackYam(
   const install = await deps.run('yam', ['install'], { env: deps.env, timeout: 180000 });
   const version = await deps.run('yam', ['version'], { env: deps.env, timeout: 30000 });
   const status = await deps.run('yam', ['status'], { env: deps.env, timeout: 120000 });
+  const doctor = await deps.run('yam', ['doctor', '--json'], { env: deps.env, timeout: 180000 });
+  const doctorResult = doctorValidation('automatic_yam_rollback_doctor', doctor);
   checks.push(commandCheck('automatic_yam_rollback_skills', install));
   checks.push(commandCheck('automatic_yam_rollback_version', version));
   checks.push(commandCheck('automatic_yam_rollback_status', status));
-  return install.ok && version.ok && extractVersion(version.stdout) === previousVersion && status.ok;
+  checks.push(doctorResult.check);
+  return (
+    install.ok
+    && version.ok
+    && extractVersion(version.stdout) === previousVersion
+    && status.ok
+    && doctorResult.passed
+  );
 }
 
 async function applyScrapling(deps: ResolvedDependencies) {
@@ -967,7 +982,7 @@ function yamRollback(previousVersion: string) {
     automatic: false,
     previous_target: previousVersion,
     guidance: previousVersion
-      ? `Reinstall the exact prior package with \`npm install -g yam-flow@${previousVersion}\`, then run \`yam install\`, \`yam version\`, and \`yam status\`.`
+      ? `Reinstall the exact prior package with \`npm install -g yam-flow@${previousVersion}\`, then run \`yam install\`, \`yam version\`, \`yam status\`, and \`yam doctor --json\`.`
       : 'Inspect the global npm installation before attempting a manual rollback.'
   };
 }
@@ -1006,6 +1021,61 @@ function commandCheck(id: string, result: ExternalCommandResult): ExternalCompon
     status: result.ok ? 'passed' : 'failed',
     note: commandNote(result)
   };
+}
+
+function doctorValidation(id: string, result: ExternalCommandResult) {
+  if (!result.ok) {
+    const note = boundedNote(`command failed: ${commandNote(result)}`);
+    return {
+      passed: false,
+      error: note,
+      check: { id, status: 'failed' as const, note }
+    };
+  }
+
+  let report: JsonRecord;
+  try {
+    const parsed = JSON.parse(String(result.stdout || ''));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('not an object');
+    }
+    report = parsed;
+  } catch {
+    const note = 'yam doctor returned invalid JSON';
+    return {
+      passed: false,
+      error: note,
+      check: { id, status: 'failed' as const, note }
+    };
+  }
+
+  if (report.schema !== 'yam.doctor.v1') {
+    const note = 'yam doctor returned an unexpected schema';
+    return {
+      passed: false,
+      error: note,
+      check: { id, status: 'failed' as const, note }
+    };
+  }
+  if (report.ok !== true) {
+    const note = 'yam.doctor.v1 reported ok=false';
+    return {
+      passed: false,
+      error: note,
+      check: { id, status: 'failed' as const, note }
+    };
+  }
+
+  const note = 'yam.doctor.v1 reported ok=true';
+  return {
+    passed: true,
+    error: '',
+    check: { id, status: 'passed' as const, note }
+  };
+}
+
+function boundedNote(text: string) {
+  return redactSensitiveText(String(text || '')).slice(0, 800);
 }
 
 function commandNote(result: ExternalCommandResult) {

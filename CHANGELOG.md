@@ -2,6 +2,32 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.5.1 - 2026-07-31
+
+### Added
+
+- Added bounded stdin readers with a 1 MiB hook limit and a 4 MiB general CLI limit. Malformed or oversized hook payloads now return a valid fail-open response without echoing or acting on rejected input.
+- Added a final read-only `yam doctor --json` verification to yam updates and automatic rollbacks. The updater accepts success only when the command exits cleanly and returns the expected healthy Doctor contract.
+- Added a release-time secret guard over the actual npm dry-run packlist. It scans regular UTF-8 text files for high-signal private-key and provider credential patterns while reporting only pattern, path, and line metadata.
+
+### Improved
+
+- Install and Ueye integrity manifests now use locale-independent ordinal ordering. Existing yam 2.5.0-and-earlier receipts retain compatibility with their stored legacy order while new digests are deterministic across locales.
+
+### Security
+
+- Rejected stdin payloads are byte-bounded, are not included in diagnostics, and cannot supply hook context or trigger workspace mutation.
+- `verify:self`, `prepack`, `prepublishOnly`, and `release:check` now inherit the npm packlist secret guard; the inner pack inspection disables lifecycle scripts to avoid recursive execution.
+- Updater Doctor output recorded in receipts remains redacted and bounded, and an unhealthy rollback is not reported as an automatic recovery.
+
+### Verification
+
+- TypeScript typecheck and build
+- Bounded hook latency/read-only smoke and packaged CLI smoke
+- Locale-independent install/Ueye manifest regression smokes
+- External update/rollback Doctor smoke
+- Npm packlist secret-pattern and redaction smoke
+
 ## v2.5.0 - 2026-07-30
 
 ### Added

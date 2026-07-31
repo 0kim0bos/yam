@@ -45,6 +45,13 @@ import {
   checkExternalUpdates
 } from '../lib/external-updates.js';
 import type { ExternalUpdateComponent } from '../lib/external-updates.js';
+import {
+  BoundedInputError,
+  GENERAL_STDIN_MAX_BYTES,
+  HOOK_STDIN_MAX_BYTES,
+  readBoundedStdinJson,
+  readBoundedStdinText
+} from '../lib/bounded-input.js';
 
 type AnyRecord = Record<string, any>;
 
@@ -2022,7 +2029,18 @@ async function hookRun(args = []) {
     console.log(JSON.stringify({ continue: true }));
     return;
   }
-  const input = await readStdinJson();
+  let input: AnyRecord;
+  try {
+    input = await readStdinJson();
+  } catch (error) {
+    if (!(error instanceof BoundedInputError)) throw error;
+    const code = error.code === 'invalid_json' ? 'invalid_hook_json' : error.code;
+    console.log(JSON.stringify({
+      continue: true,
+      systemMessage: `yam-${profile} hook input rejected: ${code}; continuing without using or echoing the payload.`
+    }));
+    return;
+  }
   const event = input?.hook_event_name || input?.hookEventName || input?.event || 'UserPromptSubmit';
   const cwd = String(input?.cwd || process.cwd());
   if (profile === 'study-note' && event === 'Stop') {
@@ -2044,15 +2062,7 @@ async function hookRun(args = []) {
 }
 
 async function readStdinJson() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  const text = Buffer.concat(chunks).toString('utf8').trim();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {};
-  }
+  return readBoundedStdinJson(process.stdin, HOOK_STDIN_MAX_BYTES);
 }
 
 function extractPrompt(input: AnyRecord = {}) {
@@ -2685,9 +2695,7 @@ function redactSensitiveText(text = '') {
 
 async function readStdinTextIfAvailable() {
   if (process.stdin.isTTY) return '';
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8').trim();
+  return (await readBoundedStdinText(process.stdin, GENERAL_STDIN_MAX_BYTES)).trim();
 }
 
 async function loop(args = []) {

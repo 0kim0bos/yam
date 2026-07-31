@@ -193,6 +193,65 @@ try {
   assert.deepEqual(allApply.receipts.map((item) => item.outcome), ['up_to_date', 'up_to_date', 'updated']);
   assert.equal(allApply.receipts[2].source_revision.kind, 'npm_registry_release');
   assert.equal(allFixture.commands.some((item) => item.command === 'npm' && item.args.join(' ') === 'install -g yam-flow@2.5.0'), true);
+  assert.match(allApply.receipts[2].rollback_hint.guidance, /`yam doctor --json`/);
+  assert.deepEqual(
+    allApply.receipts[2].checks.map((item) => item.id),
+    ['npm_global_install', 'yam_install_skills', 'yam_version', 'yam_status', 'yam_finalize_doctor']
+  );
+  assert.equal(allApply.receipts[2].checks.at(-1).status, 'passed');
+  assert.deepEqual(
+    allFixture.commands
+      .filter((item) => item.command === 'yam')
+      .map((item) => item.args.join(' ')),
+    ['install', 'version', 'status', 'doctor --json']
+  );
+
+  for (const scenario of [
+    ['command_failure', /command failed/],
+    ['malformed', /invalid JSON/],
+    ['wrong_schema', /unexpected schema/],
+    ['not_ok', /reported ok=false/]
+  ]) {
+    const [doctorMode, expectedError] = scenario;
+    const doctorFailureFixture = createFixture();
+    doctorFailureFixture.doctorMode = doctorMode;
+    const doctorFailureApply = await applyExternalUpdates('2.4.0', {
+      component: 'yam'
+    }, doctorFailureFixture.dependencies());
+    const receipt = doctorFailureApply.receipts[0];
+    assert.equal(doctorFailureApply.success, false, doctorMode);
+    assert.equal(receipt.outcome, 'failed', doctorMode);
+    assert.equal(receipt.rollback_hint.automatic, true, doctorMode);
+    assert.match(receipt.error, expectedError, doctorMode);
+    assert.equal(receipt.checks.find((item) => item.id === 'yam_finalize_doctor')?.status, 'failed', doctorMode);
+    assert.equal(receipt.checks.find((item) => item.id === 'automatic_yam_rollback_doctor')?.status, 'passed', doctorMode);
+    assert.equal(doctorFailureFixture.installedYam, '2.4.0', doctorMode);
+    assert.equal(JSON.stringify(receipt).includes('fixture-secret'), false, `${doctorMode} output must be redacted`);
+    assert.equal(
+      receipt.checks.every((item) => item.note.length <= 800),
+      true,
+      `${doctorMode} receipt notes must stay bounded`
+    );
+  }
+
+  const rollbackDoctorFailureFixture = createFixture();
+  rollbackDoctorFailureFixture.doctorMode = 'malformed';
+  rollbackDoctorFailureFixture.rollbackDoctorMode = 'not_ok';
+  const rollbackDoctorFailureApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, rollbackDoctorFailureFixture.dependencies());
+  assert.equal(rollbackDoctorFailureApply.success, false);
+  assert.equal(rollbackDoctorFailureApply.receipts[0].outcome, 'failed');
+  assert.equal(
+    rollbackDoctorFailureApply.receipts[0].checks.find((item) => item.id === 'automatic_yam_rollback_doctor')?.status,
+    'failed'
+  );
+  assert.equal(
+    rollbackDoctorFailureApply.receipts[0].rollback_hint.automatic,
+    false,
+    'rollback must not be claimed when the restored yam doctor contract fails'
+  );
+  assert.match(rollbackDoctorFailureApply.receipts[0].rollback_hint.guidance, /`yam doctor --json`/);
 
   const cli = join(process.cwd(), 'dist', 'bin', 'yam.js');
   const help = execFileSync(process.execPath, [cli, 'update', '--help'], { encoding: 'utf8' });
@@ -255,6 +314,9 @@ function createFixture(options = {}) {
     scraplingLatest: options.scraplingLatest || '0.4.12',
     insaneLatest: options.insaneLatest || '0.9.0',
     yamLatest: options.yamLatest || '2.5.0',
+    installedYam: options.installedYam || '2.4.0',
+    doctorMode: 'ok',
+    rollbackDoctorMode: 'ok',
     dependencies(pathOverrides = {}) {
       return {
         homeDir: home,
@@ -322,9 +384,16 @@ function createFixture(options = {}) {
         return ok('{"installed":true}\n');
       }
       if (command === 'npm' && args[0] === 'install' && args[1] === '-g') {
+        fixture.installedYam = String(args[2] || '').split('@').at(-1) || fixture.installedYam;
         return ok('installed\n');
       }
-      if (command === 'yam' && args[0] === 'version') return ok(`${fixture.yamLatest}\n`);
+      if (command === 'yam' && args.join(' ') === 'doctor --json') {
+        const mode = fixture.installedYam === fixture.yamLatest
+          ? fixture.doctorMode
+          : fixture.rollbackDoctorMode;
+        return doctorResult(mode);
+      }
+      if (command === 'yam' && args[0] === 'version') return ok(`${fixture.installedYam}\n`);
       if (command === 'yam') return ok('ok\n');
       if (command === 'python3' && args[0] === '-m' && args[1] === 'venv') {
         const candidate = args[2];
@@ -370,6 +439,22 @@ function ok(stdout = '') {
 
 function fail(stderr = '') {
   return { ok: false, status: 1, stdout: '', stderr };
+}
+
+function doctorResult(mode) {
+  if (mode === 'command_failure') {
+    return fail(`doctor failed; token=fixture-secret; ${'x'.repeat(1200)}\n`);
+  }
+  if (mode === 'malformed') {
+    return ok(`token=fixture-secret\n{not-json${'x'.repeat(1200)}\n`);
+  }
+  if (mode === 'wrong_schema') {
+    return ok(JSON.stringify({ schema: 'yam.doctor.v0', ok: true, token: 'fixture-secret' }));
+  }
+  if (mode === 'not_ok') {
+    return ok(JSON.stringify({ schema: 'yam.doctor.v1', ok: false, token: 'fixture-secret' }));
+  }
+  return ok(JSON.stringify({ schema: 'yam.doctor.v1', ok: true }));
 }
 
 function readFile(file) {

@@ -99,6 +99,8 @@ yam hook status --global
 
 The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam checks the latest assistant message with the same read-only Study Note Guard used by `yam study-note check`. If changed artifacts lack the required role, execution point, before/after, expected behavior, syntax/structure, verification, limits, or relevant architecture hygiene, Codex receives one correction prompt. A second failed check warns but does not loop forever. If Git change scope is unavailable, the guard reports partial truth and keeps a manual-inspection warning visible instead of claiming the project is clean. The hook never writes the Study Note or runs verification for the agent.
 
+Hook stdin is limited to 1 MiB. Malformed JSON or an oversized payload produces a valid fail-open response without echoing the rejected content, deriving hook context from it, or mutating the workspace. Other CLI commands that read piped text use a 4 MiB limit and fail closed when it is exceeded.
+
 `yam hook status` reports stale or missing command targets as `broken` and exits nonzero. Run `yam hook enable <profile> --global` again to create a timestamped backup, preserve unrelated hooks, and migrate that profile to the current installed path and event coverage. Restart Codex or open a new task after changing hooks.
 
 ## Install
@@ -120,7 +122,7 @@ yam install --replace-user-skill quick
 
 Repeat `--replace-user-skill <name>` for each reviewed conflict. Unproven legacy, retired, and Codex mirror directories are preserved rather than deleted by name.
 
-A successful install writes `~/.agents/skills/.yam-flow-install-receipt.json`. The receipt records the package version, source identity, install timestamp, destination, managed skill inventory, and per-file hashes. `yam status` independently recomputes source and installed hashes, so a stale package install, local file change, unexpected file, or modified receipt is reported as drift.
+A successful install writes `~/.agents/skills/.yam-flow-install-receipt.json`. The receipt records the package version, source identity, install timestamp, destination, managed skill inventory, and per-file hashes. Integrity paths and digests use locale-independent ordinal ordering; receipts written by yam 2.5.0 and earlier are also checked against their stored legacy order during upgrade. `yam status` independently recomputes source and installed hashes, so a stale package install, local file change, unexpected file, or modified receipt is reported as drift.
 
 The receipt is local integrity provenance, not a cryptographic signature or a security boundary against another process running as the same OS user. An actor that can rewrite both the receipt and every recorded file can forge local ownership evidence.
 
@@ -148,7 +150,7 @@ yam update apply --component yam
 yam update apply --all --json
 ```
 
-`--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. Each attempt writes a component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, checks, side effects, outcome, and rollback guidance. A lock prevents concurrent apply runs.
+`--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. A yam update is successful only after the installed version and status checks plus a final read-only `yam doctor --json` return the expected healthy contract. Doctor failure triggers the existing rollback path, and rollback is considered automatic only when its own version, status, and Doctor checks pass. Each attempt writes a component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, checks, side effects, outcome, and rollback guidance. A lock prevents concurrent apply runs.
 
 Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
 
@@ -254,6 +256,8 @@ yam status
 ```
 
 After `yam status` reports all skills and the install receipt as `ok`, restart Codex so the refreshed skills reload.
+
+Before packaging or publishing, `verify:self` inspects the exact file list returned by `npm pack --dry-run --json --ignore-scripts`. The release gate scans regular UTF-8 text files up to 2 MiB for high-signal private-key, npm, GitHub, OpenAI, Anthropic, and AWS credential patterns. Findings expose only the pattern id, package-relative path, and line number; matched text is never printed. Binary, symlink, non-regular, unreadable, outside-root, and oversized entries are reported as skipped rather than silently represented as scanned.
 
 Publishing still requires confirming the final npm package name and account access.
 

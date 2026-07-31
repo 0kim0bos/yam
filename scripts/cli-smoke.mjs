@@ -31,6 +31,14 @@ try {
   execFileSync(bin, ['doctor'], { stdio: 'ignore' });
   execFileSync(bin, ['doctor', '--json'], { stdio: 'ignore' });
   execFileSync(bin, ['list'], { stdio: 'ignore' });
+  const oversizedSafetySentinel = 'general-stdin-secret-sentinel';
+  const oversizedSafety = spawnFailureTextWithInput(
+    bin,
+    ['safety'],
+    `${oversizedSafetySentinel}-${'x'.repeat(4 * 1024 * 1024)}`,
+  );
+  assert(oversizedSafety.includes('input_too_large'), 'general stdin should report its bounded-input error code');
+  assert(!oversizedSafety.includes(oversizedSafetySentinel), 'general stdin error must not echo rejected input');
   const contextPressure = JSON.parse(execFileSync(bin, ['context', 'pressure', root, '--json'], { encoding: 'utf8' }));
   assert(contextPressure.schema === 'yam.context-pressure.v1', 'context pressure schema missing');
   const cleanupScan = JSON.parse(execFileSync(bin, ['cleanup', 'scan', root, '--json'], { encoding: 'utf8' }));
@@ -184,17 +192,29 @@ try {
   const ueyeArtifactDir = join(prefix, 'ueye-artifacts');
   mkdirSync(ueyeArtifactDir, { recursive: true });
   const ueyeImage = join(ueyeArtifactDir, 'reference.png');
+  const ueyeImageUpper = join(ueyeArtifactDir, 'reference-upper.png');
+  const ueyeImageLower = join(ueyeArtifactDir, 'reference-lower.png');
   const ueyeAssetManifest = join(ueyeArtifactDir, 'assets.json');
   const ueyeRevisionRoot = join(ueyeArtifactDir, 'revisions');
   const ueyeRevisionManifest = join(ueyeRevisionRoot, 'manifest.json');
   writeFileSync(ueyeImage, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
+  writeFileSync(ueyeImageUpper, Buffer.concat([readFileSync(ueyeImage), Buffer.from('upper')]));
+  writeFileSync(ueyeImageLower, Buffer.concat([readFileSync(ueyeImage), Buffer.from('lower')]));
   const assetUpdate = JSON.parse(execFileSync(bin, ['ueye', 'asset', 'add', '--manifest', ueyeAssetManifest, '--id', 'official-logo', '--file', ueyeImage, '--license-note', 'operator supplied for local review', '--operator-provided', '--do-not-replace', '--json'], { encoding: 'utf8' }));
   assert(assetUpdate.schema === 'yam.ueye-asset-update.v1', 'ueye asset update schema missing');
   assert(assetUpdate.asset?.do_not_replace === true, 'ueye asset protection flag missing');
+  execFileSync(bin, ['ueye', 'asset', 'add', '--manifest', ueyeAssetManifest, '--id', 'Z-logo', '--file', ueyeImageUpper, '--license-note', 'stable-order fixture', '--operator-provided', '--json'], { encoding: 'utf8' });
+  execFileSync(bin, ['ueye', 'asset', 'add', '--manifest', ueyeAssetManifest, '--id', 'a-logo', '--file', ueyeImageLower, '--license-note', 'stable-order fixture', '--operator-provided', '--json'], { encoding: 'utf8' });
+  const orderedAssetIds = JSON.parse(readFileSync(ueyeAssetManifest, 'utf8')).assets.map((asset) => asset.id);
+  assert(JSON.stringify(orderedAssetIds) === JSON.stringify(['Z-logo', 'a-logo', 'official-logo']), 'Ueye assets should use stable ordinal id ordering');
   const assetVerification = JSON.parse(execFileSync(bin, ['ueye', 'asset', 'verify', '--manifest', ueyeAssetManifest, '--json'], { encoding: 'utf8' }));
   assert(assetVerification.truth_status === 'verified', 'ueye asset verification should pass');
   const revisionArchive = JSON.parse(execFileSync(bin, ['ueye', 'revision', 'archive', '--file', ueyeImage, '--round', '1', '--artifact-id', 'hero', '--root', ueyeRevisionRoot, '--json'], { encoding: 'utf8' }));
   assert(revisionArchive.schema === 'yam.ueye-revision-archive.v1', 'ueye revision archive schema missing');
+  execFileSync(bin, ['ueye', 'revision', 'archive', '--file', ueyeImageUpper, '--round', '1', '--artifact-id', 'Z-hero', '--root', ueyeRevisionRoot, '--json'], { encoding: 'utf8' });
+  execFileSync(bin, ['ueye', 'revision', 'archive', '--file', ueyeImageLower, '--round', '1', '--artifact-id', 'a-hero', '--root', ueyeRevisionRoot, '--json'], { encoding: 'utf8' });
+  const orderedRevisionIds = JSON.parse(readFileSync(ueyeRevisionManifest, 'utf8')).revisions.map((revision) => revision.artifact_id);
+  assert(JSON.stringify(orderedRevisionIds) === JSON.stringify(['Z-hero', 'a-hero', 'hero']), 'Ueye revisions should use stable ordinal artifact ordering');
   const revisionVerification = JSON.parse(execFileSync(bin, ['ueye', 'revision', 'verify', '--manifest', ueyeRevisionManifest, '--json'], { encoding: 'utf8' }));
   assert(revisionVerification.truth_status === 'verified', 'ueye revision verification should pass');
   const assetAwareReport = JSON.parse(execFileSync(bin, ['ueye', 'report', '--actual', ueyeImage, '--asset-manifest', ueyeAssetManifest, '--revision-manifest', ueyeRevisionManifest, '--completion-claim', 'done', '--design-quality', 'pass', '--direction-locked', '--states-checked', '--mobile-checked', '--contrast-checked', '--cta-checked', '--json'], { encoding: 'utf8' }));
@@ -645,6 +665,15 @@ function snapshotVisibleTree(root) {
 function spawnFailureTextWithEnv(bin, args, env) {
   try {
     execFileSync(bin, args, { env, encoding: 'utf8' });
+  } catch (error) {
+    return [error.stdout, error.stderr].filter(Boolean).map(String).join('\n');
+  }
+  throw new Error(`Expected failure for ${args.join(' ')}`);
+}
+
+function spawnFailureTextWithInput(bin, args, input) {
+  try {
+    execFileSync(bin, args, { input, encoding: 'utf8' });
   } catch (error) {
     return [error.stdout, error.stderr].filter(Boolean).map(String).join('\n');
   }
