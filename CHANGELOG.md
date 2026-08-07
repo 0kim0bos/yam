@@ -2,6 +2,31 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.6.0 - 2026-08-07
+
+### Added
+
+- Added effective executable identity validation for global yam install and rollback, including npm global root, package/bin mapping, PATH target, canonical realpaths, and observed version.
+- Added bounded paired-sample promotion receipts with explicit thresholds, deterministic evidence digests, operator-asserted measurement truth, and strict keep/revert gates.
+- Added a capability matrix to `yam tools doctor --json` that separates maturity from observed runtime readiness.
+- Added digest-bound strict gate results at release, external-update, Mission-completion, and benchmark-promotion boundaries.
+- Added the opt-in Demand-Gated Design Production Phase: pre-recorded operator demand, local static Plan Review Canvas Lite, at most two chronologically finding-backed revisions, final gallery manifest, and digest-verifiable immutable phase receipt.
+
+### Improved
+
+- External update receipts preserve the deepest actionable Doctor or rollback failure as the primary blocker while keeping receipt persistence failures as secondary evidence.
+- Ueye design-production artifacts bind one canonical revision state to its closed Canvas, enforce Canvas-comment and archive chronology at record time, and revalidate source, exact anchors, protected-asset editability, final-round gallery linkage, upstream digests, nested receipt semantics, session state, and aggregate state without upgrading those checks into visual, license, or implementation proof.
+
+### Security
+
+- Same-version PATH shadows, malformed global package/bin identities, path/symlink escapes, protected-asset replacement attempts, and inconsistent gate contracts fail closed.
+- Canvas rendering is local static HTML with a no-script/no-network CSP and escaped reviewer content; it starts no server or background process.
+
+### Verification
+
+- Focused external-update identity, strict-gate/promotion/capability/Mission, and design-production smokes.
+- TypeScript typecheck, clean build, self-verification, packaged CLI, package-boundary/secret, and bounded Deep checks.
+
 ## v2.5.1 - 2026-07-31
 
 ### Added

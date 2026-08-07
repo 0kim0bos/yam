@@ -150,7 +150,11 @@ yam update apply --component yam
 yam update apply --all --json
 ```
 
-`--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. A yam update is successful only after the installed version and status checks plus a final read-only `yam doctor --json` return the expected healthy contract. Doctor failure triggers the existing rollback path, and rollback is considered automatic only when its own version, status, and Doctor checks pass. Each attempt writes a component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, checks, side effects, outcome, and rollback guidance. A lock prevents concurrent apply runs.
+`--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. After the global npm install, yam resolves `npm root -g`, the installed package manifest and bin mapping, the first `yam` on `PATH`, canonical realpaths, and the observed version before any `yam install` mutation. A same-version PATH shadow, malformed package, or identity mismatch fails closed; legitimate multi-hop symlinks remain valid. Rollback repeats the same identity check before rollback-side yam commands.
+
+A yam update is successful only after the installed version and status checks plus a final read-only `yam doctor --json` return the expected healthy contract. Doctor failure triggers the existing rollback path, and rollback is considered automatic only when its own identity, version, status, and Doctor checks pass. The deepest actionable rollback or Doctor cause remains primary even if receipt persistence also fails. Each attempt writes a bounded, redacted component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, executable identity, checks, side effects, outcome, and rollback guidance. The aggregate apply response emits and verifies the strict `yam.gate-result.v1`; an already-held lock also returns a blocked gate without mutating components. A lock prevents concurrent apply runs.
+
+Effective yam identity currently verifies POSIX-style executable/symlink layouts through `which` and canonical realpaths. Windows npm `.cmd` shim identity is intentionally unverified and fails closed until a dedicated shim parser and fixture exist.
 
 Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
 
@@ -216,6 +220,13 @@ yam ueye asset add --manifest .yam/ueye/assets.json --id official-logo --file ./
 yam ueye asset verify --manifest .yam/ueye/assets.json --json
 yam ueye revision archive --file .yam/screens/home.png --round 1 --artifact-id home --root .yam/ueye/revisions --json
 yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
+yam ueye production canvas create --session-id campaign --title "Campaign plan review" --demand-kind multi_asset_production --demand-evidence "Five coordinated campaign assets require one bounded review package" --artifact-spec ./canvas-artifact.json --json
+yam ueye production canvas comment --session-path .yam/ueye/design-production/campaign/plan-review.json --render-path .yam/ueye/design-production/campaign/canvas.html --comment-id finding-1 --artifact-id campaign-plan --anchor-kind line --locator L12 --finding "CTA hierarchy is ambiguous" --requested-change "Make the primary CTA explicit" --json
+yam ueye production canvas close --session-path .yam/ueye/design-production/campaign/plan-review.json --render-path .yam/ueye/design-production/campaign/canvas.html --verdict request_changes --json
+yam ueye production revision init --session-id campaign --json
+yam ueye production gallery verify --manifest-path .yam/ueye/design-production/campaign/gallery.json --json
+yam ueye production finalize --demand-kind multi_asset_production --demand-evidence "Five coordinated campaign assets require one bounded review package" --canvas-session-path .yam/ueye/design-production/campaign/plan-review.json --revision-state-path .yam/ueye/design-production/campaign/revision-state.json --gallery-manifest-path .yam/ueye/design-production/campaign/gallery.json --receipt-path .yam/ueye/design-production/campaign/phase-receipt.json --json
+yam ueye production phase verify --receipt-path .yam/ueye/design-production/campaign/phase-receipt.json --json
 yam proof --route ueye --truth verified --visual "implementation screenshot evidence recorded" --design-completion '{"completion_claim":"done","has_implementation_screenshot":true,"design_quality":"pass","states_checked":true,"mobile_checked":true,"contrast_checked":true,"cta_checked":true,"direction_locked":true,"truth_status":"verified"}'
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
@@ -320,6 +331,10 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Ueye design brief and anti-slop review: `$ueye` reports can record operator-provided brief dimensions, constraints, invented metrics, placeholder copy, generic visuals, and custom anti-slop blockers. P0 anti-slop findings block `done` claims.
 - Ueye deep visual review: `$ueye` can record acceptance criteria, touched/read/verified files, skipped checks, residual risks, stop condition, resume hint, design-system evidence, implementation evidence, and a state matrix so serious UI work can carry Deep-grade verification without leaving the Ueye route.
 - Ueye asset/revision integrity: `$ueye` can record license/provenance and protected/editable flags for local references, then preserve pre-edit artifacts in hash-verified numbered rounds.
+- Demand-gated design production: when repeated Plan Review or large multi-asset work creates real coordination demand, Ueye can add a local static Canvas-lite review, at most two finding-backed revision rounds, a final gallery manifest, and one phase receipt. One-off review and single-asset work stay on the ordinary Ueye/Mission path. Integrity evidence never becomes proof of visual quality, licensing, or implementation correctness.
+- Bounded promotion receipt: `yam benchmark report` can compare paired candidate/baseline measurements under explicit sample, mean-delta, and win-rate thresholds. Arithmetic is verified, while measurement provenance remains `operator_asserted` and overall truth stays `partial`.
+- Honest capability matrix: `yam tools doctor --json` reports feature maturity separately from observed runtime readiness; instruction-only or unprobed capabilities are not reported as executed.
+- Strict gate result: release, update, benchmark-promotion, and Mission completion boundaries emit a digest-bound `yam.gate-result.v1` and fail closed on missing or inconsistent required evidence.
 
 ## Ueye Capture And Compare
 
@@ -331,6 +346,7 @@ yam ueye compare --reference ./reference.png --actual .yam/screens/home.png --js
 yam ueye preflight . --json
 yam ueye asset verify --manifest .yam/ueye/assets.json --json
 yam ueye revision verify --manifest .yam/ueye/revisions/manifest.json --json
+yam ueye production --help
 yam ueye report --reference ./reference.png --actual .yam/screens/home.png --brief-dimension "primary CTA clarity" --constraint "mobile first" --anti-slop "placeholder copy remains" --acceptance-criterion "pricing card CTA remains visible on mobile" --design-system-evidence "uses existing button token" --implementation-evidence "browser screenshot reviewed" --state-check default:pass --state-check mobile:partial --skipped-check "hover state not checked on touch viewport" --residual-risk "tablet breakpoint still needs visual pass" --stop-condition "stop after primary states are checked and residual risk is recorded" --resume-hint "capture tablet screenshot next" --completion-claim done --design-quality pass --direction-locked --reference-read --states-checked --mobile-checked --contrast-checked --cta-checked --provider-context local --execution-surface in-app-browser --browser-surface in-app-browser --preserved-state --json
 ```
 
@@ -341,6 +357,8 @@ yam ueye report --reference ./reference.png --actual .yam/screens/home.png --bri
 `report` gathers reference sources, implementation screenshots, comparison result, continuity fields, design quality judgment, design completion gate, deep visual review, surface context, and next action into one compact proof-ready JSON object. Draft and needs-polish work can stay fast; `--completion-claim done` turns on the stricter design gate.
 
 `preflight` does not claim visual verification. It is a pre-work checklist for reference source, target states, mobile/responsive needs, CTA/contrast/accessibility risk, screenshot availability, and likely P0/P1 candidates.
+
+The design production phase is deliberately dormant by default. Use it only when repeated plan annotation or a large coordinated asset set makes prose/file-by-file review costly. The operator-asserted demand trigger is recorded before Canvas creation and must match at finalize. Canvas is static local HTML with no server; its closed `request_changes` session binds one canonical `revision-state.json`, so init/record/show/finalize cannot select an alternate state to reset the two-round budget. Each recorded round must link a current Canvas comment and a newly archived Ueye revision created within that review boundary; the final gallery verifies path/hash/dimension/final-round linkage only and must be created no earlier than Canvas close or the final revision record. `finalize` binds SHA-256 digests for Canvas, revision state, and gallery into an immutable receipt, while `phase verify` re-reads nested upstream semantics and detects later evidence changes. Overall truth remains `partial`, correctness claims remain false, and a two-round unresolved stop remains draft.
 
 Generated media can guide visual direction, but it cannot prove the implemented UI by itself:
 

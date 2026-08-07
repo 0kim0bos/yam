@@ -7,6 +7,9 @@ const pairs = [
   ['src/lib/skill-installation.ts', 'dist/lib/skill-installation.js'],
   ['src/lib/stable-order.ts', 'dist/lib/stable-order.js'],
   ['src/lib/external-updates.ts', 'dist/lib/external-updates.js'],
+  ['src/lib/gate-result.ts', 'dist/lib/gate-result.js'],
+  ['src/lib/benchmark-promotion.ts', 'dist/lib/benchmark-promotion.js'],
+  ['src/lib/design-production.ts', 'dist/lib/design-production.js'],
   ['src/lib/trust-kernel.ts', 'dist/lib/trust-kernel.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
 ];

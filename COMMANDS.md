@@ -154,7 +154,33 @@ yam update apply --component yam --json
 yam update apply --all --json
 ```
 
-`yam update check` is read-only. Every `apply` needs explicit authorization, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. Insane Search is never remove-first and `.codex/plugins/cache` is never edited directly.
+`yam update check` is read-only. Every `apply` needs explicit authorization, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search is never remove-first and `.codex/plugins/cache` is never edited directly.
+
+## Demand-Gated Design Production
+
+Use only after repeated plan-review or large multi-asset coordination demand is real. A one-off review remains on the ordinary Ueye/Mission path.
+
+```bash
+yam ueye production canvas create --session-id campaign --title "Campaign review" --demand-kind multi_asset_production --demand-evidence "Five coordinated assets require one review package" --artifact-spec ./canvas-artifact.json --json
+yam ueye production canvas comment --session-path .yam/ueye/design-production/campaign/plan-review.json --render-path .yam/ueye/design-production/campaign/canvas.html --comment-id finding-1 --artifact-id campaign-plan --anchor-kind line --locator L12 --finding "CTA hierarchy is ambiguous" --requested-change "Make the primary CTA explicit" --json
+yam ueye production canvas close --session-path .yam/ueye/design-production/campaign/plan-review.json --render-path .yam/ueye/design-production/campaign/canvas.html --verdict request_changes --json
+yam ueye production revision init --session-id campaign --json
+yam ueye production revision record --state-path .yam/ueye/design-production/campaign/revision-state.json --finding-id round-1 --source-comment-id finding-1 --finding-summary "CTA hierarchy is ambiguous" --finding-evidence "Canvas line L12" --planned-change "Clarify the primary CTA" --outcome accepted --revision-ref ./ueye-revision-ref.json --json
+yam ueye production gallery write --manifest-path .yam/ueye/design-production/campaign/gallery.json --session-id campaign --completion-state packaged --artifact-spec ./gallery-artifact.json --json
+yam ueye production gallery verify --manifest-path .yam/ueye/design-production/campaign/gallery.json --json
+yam ueye production finalize --demand-kind multi_asset_production --demand-evidence "Five coordinated assets require one review package" --canvas-session-path .yam/ueye/design-production/campaign/plan-review.json --revision-state-path .yam/ueye/design-production/campaign/revision-state.json --gallery-manifest-path .yam/ueye/design-production/campaign/gallery.json --receipt-path .yam/ueye/design-production/campaign/phase-receipt.json --json
+yam ueye production phase verify --receipt-path .yam/ueye/design-production/campaign/phase-receipt.json --json
+```
+
+Canvas artifact specs use `{ "id", "role", "file_path" }`; gallery specs include `{ "id", "role", "provenance", "revision_ref", "dimensions", "sha256", "completion_state", "final_path" }`. A revision reference also carries the archive receipt's exact `archived_at`, which must match its Ueye manifest entry. All project paths are relative and confined; Canvas session/render paths and the single revision state are fixed under the session-specific `.yam/ueye/design-production/` directory. Revision init binds that state to the closed `request_changes` Canvas path and digest; record/show/finalize reject alternate state files, and record immediately checks the source Canvas comment plus the current archive-time boundary. Demand is operator-asserted but must be recorded before Canvas creation and match at finalize. Canvas source hashes and exact anchors are rechecked before comment/close/finalize. Every phase round names its source Canvas comment and supplies at least one newly archived Ueye revision created within that round's review window; gallery artifacts bind to the final round. Ueye asset/revision hashes are rechecked, a protected `do_not_replace` asset requires `intent: "preserve"`, and `edit_copy` requires `allowed_for_edit: true`. The phase receipt stores upstream and canonical receipt digests, and `phase verify` re-reads their semantics as well as detecting later byte changes. Overall phase truth remains `partial`, and gallery visual, license, and implementation claims always remain `not_verified`.
+
+## Bounded Promotion
+
+```bash
+yam benchmark report --label "scout strategy" --candidate-digest <sha256> --baseline-digest <sha256> --sample seed-1:0.82:0.71 --sample seed-2:0.79:0.70 --unit score --evidence-source "fixed local fixture" --target higher --min-samples 2 --min-mean-delta 0.05 --min-win-rate 0.5 --json
+```
+
+This command records paired arithmetic; it does not run the benchmark. A `keep` decision still has `measurement_truth: operator_asserted` and overall `truth_status: partial`.
 
 ## Tool Doctor / Proof / Safety
 

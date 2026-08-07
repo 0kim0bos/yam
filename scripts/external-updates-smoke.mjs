@@ -80,6 +80,9 @@ try {
   assert.equal(manualApply.receipts[0].outcome, 'manual_plugin_update_required');
   assert.equal(manualApply.receipts[0].persistence, 'written');
   assert.equal(JSON.stringify(manualApply).includes('fixture-secret'), false, 'captured command output must be redacted');
+  assert.match(manualApply.next_action, /official_plugin_add_in_place failed/);
+  assert.match(manualApply.next_action, /reviewed official Codex plugin workflow/);
+  assert.equal(manualApply.next_action.includes('fixture-secret'), false);
   assert.equal(manualFixture.commands.some((item) => item.args.includes('remove')), false);
   assert.equal(manualFixture.commands.some((item) => (
     [item.command, ...item.args].join(' ').includes('.codex/plugins/cache')
@@ -158,10 +161,12 @@ try {
   const lockedFixture = createFixture();
   mkdirSync(lockedFixture.stateDir, { recursive: true });
   writeFileSync(join(lockedFixture.stateDir, 'external-update.lock'), 'existing lock\n');
-  await assert.rejects(
-    applyExternalUpdates('2.4.0', { component: 'yam' }, lockedFixture.dependencies()),
-    /another external update may be running/
-  );
+  const lockedApply = await applyExternalUpdates('2.4.0', { component: 'yam' }, lockedFixture.dependencies());
+  assert.equal(lockedApply.success, false);
+  assert.equal(lockedApply.lock.acquired, false);
+  assert.equal(lockedApply.gate_result.status, 'failed');
+  assert.equal(lockedApply.gate_contract.valid, true);
+  assert.match(lockedApply.gate_result.blockers.join(' '), /update_lock_not_acquired/);
   assert.equal(readFile(join(lockedFixture.stateDir, 'external-update.lock')), 'existing lock\n');
 
   const allReceiptFailureFixture = createFixture({
@@ -178,6 +183,7 @@ try {
   assert.equal(allReceiptFailure.success, false);
   assert.deepEqual(allReceiptFailure.applied_components, ['scrapling']);
   assert.equal(allReceiptFailure.receipts[0].persistence, 'failed');
+  assert.match(allReceiptFailure.next_action, /receipt persistence failed/);
   assert.equal(allReceiptFailureFixture.commands.some((item) => item.command === 'npm'), false);
   assert.equal(allReceiptFailureFixture.commands.some((item) => item.command === 'codex'), false);
 
@@ -189,6 +195,9 @@ try {
   });
   const allApply = await applyExternalUpdates('2.4.0', { all: true }, allFixture.dependencies());
   assert.equal(allApply.success, true);
+  assert.equal(allApply.gate_result.schema, 'yam.gate-result.v1');
+  assert.equal(allApply.gate_result.status, 'passed');
+  assert.equal(allApply.gate_contract.valid, true);
   assert.deepEqual(allApply.applied_components, ['scrapling', 'insane-search', 'yam']);
   assert.deepEqual(allApply.receipts.map((item) => item.outcome), ['up_to_date', 'up_to_date', 'updated']);
   assert.equal(allApply.receipts[2].source_revision.kind, 'npm_registry_release');
@@ -196,15 +205,88 @@ try {
   assert.match(allApply.receipts[2].rollback_hint.guidance, /`yam doctor --json`/);
   assert.deepEqual(
     allApply.receipts[2].checks.map((item) => item.id),
-    ['npm_global_install', 'yam_install_skills', 'yam_version', 'yam_status', 'yam_finalize_doctor']
+    ['npm_global_install', 'yam_effective_identity', 'yam_install_skills', 'yam_version', 'yam_status', 'yam_finalize_doctor']
   );
   assert.equal(allApply.receipts[2].checks.at(-1).status, 'passed');
+  assert.equal(allApply.receipts[2].install_identity.expected_version, '2.5.0');
+  assert.equal(
+    allApply.receipts[2].install_identity.canonical_executable,
+    allApply.receipts[2].install_identity.canonical_entrypoint
+  );
+  assert.equal(
+    JSON.parse(readFile(allApply.receipts[2].receipt_path)).install_identity.canonical_entrypoint,
+    allApply.receipts[2].install_identity.canonical_entrypoint,
+    'the persisted receipt must carry the effective executable identity'
+  );
   assert.deepEqual(
     allFixture.commands
-      .filter((item) => item.command === 'yam')
+      .filter((item) => item.command === allFixture.yamBin)
       .map((item) => item.args.join(' ')),
-    ['install', 'version', 'status', 'doctor --json']
+    ['version', 'install', 'version', 'status', 'doctor --json']
   );
+
+  const chainedSymlinkFixture = createFixture({ yamSymlinkChain: true });
+  const chainedSymlinkApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, chainedSymlinkFixture.dependencies());
+  assert.equal(chainedSymlinkApply.success, true, JSON.stringify(chainedSymlinkApply, null, 2));
+  assert.equal(chainedSymlinkApply.receipts[0].install_identity.first_on_path, chainedSymlinkFixture.yamBin);
+  assert.equal(
+    chainedSymlinkApply.receipts[0].install_identity.canonical_executable,
+    chainedSymlinkApply.receipts[0].install_identity.canonical_entrypoint,
+    'a legitimate multi-hop npm symlink must resolve to the package-local entrypoint'
+  );
+
+  const packageRootEscapeFixture = createFixture({ yamPackageRootEscape: true });
+  const packageRootEscapeApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, packageRootEscapeFixture.dependencies());
+  assert.equal(packageRootEscapeApply.success, false);
+  assert.equal(packageRootEscapeApply.gate_result.status, 'failed');
+  assert.match(
+    packageRootEscapeApply.receipts[0].checks.find((item) => item.id === 'yam_effective_identity')?.note || '',
+    /canonical yam-flow package root must stay under/
+  );
+  assert.equal(
+    packageRootEscapeFixture.commands.some((item) => item.command === packageRootEscapeFixture.yamBin && item.args[0] === 'install'),
+    false,
+    'an npm package-root symlink escape must fail before any yam-side install mutation'
+  );
+
+  const shadowedFixture = createFixture({ shadowYam: true });
+  const shadowedApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, shadowedFixture.dependencies());
+  assert.equal(shadowedApply.success, false);
+  assert.equal(shadowedApply.gate_result.status, 'failed');
+  assert.equal(shadowedApply.gate_contract.valid, true);
+  assert.equal(shadowedApply.receipts[0].outcome, 'failed');
+  assert.equal(shadowedApply.receipts[0].rollback_hint.automatic, false);
+  assert.match(
+    shadowedApply.receipts[0].checks.find((item) => item.id === 'yam_effective_identity')?.note || '',
+    /first yam on PATH is shadowed/
+  );
+  assert.match(shadowedApply.next_action, /automatic_yam_rollback_identity failed: first yam on PATH is shadowed/);
+  assert.match(shadowedApply.next_action, /Reinstall the exact prior package/);
+  assert.equal((await shadowedFixture.run(shadowedFixture.shadowYam, ['version'])).stdout.trim(), '2.5.0');
+  assert.equal(
+    shadowedFixture.commands.some((item) => item.command === shadowedFixture.shadowYam && item.args[0] === 'install'),
+    false,
+    'a shadowed executable must never receive yam install'
+  );
+
+  const malformedIdentityFixture = createFixture({ malformedYamManifest: true });
+  const malformedIdentityApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, malformedIdentityFixture.dependencies());
+  assert.equal(malformedIdentityApply.success, false);
+  assert.equal(malformedIdentityApply.receipts[0].rollback_hint.automatic, false);
+  assert.match(
+    malformedIdentityApply.receipts[0].checks.find((item) => item.id === 'yam_effective_identity')?.note || '',
+    /package manifest is missing or malformed/
+  );
+  assert.match(malformedIdentityApply.next_action, /automatic_yam_rollback_identity failed: yam-flow package manifest is missing or malformed/);
+  assert.match(malformedIdentityApply.next_action, /Reinstall the exact prior package/);
 
   for (const scenario of [
     ['command_failure', /command failed/],
@@ -225,6 +307,12 @@ try {
     assert.match(receipt.error, expectedError, doctorMode);
     assert.equal(receipt.checks.find((item) => item.id === 'yam_finalize_doctor')?.status, 'failed', doctorMode);
     assert.equal(receipt.checks.find((item) => item.id === 'automatic_yam_rollback_doctor')?.status, 'passed', doctorMode);
+    assert.equal(receipt.rollback_identity.expected_version, '2.4.0', doctorMode);
+    assert.ok(
+      receipt.checks.findIndex((item) => item.id === 'automatic_yam_rollback_identity')
+        < receipt.checks.findIndex((item) => item.id === 'automatic_yam_rollback_skills'),
+      `${doctorMode} rollback identity must pass before rollback-side yam commands`
+    );
     assert.equal(doctorFailureFixture.installedYam, '2.4.0', doctorMode);
     assert.equal(JSON.stringify(receipt).includes('fixture-secret'), false, `${doctorMode} output must be redacted`);
     assert.equal(
@@ -232,7 +320,27 @@ try {
       true,
       `${doctorMode} receipt notes must stay bounded`
     );
+    assert.match(doctorFailureApply.next_action, /yam_finalize_doctor failed/, doctorMode);
+    assert.match(doctorFailureApply.next_action, expectedError, doctorMode);
   }
+
+  const actionableDoctorFixture = createFixture();
+  actionableDoctorFixture.doctorMode = 'actionable_not_ok';
+  const actionableDoctorApply = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, actionableDoctorFixture.dependencies());
+  const actionableDoctorReceipt = actionableDoctorApply.receipts[0];
+  assert.equal(actionableDoctorApply.success, false);
+  assert.match(actionableDoctorReceipt.error, /issue: global install identity could not be confirmed/);
+  assert.match(actionableDoctorReceipt.error, /next: repair PATH, then rerun the read-only Doctor/);
+  assert.match(actionableDoctorReceipt.error, /command: YAM_TOKEN=\[redacted\] yam doctor --json/);
+  assert.match(actionableDoctorApply.next_action, /repair PATH, then rerun the read-only Doctor/);
+  assert.equal(JSON.stringify(actionableDoctorApply).includes('fixture-secret'), false);
+  assert.equal(
+    actionableDoctorReceipt.checks.find((item) => item.id === 'yam_finalize_doctor')?.note.length <= 800,
+    true,
+    'actionable Doctor diagnostics must stay bounded'
+  );
 
   const rollbackDoctorFailureFixture = createFixture();
   rollbackDoctorFailureFixture.doctorMode = 'malformed';
@@ -252,6 +360,24 @@ try {
     'rollback must not be claimed when the restored yam doctor contract fails'
   );
   assert.match(rollbackDoctorFailureApply.receipts[0].rollback_hint.guidance, /`yam doctor --json`/);
+
+  const receiptAndRollbackFailureFixture = createFixture();
+  receiptAndRollbackFailureFixture.rollbackDoctorMode = 'not_ok';
+  const invalidYamReceiptDir = join(receiptAndRollbackFailureFixture.root, 'yam-receipt-path-is-a-file');
+  writeFileSync(invalidYamReceiptDir, 'not a directory\n');
+  const receiptAndRollbackFailure = await applyExternalUpdates('2.4.0', {
+    component: 'yam'
+  }, receiptAndRollbackFailureFixture.dependencies({ receiptDir: invalidYamReceiptDir }));
+  assert.equal(receiptAndRollbackFailure.success, false);
+  assert.equal(receiptAndRollbackFailure.receipts[0].persistence, 'failed');
+  assert.equal(receiptAndRollbackFailure.receipts[0].rollback_hint.automatic, false);
+  assert.match(receiptAndRollbackFailure.next_action, /automatic_yam_rollback_doctor failed/);
+  assert.match(receiptAndRollbackFailure.next_action, /secondary receipt persistence failure/);
+  assert.ok(
+    receiptAndRollbackFailure.next_action.indexOf('automatic_yam_rollback_doctor failed')
+      < receiptAndRollbackFailure.next_action.indexOf('secondary receipt persistence failure'),
+    'rollback failure must remain the primary next action when receipt persistence also fails'
+  );
 
   const cli = join(process.cwd(), 'dist', 'bin', 'yam.js');
   const help = execFileSync(process.execPath, [cli, 'update', '--help'], { encoding: 'utf8' });
@@ -279,6 +405,14 @@ function createFixture(options = {}) {
   const stateDir = join(root, 'state');
   const receiptDir = join(stateDir, 'receipts');
   const marketplaceRoot = join(home, '.codex', '.tmp', 'marketplaces', 'gptaku-codex');
+  const npmPrefix = join(home, '.nvm', 'versions', 'node', 'v24.15.0');
+  const npmGlobalRoot = join(npmPrefix, 'lib', 'node_modules');
+  const yamPackageRoot = join(npmGlobalRoot, 'yam-flow');
+  const escapedYamPackageRoot = join(root, 'outside-yam-flow-package');
+  const yamEntrypoint = join(yamPackageRoot, 'dist', 'bin', 'yam.js');
+  const yamBin = join(npmPrefix, 'bin', 'yam');
+  const yamIntermediateLink = join(npmPrefix, 'libexec', 'yam-current');
+  const shadowYam = options.shadowYam ? join(root, 'shadow-bin', 'yam') : '';
   const scraplingVersion = options.scraplingVersion || '0.4.11';
   const oldEnvironment = join(scraplingRoot, scraplingVersion);
   const oldExecutable = join(oldEnvironment, 'bin', 'scrapling');
@@ -294,6 +428,40 @@ function createFixture(options = {}) {
   }, null, 2)}\n`);
   symlinkSync(oldExecutable, scraplingBin);
 
+  if (options.yamPackageRootEscape) {
+    mkdirSync(npmGlobalRoot, { recursive: true });
+    mkdirSync(escapedYamPackageRoot, { recursive: true });
+    symlinkSync(escapedYamPackageRoot, yamPackageRoot);
+  }
+
+  const writeYamInstall = (version) => {
+    mkdirSync(dirname(yamEntrypoint), { recursive: true });
+    writeFileSync(yamEntrypoint, '#!/usr/bin/env node\n');
+    writeFileSync(
+      join(yamPackageRoot, 'package.json'),
+      options.malformedYamManifest
+        ? '{not-json\n'
+        : `${JSON.stringify({
+            name: 'yam-flow',
+            version,
+            bin: { yam: 'dist/bin/yam.js' }
+          }, null, 2)}\n`
+    );
+  };
+  writeYamInstall(options.installedYam || '2.4.0');
+  mkdirSync(dirname(yamBin), { recursive: true });
+  if (options.yamSymlinkChain) {
+    mkdirSync(dirname(yamIntermediateLink), { recursive: true });
+    symlinkSync(yamEntrypoint, yamIntermediateLink);
+    symlinkSync(yamIntermediateLink, yamBin);
+  } else {
+    symlinkSync(yamEntrypoint, yamBin);
+  }
+  if (shadowYam) {
+    mkdirSync(dirname(shadowYam), { recursive: true });
+    writeFileSync(shadowYam, '#!/usr/bin/env node\n');
+  }
+
   const fixture = {
     root,
     home,
@@ -302,6 +470,12 @@ function createFixture(options = {}) {
     stateDir,
     receiptDir,
     marketplaceRoot,
+    npmGlobalRoot,
+    yamPackageRoot,
+    yamEntrypoint,
+    yamBin,
+    shadowYam,
+    firstYamOnPath: shadowYam || yamBin,
     oldEnvironment,
     commands: [],
     fetches: [],
@@ -322,7 +496,7 @@ function createFixture(options = {}) {
         homeDir: home,
         now: () => new Date('2026-07-27T02:00:00.000Z'),
         env: {
-          PATH: process.env.PATH,
+          PATH: `${shadowYam ? dirname(shadowYam) : dirname(yamBin)}:${process.env.PATH || ''}`,
           YAM_SCRAPLING_PYTHON: 'python3'
         },
         paths: {
@@ -385,16 +559,24 @@ function createFixture(options = {}) {
       }
       if (command === 'npm' && args[0] === 'install' && args[1] === '-g') {
         fixture.installedYam = String(args[2] || '').split('@').at(-1) || fixture.installedYam;
+        writeYamInstall(fixture.installedYam);
         return ok('installed\n');
       }
-      if (command === 'yam' && args.join(' ') === 'doctor --json') {
+      if (command === 'npm' && args.join(' ') === 'root -g') {
+        return ok(`${npmGlobalRoot}\n`);
+      }
+      if (command === 'which' && args[0] === 'yam') {
+        return ok(`${fixture.firstYamOnPath}\n`);
+      }
+      if (command === shadowYam && args[0] === 'version') return ok(`${fixture.yamLatest}\n`);
+      if (command === fixture.firstYamOnPath && args.join(' ') === 'doctor --json') {
         const mode = fixture.installedYam === fixture.yamLatest
           ? fixture.doctorMode
           : fixture.rollbackDoctorMode;
         return doctorResult(mode);
       }
-      if (command === 'yam' && args[0] === 'version') return ok(`${fixture.installedYam}\n`);
-      if (command === 'yam') return ok('ok\n');
+      if (command === fixture.firstYamOnPath && args[0] === 'version') return ok(`${fixture.installedYam}\n`);
+      if (command === fixture.firstYamOnPath) return ok('ok\n');
       if (command === 'python3' && args[0] === '-m' && args[1] === 'venv') {
         const candidate = args[2];
         mkdirSync(join(candidate, 'bin'), { recursive: true });
@@ -453,6 +635,19 @@ function doctorResult(mode) {
   }
   if (mode === 'not_ok') {
     return ok(JSON.stringify({ schema: 'yam.doctor.v1', ok: false, token: 'fixture-secret' }));
+  }
+  if (mode === 'actionable_not_ok') {
+    return ok(JSON.stringify({
+      schema: 'yam.doctor.v1',
+      ok: false,
+      issues: ['global install identity could not be confirmed; token=fixture-secret'],
+      nextActions: ['repair PATH, then rerun the read-only Doctor'],
+      nextActionDetails: [{
+        reason: 'global install identity could not be confirmed; token=fixture-secret',
+        next_action: 'repair PATH, then rerun the read-only Doctor',
+        command: 'YAM_TOKEN=fixture-secret yam doctor --json'
+      }]
+    }));
   }
   return ok(JSON.stringify({ schema: 'yam.doctor.v1', ok: true }));
 }

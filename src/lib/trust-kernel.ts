@@ -1,3 +1,5 @@
+import { verifyStrictGateResult } from './gate-result.js';
+
 export const TRUTH_STATUSES = Object.freeze([
   'verified',
   'proven',
@@ -1395,7 +1397,24 @@ function missionCompletionCap(value: unknown = ''): TruthStatus {
     const parsed = parseStructuredValue(item);
     if (!parsed || typeof parsed !== 'object') return weakestTruth(weakest, 'blocked');
     const gate = buildMissionCompletionGate(parsed as Record<string, unknown>);
-    return weakestTruth(weakest, gate.truth_status);
+    const record = parsed as Record<string, unknown>;
+    const strictGate = record.gate_result && typeof record.gate_result === 'object'
+      ? record.gate_result as Record<string, unknown>
+      : null;
+    const reportedContract = record.gate_contract && typeof record.gate_contract === 'object'
+      ? record.gate_contract as Record<string, unknown>
+      : null;
+    const strictVerification = verifyStrictGateResult(strictGate);
+    const strictReady = Boolean(
+      strictGate
+      && strictGate.boundary === 'mission'
+      && strictGate.gate_id === 'mission-completion'
+      && strictGate.status === 'passed'
+      && strictVerification.valid
+      && reportedContract?.valid === true
+      && reportedContract?.truth_status === 'verified'
+    );
+    return weakestTruth(weakest, strictReady ? gate.truth_status : 'blocked');
   }, 'proven');
 }
 

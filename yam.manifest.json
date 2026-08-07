@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -29,7 +29,7 @@
     {
       "id": "ueye",
       "stage": "v0.4",
-      "purpose": "Tight UI/UX/design implementation and visual review with visual provenance, local asset integrity, revision history, reference-read proof, visual comparison, design quality review, and P0-P3 issue tracking."
+      "purpose": "Tight UI/UX/design implementation and visual review with visual provenance, local asset integrity, revision history, reference-read proof, visual comparison, design quality review, P0-P3 issue tracking, and an opt-in demand-gated Canvas/two-revision/final-gallery production phase."
     },
     {
       "id": "question",

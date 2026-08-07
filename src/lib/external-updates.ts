@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { buildStrictGateResult, verifyStrictGateResult } from './gate-result.js';
 
 export const EXTERNAL_UPDATE_COMPONENTS = ['yam', 'scrapling', 'insane-search'] as const;
 export type ExternalUpdateComponent = typeof EXTERNAL_UPDATE_COMPONENTS[number];
@@ -83,6 +84,21 @@ export interface ExternalComponentReceipt {
   persistence?: 'written' | 'failed';
   receipt_path?: string;
   receipt_error?: string;
+  install_identity?: YamInstallIdentity;
+  rollback_identity?: YamInstallIdentity;
+}
+
+export interface YamInstallIdentity {
+  expected_version: string;
+  observed_version: string;
+  first_on_path: string;
+  canonical_executable: string;
+  npm_global_root: string;
+  canonical_npm_global_root: string;
+  package_root: string;
+  package_manifest: string;
+  package_entrypoint: string;
+  canonical_entrypoint: string;
 }
 
 interface ResolvedDependencies {
@@ -98,6 +114,18 @@ interface ResolvedDependencies {
 interface ReceiptWriteResult {
   path: string;
   error: string;
+}
+
+interface YamIdentityValidation {
+  passed: boolean;
+  error: string;
+  check: ExternalComponentReceipt['checks'][number];
+  identity?: YamInstallIdentity;
+}
+
+interface YamRollbackResult {
+  ok: boolean;
+  identity?: YamInstallIdentity;
 }
 
 const YAM_REGISTRY_URL = 'https://registry.npmjs.org/yam-flow/latest';
@@ -156,6 +184,44 @@ export async function applyExternalUpdates(
   const receipts: ExternalComponentReceipt[] = [];
   try {
     lockHandle = await acquireApplyLock(deps);
+  } catch (error) {
+    const lockError = boundedNote(errorMessage(error));
+    const nextAction = `confirm no updater is running, inspect the existing lock, then remove it manually only if stale: ${deps.paths.lockFile}`;
+    const gateResult = buildStrictGateResult({
+      gate_id: 'external-update-apply',
+      boundary: 'update',
+      checks: [{
+        id: 'update-lock-acquisition',
+        status: 'failed',
+        note: lockError,
+        required: true
+      }],
+      blockers: [`update_lock_not_acquired: ${lockError}`],
+      evidence: [`requested-components:${components.join(',')}`, `lock-path:${deps.paths.lockFile}`],
+      next_action: nextAction
+    });
+    const gateContract = verifyStrictGateResult(gateResult);
+    return {
+      schema: 'yam.external-update-apply.v1',
+      generated_at: deps.now().toISOString(),
+      mutation_authorized: true,
+      requested_components: components,
+      applied_components: [],
+      receipts: [],
+      stopped_early: true,
+      lock: {
+        path: deps.paths.lockFile,
+        acquired: false,
+        released: false
+      },
+      gate_result: gateResult,
+      gate_contract: gateContract,
+      success: false,
+      truth_status: 'blocked' as const,
+      next_action: nextAction
+    };
+  }
+  try {
     for (const component of components) {
       const receipt = component === 'yam'
         ? await applyYam(currentYamVersion, deps)
@@ -191,6 +257,49 @@ export async function applyExternalUpdates(
     || receipt.persistence === 'failed'
   ));
   const incomplete = receipts.length !== components.length;
+  const operationSuccess = !failed && !incomplete && lockReleased;
+  const gateBlockers = receipts.flatMap((receipt) => receipt.checks
+    .filter((check) => check.status === 'failed')
+    .map((check) => `${receipt.component}.${check.id}: ${check.note}`));
+  for (const receipt of receipts) {
+    if (receipt.persistence === 'failed') gateBlockers.push(`${receipt.component}.receipt_persistence: ${receipt.receipt_error || 'receipt was not persisted'}`);
+    if (receipt.outcome === 'manual_plugin_update_required') gateBlockers.push(`${receipt.component}.manual_update_required: ${receipt.error || 'safe in-place plugin update unavailable'}`);
+  }
+  if (incomplete) gateBlockers.push(`component_inventory_incomplete: applied ${receipts.length} of ${components.length}`);
+  if (!lockReleased) gateBlockers.push(`update_lock_not_released: ${deps.paths.lockFile}`);
+  const gateResult = buildStrictGateResult({
+    gate_id: 'external-update-apply',
+    boundary: 'update',
+    checks: [
+      {
+        id: 'component-inventory',
+        status: incomplete ? 'failed' : 'passed',
+        note: incomplete ? `applied ${receipts.length} of ${components.length} requested components` : 'every requested component produced one outcome receipt',
+        required: true
+      },
+      {
+        id: 'component-outcomes',
+        status: failed ? 'failed' : 'passed',
+        note: failed ? firstFailureNextAction(receipts) : 'all component outcomes passed',
+        required: true
+      },
+      {
+        id: 'update-lock-release',
+        status: lockReleased ? 'passed' : 'failed',
+        note: lockReleased ? 'external update lock was removed' : `inspect the stale lock: ${deps.paths.lockFile}`,
+        required: true
+      }
+    ],
+    blockers: gateBlockers,
+    evidence: receipts.map((receipt) => `${receipt.component}:${receipt.outcome}:${receipt.persistence || 'not-persisted'}:${receipt.receipt_path || 'no-path'}`),
+    next_action: failed
+      ? firstFailureNextAction(receipts)
+      : !lockReleased
+        ? `confirm no updater is running, inspect the stale lock, then remove it manually: ${deps.paths.lockFile}`
+        : 'review the component receipts and restart Codex only if yam skills or a Codex plugin changed'
+  });
+  const gateContract = verifyStrictGateResult(gateResult);
+  const success = operationSuccess && gateResult.status === 'passed' && gateContract.valid;
   return {
     schema: 'yam.external-update-apply.v1',
     generated_at: deps.now().toISOString(),
@@ -201,10 +310,13 @@ export async function applyExternalUpdates(
     stopped_early: incomplete,
     lock: {
       path: deps.paths.lockFile,
+      acquired: true,
       released: lockReleased
     },
-    success: !failed && !incomplete && lockReleased,
-    truth_status: failed || incomplete || !lockReleased ? 'blocked' : 'verified',
+    gate_result: gateResult,
+    gate_contract: gateContract,
+    success,
+    truth_status: success ? 'verified' : 'blocked',
     next_action: failed
       ? firstFailureNextAction(receipts)
       : !lockReleased
@@ -465,32 +577,49 @@ async function applyYam(currentYamVersion: string, deps: ResolvedDependencies) {
   }
   sideEffects.push(`globally installed ${exactPackage}`);
 
+  let installIdentity: YamInstallIdentity | undefined;
+  let rollbackIdentity: YamInstallIdentity | undefined;
+  const identityValidation = await validateEffectiveYamIdentity(
+    check.latest_version,
+    deps,
+    'yam_effective_identity'
+  );
+  checks.push(identityValidation.check);
+  if (identityValidation.passed) installIdentity = identityValidation.identity;
+
   const postCommands: Array<[string, string[]]> = [
     ['yam_install_skills', ['install']],
     ['yam_version', ['version']],
     ['yam_status', ['status']]
   ];
-  let postFailure = '';
-  for (const [id, args] of postCommands) {
-    const result = await deps.run('yam', args, { env: deps.env, timeout: 180000 });
-    checks.push(commandCheck(id, result));
-    if (!result.ok || (id === 'yam_version' && extractVersion(result.stdout) !== check.latest_version)) {
-      postFailure = `${id} failed: ${commandNote(result)}`;
-      break;
+  let postFailure = identityValidation.passed
+    ? ''
+    : `yam_effective_identity failed: ${identityValidation.error}`;
+  if (!postFailure && installIdentity) {
+    for (const [id, args] of postCommands) {
+      const result = await deps.run(installIdentity.first_on_path, args, { env: deps.env, timeout: 180000 });
+      checks.push(commandCheck(id, result));
+      if (!result.ok || (id === 'yam_version' && extractVersion(result.stdout) !== check.latest_version)) {
+        postFailure = `${id} failed: ${commandNote(result)}`;
+        break;
+      }
     }
   }
-  if (!postFailure) {
-    const doctor = await deps.run('yam', ['doctor', '--json'], { env: deps.env, timeout: 180000 });
+  if (!postFailure && installIdentity) {
+    const doctor = await deps.run(installIdentity.first_on_path, ['doctor', '--json'], { env: deps.env, timeout: 180000 });
     const validation = doctorValidation('yam_finalize_doctor', doctor);
     checks.push(validation.check);
     if (!validation.passed) postFailure = `yam_finalize_doctor failed: ${validation.error}`;
   }
   if (postFailure) {
     const rollback = await rollbackYam(check.installed_version, deps, checks);
+    rollbackIdentity = rollback.identity;
     return persistReceipt(baseReceipt(check, 'failed', checks, {
       ...yamRollback(check.installed_version),
-      automatic: rollback
+      automatic: rollback.ok
     }, {
+      ...(installIdentity ? { install_identity: installIdentity } : {}),
+      ...(rollbackIdentity ? { rollback_identity: rollbackIdentity } : {}),
       side_effects: sideEffects,
       error: postFailure
     }), deps);
@@ -498,16 +627,18 @@ async function applyYam(currentYamVersion: string, deps: ResolvedDependencies) {
 
   const receipt = baseReceipt(check, 'updated', checks, yamRollback(check.installed_version), {
     installed_version: check.latest_version,
+    ...(installIdentity ? { install_identity: installIdentity } : {}),
     side_effects: sideEffects,
     truth_status: 'verified'
   });
   const persisted = await persistReceipt(receipt, deps);
   if (persisted.persistence === 'failed') {
     const rollback = await rollbackYam(check.installed_version, deps, persisted.checks);
-    persisted.rollback_hint.automatic = rollback;
+    persisted.rollback_hint.automatic = rollback.ok;
+    if (rollback.identity) persisted.rollback_identity = rollback.identity;
     persisted.outcome = 'failed';
     persisted.truth_status = 'blocked';
-    persisted.error = `update completed but receipt persistence failed; automatic rollback ${rollback ? 'passed' : 'failed'}`;
+    persisted.error = `update completed but receipt persistence failed; automatic rollback ${rollback.ok ? 'passed' : 'failed'}`;
   }
   return persisted;
 }
@@ -516,30 +647,155 @@ async function rollbackYam(
   previousVersion: string,
   deps: ResolvedDependencies,
   checks: ExternalComponentReceipt['checks']
-) {
-  if (!previousVersion) return false;
+): Promise<YamRollbackResult> {
+  if (!previousVersion) return { ok: false };
   const result = await deps.run('npm', ['install', '-g', `yam-flow@${previousVersion}`], {
     env: deps.env,
     timeout: 600000
   });
   checks.push(commandCheck('automatic_yam_rollback', result));
-  if (!result.ok) return false;
-  const install = await deps.run('yam', ['install'], { env: deps.env, timeout: 180000 });
-  const version = await deps.run('yam', ['version'], { env: deps.env, timeout: 30000 });
-  const status = await deps.run('yam', ['status'], { env: deps.env, timeout: 120000 });
-  const doctor = await deps.run('yam', ['doctor', '--json'], { env: deps.env, timeout: 180000 });
+  if (!result.ok) return { ok: false };
+
+  const identityValidation = await validateEffectiveYamIdentity(
+    previousVersion,
+    deps,
+    'automatic_yam_rollback_identity'
+  );
+  checks.push(identityValidation.check);
+  if (!identityValidation.passed || !identityValidation.identity) return { ok: false };
+
+  const executable = identityValidation.identity.first_on_path;
+  const install = await deps.run(executable, ['install'], { env: deps.env, timeout: 180000 });
+  const version = await deps.run(executable, ['version'], { env: deps.env, timeout: 30000 });
+  const status = await deps.run(executable, ['status'], { env: deps.env, timeout: 120000 });
+  const doctor = await deps.run(executable, ['doctor', '--json'], { env: deps.env, timeout: 180000 });
   const doctorResult = doctorValidation('automatic_yam_rollback_doctor', doctor);
   checks.push(commandCheck('automatic_yam_rollback_skills', install));
   checks.push(commandCheck('automatic_yam_rollback_version', version));
   checks.push(commandCheck('automatic_yam_rollback_status', status));
   checks.push(doctorResult.check);
-  return (
+  return {
+    ok: (
     install.ok
     && version.ok
     && extractVersion(version.stdout) === previousVersion
     && status.ok
     && doctorResult.passed
-  );
+    ),
+    identity: identityValidation.identity
+  };
+}
+
+async function validateEffectiveYamIdentity(
+  expectedVersion: string,
+  deps: ResolvedDependencies,
+  id: string
+): Promise<YamIdentityValidation> {
+  try {
+    const npmRootResult = await deps.run('npm', ['root', '-g'], { env: deps.env, timeout: 30000 });
+    if (!npmRootResult.ok) {
+      throw new Error(`npm global root lookup failed: ${commandNote(npmRootResult)}`);
+    }
+    const npmGlobalRoot = firstOutputLine(npmRootResult.stdout);
+    if (!npmGlobalRoot || !path.isAbsolute(npmGlobalRoot)) {
+      throw new Error('npm global root lookup did not return one absolute path');
+    }
+
+    const packageRoot = path.join(path.resolve(npmGlobalRoot), 'yam-flow');
+    const packageManifest = path.join(packageRoot, 'package.json');
+    let manifest: JsonRecord;
+    try {
+      const parsed = JSON.parse(await fsp.readFile(packageManifest, 'utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+      manifest = parsed;
+    } catch {
+      throw new Error(`yam-flow package manifest is missing or malformed: ${packageManifest}`);
+    }
+    if (manifest.name !== 'yam-flow') {
+      throw new Error(`npm global package manifest has unexpected name at ${packageManifest}`);
+    }
+    const manifestVersion = requireStableVersion(manifest.version, 'yam-flow package manifest version');
+    if (manifestVersion !== expectedVersion) {
+      throw new Error(`yam-flow package manifest version ${manifestVersion} does not match expected ${expectedVersion}`);
+    }
+
+    const binValue = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.yam;
+    if (typeof binValue !== 'string' || !binValue.trim()) {
+      throw new Error(`yam-flow package manifest has no usable yam bin entry: ${packageManifest}`);
+    }
+    const packageEntrypoint = path.resolve(packageRoot, binValue);
+    assertChildPath(packageRoot, packageEntrypoint, 'yam-flow package entrypoint');
+
+    const whichResult = await deps.run('which', ['yam'], { env: deps.env, timeout: 10000 });
+    if (!whichResult.ok) {
+      throw new Error(`first yam on PATH could not be resolved: ${commandNote(whichResult)}`);
+    }
+    const firstOnPath = firstOutputLine(whichResult.stdout);
+    if (!firstOnPath || !path.isAbsolute(firstOnPath)) {
+      throw new Error('first yam on PATH was not reported as one absolute path');
+    }
+
+    let canonicalNpmGlobalRoot: string;
+    let canonicalPackageRoot: string;
+    let canonicalEntrypoint: string;
+    let canonicalExecutable: string;
+    try {
+      [canonicalNpmGlobalRoot, canonicalPackageRoot, canonicalEntrypoint, canonicalExecutable] = await Promise.all([
+        fsp.realpath(npmGlobalRoot),
+        fsp.realpath(packageRoot),
+        fsp.realpath(packageEntrypoint),
+        fsp.realpath(firstOnPath)
+      ]);
+    } catch {
+      throw new Error('yam install identity contains an unreadable package path, entrypoint, or PATH executable');
+    }
+    assertChildPath(canonicalNpmGlobalRoot, canonicalPackageRoot, 'canonical yam-flow package root');
+    assertChildPath(canonicalPackageRoot, canonicalEntrypoint, 'canonical yam-flow package entrypoint');
+    if (canonicalExecutable !== canonicalEntrypoint) {
+      throw new Error(
+        `first yam on PATH is shadowed: ${firstOnPath} resolves to ${canonicalExecutable}, expected ${canonicalEntrypoint}; reorder PATH or remove the stale shim before retrying`
+      );
+    }
+
+    const versionResult = await deps.run(firstOnPath, ['version'], { env: deps.env, timeout: 30000 });
+    if (!versionResult.ok) {
+      throw new Error(`effective yam version check failed: ${commandNote(versionResult)}`);
+    }
+    const observedVersion = requireStableVersion(extractVersion(versionResult.stdout), 'effective yam version');
+    if (observedVersion !== expectedVersion) {
+      throw new Error(`effective yam version ${observedVersion} does not match expected ${expectedVersion}`);
+    }
+
+    const identity: YamInstallIdentity = {
+      expected_version: expectedVersion,
+      observed_version: observedVersion,
+      first_on_path: firstOnPath,
+      canonical_executable: canonicalExecutable,
+      npm_global_root: path.resolve(npmGlobalRoot),
+      canonical_npm_global_root: canonicalNpmGlobalRoot,
+      package_root: packageRoot,
+      package_manifest: packageManifest,
+      package_entrypoint: packageEntrypoint,
+      canonical_entrypoint: canonicalEntrypoint
+    };
+    return {
+      passed: true,
+      error: '',
+      check: {
+        id,
+        status: 'passed',
+        note: boundedNote(`verified yam install identity: ${JSON.stringify(identity)}`)
+      },
+      identity
+    };
+  } catch (error) {
+    const note = boundedNote(errorMessage(error));
+    return {
+      passed: false,
+      error: note,
+      check: { id, status: 'failed', note }
+    };
+  }
 }
 
 async function applyScrapling(deps: ResolvedDependencies) {
@@ -1058,7 +1314,7 @@ function doctorValidation(id: string, result: ExternalCommandResult) {
     };
   }
   if (report.ok !== true) {
-    const note = 'yam.doctor.v1 reported ok=false';
+    const note = doctorFailureDiagnostic(report);
     return {
       passed: false,
       error: note,
@@ -1072,6 +1328,37 @@ function doctorValidation(id: string, result: ExternalCommandResult) {
     error: '',
     check: { id, status: 'passed' as const, note }
   };
+}
+
+function doctorFailureDiagnostic(report: JsonRecord) {
+  const detail = arrayValue(report.nextActionDetails).find((item) => (
+    item
+    && typeof item === 'object'
+    && !Array.isArray(item)
+    && [item.reason, item.next_action, item.nextAction, item.command].some((value) => cleanDiagnosticValue(value))
+  ));
+  const issue = cleanDiagnosticValue(detail?.reason) || firstDiagnosticValue(report.issues);
+  const nextAction = cleanDiagnosticValue(detail?.next_action || detail?.nextAction)
+    || firstDiagnosticValue(report.nextActions);
+  const command = cleanDiagnosticValue(detail?.command);
+  const fragments = [
+    issue ? `issue: ${issue}` : '',
+    nextAction ? `next: ${nextAction}` : '',
+    command ? `command: ${command}` : ''
+  ].filter(Boolean);
+  return boundedNote(
+    fragments.length
+      ? `yam.doctor.v1 reported ok=false; ${fragments.join('; ')}`
+      : 'yam.doctor.v1 reported ok=false'
+  );
+}
+
+function firstDiagnosticValue(value: unknown) {
+  return arrayValue(value).map(cleanDiagnosticValue).find(Boolean) || '';
+}
+
+function cleanDiagnosticValue(value: unknown) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
 
 function boundedNote(text: string) {
@@ -1123,6 +1410,10 @@ function requireStableVersion(value: unknown, label: string) {
 
 function extractVersion(text: string) {
   return String(text || '').match(/\b\d+(?:\.\d+){1,3}\b/)?.[0] || '';
+}
+
+function firstOutputLine(text: string) {
+  return String(text || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
 }
 
 function compareVersions(left: string, right: string) {
@@ -1201,6 +1492,7 @@ async function unlinkIfExists(file: string) {
 function redactSensitiveText(text: string) {
   return String(text || '')
     .replace(/(_authToken\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY))\s*[:=]\s*\S+/gi, '$1=[redacted]')
     .replace(/\b(password|passwd|api[_-]?key|secret|token)\s*[:=]\s*\S+/gi, '$1=[redacted]')
     .replace(/\/\/([^:\s]+):([^@\s]+)@/g, '//[redacted]@')
     .replace(/\b(npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g, '[redacted-token]');
@@ -1213,8 +1505,19 @@ function firstFailureNextAction(receipts: ExternalComponentReceipt[]) {
     || item.persistence === 'failed'
   ));
   if (!receipt) return 'inspect the incomplete component inventory before retrying';
-  if (receipt.outcome === 'manual_plugin_update_required') {
-    return 'update Insane Search through a reviewed official Codex plugin workflow; do not remove-first or edit the plugin cache directly';
-  }
-  return receipt.rollback_hint.guidance || `resolve the ${receipt.component} failure before retrying`;
+  const deepestFailedCheck = [...receipt.checks].reverse().find((check) => check.status === 'failed');
+  const deepestCause = deepestFailedCheck
+    ? `${deepestFailedCheck.id} failed: ${deepestFailedCheck.note}`
+    : receipt.persistence === 'failed' && receipt.receipt_error
+      ? `receipt persistence failed: ${receipt.receipt_error}`
+      : receipt.error || `${receipt.component} update failed`;
+  const persistenceContext = deepestFailedCheck && receipt.persistence === 'failed' && receipt.receipt_error
+    ? `; secondary receipt persistence failure: ${receipt.receipt_error}`
+    : '';
+  const cause = boundedNote(`${deepestCause}${persistenceContext}`).slice(0, 420);
+  const recoveryGuidance = receipt.outcome === 'manual_plugin_update_required'
+    ? 'Update Insane Search through a reviewed official Codex plugin workflow; do not remove-first or edit the plugin cache directly.'
+    : receipt.rollback_hint.guidance || `resolve the ${receipt.component} failure before retrying`;
+  const recovery = boundedNote(recoveryGuidance).slice(0, 340);
+  return boundedNote(`resolve ${receipt.component} failure: ${cause}. ${recovery}`);
 }

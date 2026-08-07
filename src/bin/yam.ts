@@ -35,6 +35,19 @@ import {
   verifyUeyeRevisionHistory
 } from '../lib/ueye-artifacts.js';
 import {
+  addPlanReviewComment,
+  closePlanReviewCanvas,
+  createDesignRevisionState,
+  createPlanReviewCanvas,
+  finalizeDesignProductionPhase,
+  readCanonicalDesignRevisionState,
+  readPlanReviewSession,
+  recordDesignRevisionRound,
+  verifyFinalGalleryManifest,
+  verifyDesignProductionPhaseReceipt,
+  writeFinalGalleryManifest
+} from '../lib/design-production.js';
+import {
   inspectSkillInstallation,
   installSkillSetTransactional,
   uninstallSkillSetSafely
@@ -45,6 +58,14 @@ import {
   checkExternalUpdates
 } from '../lib/external-updates.js';
 import type { ExternalUpdateComponent } from '../lib/external-updates.js';
+import {
+  buildBoundedPromotionReport,
+  parsePromotionSample
+} from '../lib/benchmark-promotion.js';
+import {
+  buildStrictGateResult,
+  verifyStrictGateResult
+} from '../lib/gate-result.js';
 import {
   BoundedInputError,
   GENERAL_STDIN_MAX_BYTES,
@@ -188,6 +209,7 @@ Usage:
   yam ueye report [--reference ref.png] [--actual screenshot.png] [--provider-context local] [--execution-surface in-app-browser] [--json]
   yam ueye asset <add|verify> [options]
   yam ueye revision <archive|verify> [options]
+  yam ueye production <canvas|revision|gallery|finalize|phase> [options]
   yam media proof [--requested] [--attempted] [--output file] [--json]
   yam runtime evidence [--backend terminal|in-app-browser|playwright|tmux|zellij] [--claim observed|started|stopped|cleanup-verified] [--json]
   yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
@@ -197,6 +219,7 @@ Usage:
   yam update apply --component yam|scrapling|insane-search [--json]
   yam update apply --all [--json]
   yam benchmark report [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--json]
+  yam benchmark report --candidate-digest sha256 --baseline-digest sha256 --sample seed:candidate:baseline --unit score --evidence-source text [--min-samples n] [--min-mean-delta n] [--min-win-rate n] [--json]
   yam release report [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
@@ -1335,6 +1358,7 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     readinessRow('Supabase plugin', await pluginCacheHas('openai-curated/supabase') ? 'ready' : 'unknown', 'plugin cache only; no DB query performed'),
     readinessRow('Vercel plugin', await pluginCacheHas('openai-curated/vercel') ? 'ready' : 'unknown', 'plugin cache only; no deployment/API call performed')
   ];
+  const capabilityMatrix = buildCapabilityMatrix(rows, globalLiteHookHealth, globalStudyNoteHookHealth);
   const riskNotes = [
     ...instructionSurfaces.issues.map((message) => ({ level: 'issue', reason: message })),
     ...instructionSurfaces.warnings.map((message) => ({ level: 'warning', reason: message })),
@@ -1361,6 +1385,7 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
     frameworkChecklist,
     contextPressure,
     realProbe,
+    capabilityMatrix,
     sqlScan,
     riskNotes,
     nextActions: nextActionDetails.map((action) => action.next_action),
@@ -1371,6 +1396,43 @@ async function buildToolsDoctorReport(targetDir = process.cwd()) {
       ueye: 'use $ueye with real screenshot/browser evidence when feasible',
       mission: 'use $mission only with real subagents/team lanes'
     }
+  };
+}
+
+function buildCapabilityMatrix(readinessRows = [], liteHook: AnyRecord = {}, studyNoteHook: AnyRecord = {}) {
+  const readiness = new Map(readinessRows.map((row) => [row.name, row.status]));
+  const capabilities = [
+    capabilityRow('skill_installation', 'stable', readiness.get('Yam skills') || 'unknown', 'yam status plus the transactional installation receipt', 'proves managed skill bytes only; it does not prove a route ran'),
+    capabilityRow('external_update_check', 'stable', 'unknown', 'packaged `yam update check` command', 'this inventory does not contact registries or prove Codex/plugin/network availability'),
+    capabilityRow('external_update_apply', 'beta', 'unknown', 'transactional component updater with rollback receipts', 'runtime readiness is checked only during an explicit run; effective yam identity currently supports POSIX symlinks while Windows npm .cmd shims fail closed as unverified'),
+    capabilityRow('mission_receipt_gate', 'stable', 'ready', 'packaged mission receipt and aggregate gate commands', 'validates supplied real-thread evidence; it does not spawn agents'),
+    capabilityRow('mission_real_subagents', 'instruction-only', 'unknown', 'Mission skill delegates through environment-owned subagent tools', 'CLI cannot prove host slot availability or a real thread outcome'),
+    capabilityRow('ueye_asset_revision_integrity', 'stable', 'ready', 'hash-verified Ueye asset and revision manifests', 'integrity does not prove design quality, licensing, or browser state'),
+    capabilityRow('plan_review_canvas_lite', 'beta', 'ready', 'local static review session artifacts', 'no remote hosting, background service, or automatic implementation start'),
+    capabilityRow('bounded_design_revisions', 'beta', 'ready', 'maximum two reviewer-finding-backed revision rounds', 'round state does not replace Ueye artifact hash verification'),
+    capabilityRow('final_gallery_manifest', 'beta', 'ready', 'path-confined hash-verified packaging manifest', 'gallery completeness does not prove visual or license correctness'),
+    capabilityRow('demand_gated_design_production', 'beta', 'ready', 'pre-recorded operator trigger, Canvas, chronological bounded revisions, gallery, and digest-verifiable phase receipt', 'demand evidence is operator-asserted and overall phase truth remains partial'),
+    capabilityRow('yam_lite_hook', 'beta', String(liteHook.state || readiness.get('yam-lite hook') || 'unknown'), 'optional hook health inspection', 'advisory only; disabled unless explicitly enabled'),
+    capabilityRow('study_note_hook', 'beta', String(studyNoteHook.state || readiness.get('yam-study-note hook') || 'unknown'), 'optional prompt and bounded Stop check', 'does not generate the Study Note or run verification')
+  ];
+  return {
+    schema: 'yam.capability-matrix.v1',
+    generated_at: new Date().toISOString(),
+    capabilities,
+    maturity_vocabulary: ['stable', 'beta', 'experimental', 'instruction-only'],
+    truth_status: 'partial',
+    note: 'support maturity and current runtime state are separate; this read-only inventory does not execute capabilities'
+  };
+}
+
+function capabilityRow(id, maturity, runtimeState, evidence, limit) {
+  return {
+    id,
+    maturity,
+    runtime_state: runtimeState,
+    evidence,
+    limit,
+    truth_status: runtimeState === 'ready' ? 'partial' : 'assumed'
   };
 }
 
@@ -1387,6 +1449,14 @@ function printToolsDoctorReport(data) {
     console.log('Detected project commands:');
     for (const [key, value] of Object.entries(data.commands)) {
       console.log(`- ${key}: ${value || '(not found)'}`);
+    }
+  }
+
+  if (data.capabilityMatrix?.capabilities?.length) {
+    console.log('');
+    console.log('Capability matrix:');
+    for (const capability of data.capabilityMatrix.capabilities) {
+      console.log(`- ${capability.id}: ${capability.maturity} / ${capability.runtime_state} (${capability.limit})`);
     }
   }
 
@@ -2268,8 +2338,35 @@ function runReleaseReport() {
   const publishBlockerEvidence = publishBlockerEvidenceFromRelease(checks, tarball);
   const publishReadiness = releasePublishReadiness(checks, provenance, tarball, publishBlockerEvidence);
   const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence, publishReadiness);
-  const ok = failed.length === 0 && publishReadiness.status === 'ready';
-  const readinessReceipt = releaseReadinessReceipt(provenance, freshness, tarball, publishReadiness, ok);
+  const preliminaryOk = failed.length === 0 && publishReadiness.status === 'ready';
+  const readinessReceipt = releaseReadinessReceipt(provenance, freshness, tarball, publishReadiness, preliminaryOk);
+  const gateResult = buildStrictGateResult({
+    gate_id: 'release-readiness',
+    boundary: 'release',
+    checks: [
+      ...checks.map((check) => ({
+        id: `release-${String(check.id || 'unnamed').replace(/[^a-z0-9._-]/gi, '-')}`,
+        status: check.status === 'passed' ? 'passed' as const : 'failed' as const,
+        note: check.note || check.command || check.id,
+        required: true
+      })),
+      {
+        id: 'publish-readiness',
+        status: publishReadiness.status === 'ready' ? 'passed' as const : 'failed' as const,
+        note: publishReadiness.next_action,
+        required: true
+      }
+    ],
+    blockers: publishReadiness.blockers?.map((blocker) => `${blocker.kind}: ${blocker.reason}`) || [],
+    evidence: [
+      `${readinessReceipt.schema}:${readinessReceipt.local_version}`,
+      tarball.integrity ? `tarball-integrity:${tarball.integrity}` : 'tarball-integrity:not-observed',
+      provenance.git_commit ? `git-commit:${provenance.git_commit}` : 'git-commit:not-observed'
+    ],
+    next_action: publishReadiness.next_action
+  });
+  const gateContract = verifyStrictGateResult(gateResult);
+  const ok = preliminaryOk && gateResult.status === 'passed' && gateContract.valid;
   return {
     schema: 'yam.release-report.v1',
     generated_at: startedAt,
@@ -2284,6 +2381,8 @@ function runReleaseReport() {
     freshness,
     publish_readiness: publishReadiness,
     readiness_receipt: readinessReceipt,
+    gate_result: gateResult,
+    gate_contract: gateContract,
     study_note: releaseStudyNote(publishReadiness, publishBlockerEvidence),
     publishBlockerEvidence,
     next_actions: nextActions
@@ -2781,6 +2880,7 @@ async function ueye(args = []) {
   if (subcommand === 'report') return ueyeReport(args.slice(1));
   if (subcommand === 'asset') return ueyeAsset(args.slice(1));
   if (subcommand === 'revision') return ueyeRevision(args.slice(1));
+  if (subcommand === 'production') return ueyeProduction(args.slice(1));
   console.error(`unknown ueye command: ${subcommand}`);
   return ueyeUsage();
 }
@@ -2799,6 +2899,11 @@ Usage:
   yam ueye asset verify [--manifest file] [--json]
   yam ueye revision archive --file image --round n [--artifact-id id] [--root dir] [--manifest file] [--json]
   yam ueye revision verify [--root dir] [--manifest file] [--json]
+  yam ueye production canvas <create|comment|close|show> [options]
+  yam ueye production revision <init|record|show> [options]
+  yam ueye production gallery <write|verify> [options]
+  yam ueye production finalize [options]
+  yam ueye production phase verify [options]
 
 Notes:
   capture uses a locally available Playwright install when present. It does not download browsers or install dependencies.
@@ -2806,6 +2911,7 @@ Notes:
   report produces a proof-ready Ueye visual run report, design completion gate, and continuity/comparison record without requiring a new capture.
   asset records local reference provenance and protection flags; it never downloads remote content.
   revision copies the current local artifact into a non-overwriting round archive before the live file is edited.
+  production is demand-gated: it writes local-only review artifacts, permits at most two finding-backed revision rounds, and keeps gallery correctness claims explicitly unverified.
 `);
 }
 
@@ -2878,6 +2984,196 @@ async function ueyeRevision(args = []) {
     printJsonOrHuman(result, Boolean(flags.json), 'Ueye revision');
     process.exitCode = 1;
   }
+}
+
+async function ueyeProduction(args = []) {
+  const surface = String(args[0] || 'help');
+  const isFinalize = surface === 'finalize';
+  const action = isFinalize ? 'run' : String(args[1] || 'help');
+  const flagArgs = isFinalize ? args.slice(1) : args.slice(2);
+  if (surface === 'help' || action === 'help' || surface === '--help' || surface === '-h' || flagArgs.includes('--help') || flagArgs.includes('-h')) return ueyeProductionUsage();
+  const flags = parseSimpleFlags(flagArgs, new Set([
+    'root', 'session-id', 'title', 'artifact-spec', 'session-path', 'render-path',
+    'comment-id', 'artifact-id', 'anchor-kind', 'locator', 'finding', 'requested-change', 'verdict',
+    'state-path', 'finding-id', 'source-comment-id', 'finding-summary', 'finding-evidence', 'planned-change', 'outcome', 'revision-ref',
+    'manifest-path', 'completion-state', 'demand-kind', 'demand-evidence', 'canvas-session-path',
+    'revision-state-path', 'gallery-manifest-path', 'receipt-path', 'json'
+  ]));
+  const root = path.resolve(expandHome(flags.root || process.cwd()));
+  try {
+    let result: AnyRecord;
+    if (surface === 'canvas' && action === 'create') {
+      requireProductionFlags(flags, ['session_id', 'title', 'demand_kind', 'demand_evidence', 'artifact_spec']);
+      result = await createPlanReviewCanvas({
+        root,
+        session_id: String(flags.session_id),
+        title: String(flags.title),
+        demand_trigger: {
+          kind: String(flags.demand_kind) as 'repeated_plan_review' | 'multi_asset_production',
+          evidence: String(flags.demand_evidence)
+        },
+        artifacts: await readProductionSpecs(flags.artifact_spec, 'canvas artifact spec') as any,
+        ...(flags.session_path ? { session_path: String(flags.session_path) } : {}),
+        ...(flags.render_path ? { render_path: String(flags.render_path) } : {})
+      });
+    } else if (surface === 'canvas' && action === 'comment') {
+      requireProductionFlags(flags, ['session_path', 'render_path', 'comment_id', 'artifact_id', 'anchor_kind', 'locator', 'finding', 'requested_change']);
+      result = await addPlanReviewComment({
+        root,
+        session_path: String(flags.session_path),
+        render_path: String(flags.render_path),
+        comment: {
+          id: String(flags.comment_id),
+          anchor: {
+            artifact_id: String(flags.artifact_id),
+            kind: String(flags.anchor_kind) as 'line' | 'region' | 'text',
+            locator: String(flags.locator)
+          },
+          finding: String(flags.finding),
+          requested_change: String(flags.requested_change)
+        }
+      });
+    } else if (surface === 'canvas' && action === 'close') {
+      requireProductionFlags(flags, ['session_path', 'render_path', 'verdict']);
+      result = await closePlanReviewCanvas({
+        root,
+        session_path: String(flags.session_path),
+        render_path: String(flags.render_path),
+        verdict: String(flags.verdict) as 'approve' | 'request_changes'
+      });
+    } else if (surface === 'canvas' && action === 'show') {
+      requireProductionFlags(flags, ['session_path']);
+      const sessionPath = await existingProductionPath(root, String(flags.session_path), 'session_path');
+      result = await readPlanReviewSession(sessionPath);
+    } else if (surface === 'revision' && action === 'init') {
+      requireProductionFlags(flags, ['session_id']);
+      result = await createDesignRevisionState({
+        root,
+        session_id: String(flags.session_id),
+        ...(flags.state_path ? { state_path: String(flags.state_path) } : {})
+      });
+    } else if (surface === 'revision' && action === 'record') {
+      requireProductionFlags(flags, ['state_path', 'finding_id', 'source_comment_id', 'finding_summary', 'finding_evidence', 'planned_change', 'outcome', 'revision_ref']);
+      result = await recordDesignRevisionRound({
+        root,
+        state_path: String(flags.state_path),
+        reviewer_finding: {
+          id: String(flags.finding_id),
+          source_comment_id: String(flags.source_comment_id),
+          summary: String(flags.finding_summary),
+          evidence: String(flags.finding_evidence)
+        },
+        planned_change: String(flags.planned_change),
+        outcome: String(flags.outcome) as 'accepted' | 'changes_requested',
+        revision_refs: await readProductionSpecs(flags.revision_ref, 'Ueye revision reference') as any
+      });
+    } else if (surface === 'revision' && action === 'show') {
+      requireProductionFlags(flags, ['state_path']);
+      result = await readCanonicalDesignRevisionState({ root, state_path: String(flags.state_path) });
+    } else if (surface === 'gallery' && action === 'write') {
+      requireProductionFlags(flags, ['manifest_path', 'session_id', 'completion_state', 'artifact_spec']);
+      result = await writeFinalGalleryManifest({
+        root,
+        manifest_path: String(flags.manifest_path),
+        session_id: String(flags.session_id),
+        completion_state: String(flags.completion_state) as 'draft' | 'ready_for_inspection' | 'packaged',
+        artifacts: await readProductionSpecs(flags.artifact_spec, 'gallery artifact spec') as any
+      });
+    } else if (surface === 'gallery' && action === 'verify') {
+      requireProductionFlags(flags, ['manifest_path']);
+      result = await verifyFinalGalleryManifest({ root, manifest_path: String(flags.manifest_path) });
+    } else if (surface === 'finalize' && action === 'run') {
+      requireProductionFlags(flags, ['demand_kind', 'demand_evidence', 'canvas_session_path', 'gallery_manifest_path', 'receipt_path']);
+      result = await finalizeDesignProductionPhase({
+        root,
+        demand_trigger: {
+          kind: String(flags.demand_kind) as 'repeated_plan_review' | 'multi_asset_production',
+          evidence: String(flags.demand_evidence)
+        },
+        canvas_session_path: String(flags.canvas_session_path),
+        revision_state_path: flags.revision_state_path ? String(flags.revision_state_path) : null,
+        gallery_manifest_path: String(flags.gallery_manifest_path),
+        receipt_path: String(flags.receipt_path)
+      });
+    } else if (surface === 'phase' && action === 'verify') {
+      requireProductionFlags(flags, ['receipt_path']);
+      result = await verifyDesignProductionPhaseReceipt({ root, receipt_path: String(flags.receipt_path) });
+    } else {
+      throw new Error(`unknown Ueye production command: ${surface} ${action}`);
+    }
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye design production');
+    if (result.truth_status === 'blocked') process.exitCode = 1;
+  } catch (error) {
+    const reason = summarizeCheckOutput(errorMessage(error));
+    const result = {
+      schema: 'yam.design-production-error.v1',
+      surface,
+      action,
+      status: 'blocked',
+      reason,
+      next_action: /two_round_limit|maximum (?:is )?2|maximum two/i.test(reason)
+        ? 'stop this phase at two rounds and keep unresolved gallery work draft; start a new phase only after new explicit demand authorization'
+        : /stopped with status accepted/i.test(reason)
+          ? 'stop revising because the reviewer already accepted this phase'
+          : 'repair the local spec, path, integrity evidence, or phase state before retrying',
+      truth_status: 'blocked'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Ueye design production');
+    process.exitCode = 1;
+  }
+}
+
+function ueyeProductionUsage() {
+  console.log(`yam ueye production
+
+Demand-gated local design production helpers. Spec files are bounded JSON objects; repeat --artifact-spec or --revision-ref for multiple entries.
+
+Usage:
+  yam ueye production canvas create [--root dir] --session-id id --title text --demand-kind repeated_plan_review|multi_asset_production --demand-evidence text --artifact-spec file [--json]
+  yam ueye production canvas comment [--root dir] --session-path relative --render-path relative --comment-id id --artifact-id id --anchor-kind line|region|text --locator text --finding text --requested-change text [--json]
+  yam ueye production canvas close [--root dir] --session-path relative --render-path relative --verdict approve|request_changes [--json]
+  yam ueye production canvas show [--root dir] --session-path relative [--json]
+  yam ueye production revision init [--root dir] --session-id id [--state-path .yam/ueye/design-production/<session-id>/revision-state.json] [--json]
+  yam ueye production revision record [--root dir] --state-path relative --finding-id id --source-comment-id id --finding-summary text --finding-evidence text --planned-change text --outcome accepted|changes_requested --revision-ref file [--json]
+  yam ueye production revision show [--root dir] --state-path relative [--json]
+  yam ueye production gallery write [--root dir] --manifest-path relative --session-id id --completion-state draft|ready_for_inspection|packaged --artifact-spec file [--json]
+  yam ueye production gallery verify [--root dir] --manifest-path relative [--json]
+  yam ueye production finalize [--root dir] --demand-kind repeated_plan_review|multi_asset_production --demand-evidence text --canvas-session-path relative [--revision-state-path relative] --gallery-manifest-path relative --receipt-path relative [--json]
+  yam ueye production phase verify [--root dir] --receipt-path relative [--json]
+
+Use this phase only when repeated plan review or large multi-asset production creates real coordination demand. Canvas artifacts stay static and local. Revision init requires the session's closed request_changes Canvas and fixes state to .yam/ueye/design-production/<session-id>/revision-state.json; --state-path is accepted only when it names that exact path. Record/show/finalize reject alternate state files. Gallery verification covers paths, hashes, dimensions, and revision references only. Finalize binds the explicit demand evidence, closed Canvas, terminal revision state when needed, and verified gallery into one immutable receipt.
+`);
+}
+
+function requireProductionFlags(flags: AnyRecord, names: string[]) {
+  const missing = names.filter((name) => flags[name] === undefined || flags[name] === '');
+  if (missing.length) throw new Error(`missing required option(s): ${missing.map((name) => `--${name.replace(/_/g, '-')}`).join(', ')}`);
+}
+
+async function readProductionSpecs(value: unknown, label: string) {
+  const files = arrayFlag(value);
+  if (!files.length) throw new Error(`${label} requires at least one JSON spec file`);
+  const specs: AnyRecord[] = [];
+  for (const file of files) specs.push(await readBoundedJsonSpec(path.resolve(expandHome(file)), label));
+  return specs;
+}
+
+async function readBoundedJsonSpec(file: string, label: string) {
+  const stat = await fsp.stat(file);
+  if (!stat.isFile()) throw new Error(`${label} must be a regular file: ${file}`);
+  if (stat.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
+  const value = JSON.parse(await fsp.readFile(file, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must contain one JSON object: ${file}`);
+  return value;
+}
+
+async function existingProductionPath(root: string, value: string, label: string) {
+  if (!value || path.isAbsolute(value) || value.includes('\0')) throw new Error(`${label} must be a non-empty project-relative path`);
+  const realRoot = await fsp.realpath(root);
+  const candidate = await fsp.realpath(path.resolve(realRoot, value));
+  const relative = path.relative(realRoot, candidate);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`${label} escapes the project root`);
+  return candidate;
 }
 
 async function ueyePreflight(args = []) {
@@ -3719,12 +4015,37 @@ async function missionGate(args = []) {
     receipts
   });
   const blockers = [...gate.blockers, ...loadErrors.map((error) => `receipt_load_failed: ${error}`)];
+  const gateResult = buildStrictGateResult({
+    gate_id: 'mission-completion',
+    boundary: 'mission',
+    checks: [
+      {
+        id: 'receipt-inventory',
+        status: gate.ready_to_claim_complete && loadErrors.length === 0 ? 'passed' : 'failed',
+        note: blockers[0] || 'all expected Mission receipts are present and eligible',
+        required: true
+      },
+      {
+        id: 'read-only-boundary',
+        status: gate.read_only_violations.length === 0 ? 'passed' : 'failed',
+        note: gate.read_only_violations.length ? `violations: ${gate.read_only_violations.join(', ')}` : 'reviewer and doctor receipts preserve read-only access',
+        required: true
+      }
+    ],
+    blockers,
+    evidence: gate.receipts.map((receipt) => `${receipt.thread_id}:${receipt.receipt_id}:${receipt.outcome}`),
+    next_action: blockers[0] || gate.next_action
+  });
+  const gateContract = verifyStrictGateResult(gateResult);
+  const strictReady = gate.ready_to_claim_complete && loadErrors.length === 0 && gateResult.status === 'passed' && gateContract.valid;
   const result = {
     ...gate,
     blockers,
-    ready_to_claim_complete: gate.ready_to_claim_complete && loadErrors.length === 0,
+    ready_to_claim_complete: strictReady,
     next_action: blockers[0] || gate.next_action,
-    truth_status: blockers.length ? 'blocked' : gate.truth_status,
+    truth_status: strictReady ? gate.truth_status : 'blocked',
+    gate_result: gateResult,
+    gate_contract: gateContract,
     persistence: flags.out ? 'written' : 'not-persisted',
     out: flags.out ? path.resolve(expandHome(flags.out)) : ''
   };
@@ -3810,15 +4131,72 @@ function benchmarkUsage() {
 
 Usage:
   yam benchmark report [--label text] [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--next-action text] [--json]
+  yam benchmark report --candidate-digest sha256 --baseline-digest sha256 --sample seed:candidate:baseline --unit score --evidence-source text [--sample ...] [--min-samples n] [--min-mean-delta n] [--min-win-rate n] [--json]
 
 Notes:
   Records a small optimization loop result. It does not run benchmarks by itself.
+  Promotion mode verifies deterministic paired-sample arithmetic but treats supplied scores as operator assertions, not statistical significance.
 `);
 }
 
 async function benchmarkReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return benchmarkUsage();
-  const flags = parseSimpleFlags(args, new Set(['label', 'baseline', 'current', 'unit', 'target', 'next-action', 'rollback-hint', 'intent', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['label', 'baseline', 'current', 'unit', 'target', 'next-action', 'rollback-hint', 'intent', 'candidate-digest', 'baseline-digest', 'sample', 'min-samples', 'min-mean-delta', 'min-win-rate', 'evidence-source', 'json']));
+  const promotionRequested = Boolean(
+    flags.candidate_digest
+    || flags.baseline_digest
+    || flags.sample
+    || flags.min_samples
+    || flags.min_mean_delta
+    || flags.min_win_rate
+    || flags.evidence_source
+  );
+  if (promotionRequested) {
+    try {
+      const promotion = buildBoundedPromotionReport({
+        label: String(flags.label || 'unnamed'),
+        candidate_digest: String(flags.candidate_digest || ''),
+        baseline_digest: String(flags.baseline_digest || ''),
+        samples: arrayFlag(flags.sample).map((sample) => parsePromotionSample(sample)),
+        min_samples: flags.min_samples === undefined ? undefined : Number(flags.min_samples),
+        min_mean_delta: flags.min_mean_delta === undefined ? undefined : Number(flags.min_mean_delta),
+        min_win_rate: flags.min_win_rate === undefined ? undefined : Number(flags.min_win_rate),
+        target: String(flags.target || 'higher').toLowerCase() as 'lower' | 'higher',
+        unit: String(flags.unit || ''),
+        evidence_source: String(flags.evidence_source || '')
+      });
+      const gateResult = buildStrictGateResult({
+        gate_id: 'benchmark-promotion',
+        boundary: 'generic',
+        checks: [
+          {
+            id: 'promotion-decision',
+            status: promotion.decision === 'keep' ? 'passed' : 'failed',
+            note: promotion.next_action,
+            required: true
+          }
+        ],
+        blockers: promotion.blockers,
+        evidence: [promotion.evidence_digest, promotion.evidence_source || 'operator-supplied paired measurements'],
+        next_action: promotion.next_action
+      });
+      const result = { ...promotion, gate_result: gateResult };
+      printJsonOrHuman(result, Boolean(flags.json), 'Bounded promotion report');
+      if (promotion.decision !== 'keep' || gateResult.status !== 'passed') process.exitCode = 1;
+      return;
+    } catch (error) {
+      const result = {
+        schema: 'yam.bounded-promotion-error.v1',
+        decision: 'blocked',
+        blockers: [errorMessage(error)],
+        next_action: 'repair the malformed paired-sample input before making a promotion decision',
+        truth_status: 'blocked'
+      };
+      printJsonOrHuman(result, Boolean(flags.json), 'Bounded promotion report');
+      process.exitCode = 1;
+      return;
+    }
+  }
   const baseline = numberOrNull(flags.baseline);
   const current = numberOrNull(flags.current);
   const target = String(flags.target || 'lower').toLowerCase() === 'higher' ? 'higher' : 'lower';
@@ -4413,7 +4791,12 @@ function formatStructuredEvidence(value) {
       return JSON.stringify(buildMissionSubagentReceipt(data));
     }
     if (data.schema === 'yam.mission-completion-gate.v1' || data.expected_thread_ids || data.ready_to_claim_complete !== undefined) {
-      return JSON.stringify(buildMissionCompletionGate(data));
+      const completion = buildMissionCompletionGate(data);
+      return JSON.stringify({
+        ...completion,
+        ...(data.gate_result && typeof data.gate_result === 'object' ? { gate_result: data.gate_result } : {}),
+        ...(data.gate_contract && typeof data.gate_contract === 'object' ? { gate_contract: data.gate_contract } : {})
+      });
     }
     if (data.schema === 'yam.mission-patch-envelope.v1' || data.agent_id || data.assigned_scope) {
       return JSON.stringify(buildMissionPatchEnvelope(data));
@@ -5414,6 +5797,11 @@ function showPath() {
 
 function showRequestedHelp(args: string[]) {
   if (!args.some((arg) => arg === '--help' || arg === '-h')) return false;
+
+  if (args[0] === 'ueye' && args[1] === 'production') {
+    ueyeProductionUsage();
+    return true;
+  }
 
   const commandUsage: Record<string, () => void> = {
     context: contextUsage,

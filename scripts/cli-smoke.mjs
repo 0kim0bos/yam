@@ -259,6 +259,13 @@ try {
   assert(missionProofWithoutGate.truth === 'partial', 'verified mission proof should be capped without completion gate');
   const missionProofWithGate = JSON.parse(execFileSync(bin, ['proof', '--route', 'mission', '--truth', 'verified', '--evidence', 'tests passed', '--mission-completion', JSON.stringify(missionGate), '--json'], { encoding: 'utf8' }));
   assert(missionProofWithGate.truth === 'verified', 'verified mission proof should accept a passing completion gate');
+  const nestedForgedMissionGate = {
+    ...missionGate,
+    gate_result: { ...missionGate.gate_result, digest: `sha256:${'0'.repeat(64)}` },
+    gate_contract: { ...missionGate.gate_contract, valid: false, truth_status: 'blocked', errors: ['digest_invalid'] }
+  };
+  const missionProofWithNestedForgedGate = JSON.parse(execFileSync(bin, ['proof', '--route', 'mission', '--truth', 'verified', '--evidence', 'tests passed', '--mission-completion', JSON.stringify(nestedForgedMissionGate), '--json'], { encoding: 'utf8' }));
+  assert(missionProofWithNestedForgedGate.truth === 'blocked', 'mission proof should reject an invalid nested strict gate and reported gate contract');
   const missionProofWithForgedGate = JSON.parse(execFileSync(bin, ['proof', '--route', 'mission', '--truth', 'verified', '--evidence', 'tests passed', '--mission-completion', '{"schema":"yam.mission-completion-gate.v1","ready_to_claim_complete":true,"truth_status":"verified"}', '--json'], { encoding: 'utf8' }));
   assert(missionProofWithForgedGate.truth === 'blocked', 'mission proof should recompute and reject a forged completion gate');
   execFileSync(bin, ['benchmark', 'report', '--help'], { stdio: 'ignore' });

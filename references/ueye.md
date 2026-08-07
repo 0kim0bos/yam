@@ -70,6 +70,7 @@ Use these when the task depends on visual truth, reference matching, or design q
 7. Deep Visual Review, when Ueye needs Deep-grade verification.
 8. Asset Manifest, when local reference media affects the design.
 9. Revision History, when an iterative visual artifact is about to be replaced.
+10. Demand-Gated Design Production receipt, only for repeated plan review or large coordinated multi-asset work.
 
 Default bound:
 
@@ -88,6 +89,19 @@ Record source URL/page when known, a license or usage note, operator-provided st
 ### Revision History
 
 Use `yam ueye revision archive` before replacing an artifact during an iterative design pass. Archives are written to numbered round folders with exclusive-copy behavior, so a different payload cannot silently overwrite an existing round. `yam ueye revision verify` recomputes hashes before the history supports a done claim.
+
+### Demand-Gated Design Production
+
+Do not start this phase for a one-off review or single-asset edit. When repeated exact-element plan feedback or a large coordinated asset set creates real review cost, use `yam ueye production` to bind:
+
+- operator-asserted demand evidence;
+- a local static Canvas on fixed session-specific evidence paths;
+- exact anchored comments and an explicit approve/request-changes verdict;
+- no more than two revision rounds, each linked to a Canvas comment and at least one new Ueye archive;
+- a final gallery whose revision references come from the final round; and
+- one immutable phase receipt.
+
+Path/hash/reference integrity can complete the phase evidence, but overall truth remains partial. The gallery and phase receipt do not verify visual quality, licensing, or implementation correctness.
 
 ### Visual Evidence Inventory
 

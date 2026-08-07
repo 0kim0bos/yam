@@ -435,7 +435,7 @@ Keep out for now:
 
 #### Plan Review Canvas Lite
 
-Status: deferred until repeated real-use demand.
+Status: available only inside the opt-in Demand-Gated Design Production Phase.
 
 Trigger:
 
@@ -443,15 +443,47 @@ Trigger:
 - Terminal-only approval causes revision ambiguity or costly re-reading.
 - A local browser review surface would materially shorten an approved Mission or Ueye feedback loop.
 
-First shape:
+Implemented shape:
 
-- local-only artifact review.
-- anchored comments and approve/request-changes verdict.
-- explicit session end and bounded idle shutdown.
-- Host/Origin checks, path confinement, and sandboxed artifact rendering.
+- local-only, path-confined static HTML artifact review with no server or background process.
+- exact line/text anchors and bounded operator-asserted image regions.
+- source hash and exact-anchor revalidation before comments, close, and finalize.
+- anchored findings plus explicit approve/request-changes verdict and session end.
 
 Keep out for now:
 
 - default local server.
 - remote sharing or hosting.
 - automatic implementation start without an explicit approval verdict.
+
+#### Demand-Gated Design Production Phase
+
+Status: implemented as an opt-in phase; remain dormant until repeated plan review or large multi-asset design production creates real coordination cost.
+
+Trigger:
+
+- Plan review repeatedly needs exact-element annotations that prose feedback cannot express efficiently.
+- A Ueye task produces several related visual assets that must preserve cross-asset consistency and provenance.
+- Reviewers need bounded before/after comparison or a packaged overview instead of inspecting files one by one.
+
+Phases:
+
+1. Record the operator-asserted demand kind and concrete evidence before Canvas creation, then require an exact match at finalize.
+2. Run Plan Review Canvas Lite as a local-only, explicitly closed review session.
+3. Bind one canonical revision state to the closed Canvas path/digest, then run at most two Canvas-comment-linked revision rounds, requiring at least one new hash-verified Ueye archive in the current review boundary per round.
+4. Write and verify a final gallery manifest with artifact ids, roles, provenance, final-round revision references, dimensions, hashes, completion state, and final paths.
+5. Finalize one immutable phase receipt with Canvas/revision/gallery and canonical receipt digests only when the demand trigger, closed Canvas, archive chronology, terminal revision state when required, matching session ids, and gallery integrity agree; re-verify it to detect later evidence changes.
+
+Entry and stop rules:
+
+- Enter only after the trigger appears in real work; a one-off plan, screenshot review, or single-asset edit stays on the existing Ueye/Mission path.
+- Each round requires a concrete finding from the bound Canvas; alternate state paths fail closed, and the phase ends after acceptance, two rounds, or a blocked integrity gate, whichever comes first.
+- The gallery is an inspection and packaging artifact, not proof that visual quality, licensing, or implementation correctness passed.
+- A two-round-limit stop may finalize only a draft gallery; it cannot be upgraded into a packaged or complete result.
+
+Keep out for now:
+
+- automatic creation of a design runtime or typed JSONL message bus.
+- unbounded revision loops or autonomous approval.
+- remote gallery hosting, public sharing, or background review services.
+- replacing protected source assets or weakening existing provenance and `do_not_replace` checks.
