@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { compareStableText } from './stable-order.js';
@@ -117,6 +118,8 @@ export type SafeUninstallResult = {
 type MovedEntry = {
   original: string;
   backup: string;
+  originalBoundary: string;
+  backupBoundary: string;
 };
 
 type OwnershipPreflight = {
@@ -141,6 +144,16 @@ type ReceiptMutationSnapshot =
 type MutationSnapshot = {
   trees: TreeMutationSnapshot[];
   receipt: ReceiptMutationSnapshot;
+};
+
+type PathIdentity = {
+  path: string;
+  dev: number;
+  ino: number;
+};
+
+type InstalledEntry = PathIdentity & {
+  kind: 'directory' | 'file';
 };
 
 function message(error: unknown) {
@@ -177,6 +190,157 @@ async function exists(target: string) {
   }
 }
 
+function pathWithinBoundary(boundary: string, target: string) {
+  const relative = path.relative(boundary, target);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+async function captureRegularParentPath(boundaryValue: string, targetValue: string, label: string) {
+  const boundary = path.resolve(boundaryValue);
+  const target = path.resolve(targetValue);
+  if (!pathWithinBoundary(boundary, target)) {
+    throw new Error(`${label} escapes its trusted path boundary: ${target}`);
+  }
+
+  const targetParent = target === boundary ? boundary : path.dirname(target);
+  const relativeParent = path.relative(boundary, targetParent);
+  const candidates = [boundary];
+  if (relativeParent) {
+    let current = boundary;
+    for (const segment of relativeParent.split(path.sep)) {
+      current = path.join(current, segment);
+      candidates.push(current);
+    }
+  }
+
+  const identities: PathIdentity[] = [];
+  for (const candidate of candidates) {
+    const stat = await fsp.lstat(candidate);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`${label} has a symlinked parent path segment: ${candidate}`);
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`${label} parent path segment must be a regular directory: ${candidate}`);
+    }
+    identities.push({ path: candidate, dev: stat.dev, ino: stat.ino });
+  }
+  return identities;
+}
+
+async function revalidateRegularParentPath(identities: PathIdentity[], label: string) {
+  for (const identity of identities) {
+    const stat = await fsp.lstat(identity.path);
+    if (
+      stat.isSymbolicLink()
+      || !stat.isDirectory()
+      || stat.dev !== identity.dev
+      || stat.ino !== identity.ino
+    ) {
+      throw new Error(`${label} parent path changed identity: ${identity.path}`);
+    }
+  }
+}
+
+async function captureRegularDirectoryPath(boundaryValue: string, directoryValue: string, label: string) {
+  const boundary = path.resolve(boundaryValue);
+  const directory = path.resolve(directoryValue);
+  if (boundary === directory) {
+    const stat = await fsp.lstat(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error(`${label} must be a regular directory: ${directory}`);
+    }
+    return [{ path: directory, dev: stat.dev, ino: stat.ino }];
+  }
+  const identities = await captureRegularParentPath(boundary, directory, label);
+  const stat = await fsp.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular directory: ${directory}`);
+  }
+  identities.push({ path: directory, dev: stat.dev, ino: stat.ino });
+  return identities;
+}
+
+function readOnlyNoFollowFlags() {
+  const noFollow = process.platform !== 'win32' && typeof fsConstants.O_NOFOLLOW === 'number'
+    ? fsConstants.O_NOFOLLOW
+    : 0;
+  return fsConstants.O_RDONLY | noFollow;
+}
+
+async function captureRegularFile(file: string, boundary = path.dirname(file)) {
+  const parents = await captureRegularParentPath(boundary, file, 'regular file read');
+  const before = await fsp.lstat(file);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error(`expected a regular file: ${file}`);
+  const handle = await fsp.open(file, readOnlyNoFollowFlags());
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error(`expected a regular file: ${file}`);
+    const bytes = await handle.readFile();
+    const afterOpened = await handle.stat();
+    const after = await fsp.lstat(file);
+    await revalidateRegularParentPath(parents, 'regular file read');
+    if (
+      !after.isFile()
+      || after.isSymbolicLink()
+      || before.dev !== opened.dev
+      || before.ino !== opened.ino
+      || afterOpened.dev !== opened.dev
+      || afterOpened.ino !== opened.ino
+      || after.dev !== opened.dev
+      || after.ino !== opened.ino
+    ) {
+      throw new Error(`regular file changed identity while being captured: ${file}`);
+    }
+    return { bytes, mode: opened.mode & 0o777 };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readRegularFileBytes(file: string, boundary = path.dirname(file)) {
+  return (await captureRegularFile(file, boundary)).bytes;
+}
+
+async function copyRegularFile(
+  source: string,
+  target: string,
+  sourceBoundary: string,
+  targetBoundary: string
+) {
+  const sourceFile = await captureRegularFile(source, sourceBoundary);
+  const targetParents = await captureRegularParentPath(targetBoundary, target, 'install copy target');
+  const noFollow = process.platform !== 'win32' && typeof fsConstants.O_NOFOLLOW === 'number'
+    ? fsConstants.O_NOFOLLOW
+    : 0;
+  const handle = await fsp.open(
+    target,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | noFollow,
+    sourceFile.mode
+  );
+  try {
+    await handle.writeFile(sourceFile.bytes);
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error(`install copy target must be a regular file: ${target}`);
+    const openedIdentity = { dev: opened.dev, ino: opened.ino };
+    const afterOpened = await handle.stat();
+    if (afterOpened.dev !== openedIdentity.dev || afterOpened.ino !== openedIdentity.ino) {
+      throw new Error(`install copy target changed descriptor identity: ${target}`);
+    }
+    await revalidateRegularParentPath(targetParents, 'install copy target');
+    const installed = await fsp.lstat(target);
+    if (
+      !installed.isFile()
+      || installed.isSymbolicLink()
+      || installed.dev !== openedIdentity.dev
+      || installed.ino !== openedIdentity.ino
+    ) {
+      throw new Error(`install copy target changed path identity: ${target}`);
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function findInstallRecoveryArtifacts(root: string) {
   try {
     const entries = await fsp.readdir(root, { withFileTypes: true });
@@ -190,12 +354,16 @@ export async function findInstallRecoveryArtifacts(root: string) {
   }
 }
 
-async function digestFile(file: string, relativePath: string): Promise<InstallFileDigest> {
+async function digestFile(
+  file: string,
+  relativePath: string,
+  boundary = path.dirname(file)
+): Promise<InstallFileDigest> {
   const stat = await fsp.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new Error(`install source must be a regular file: ${file}`);
   }
-  const contents = await fsp.readFile(file);
+  const contents = await readRegularFileBytes(file, boundary);
   return {
     path: relativePath.split(path.sep).join('/'),
     bytes: contents.byteLength,
@@ -203,14 +371,16 @@ async function digestFile(file: string, relativePath: string): Promise<InstallFi
   };
 }
 
-async function collectTreeManifest(root: string, prefix = ''): Promise<InstallFileDigest[]> {
-  const stat = await fsp.lstat(root);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) {
-    throw new Error(`install tree must be a regular directory: ${root}`);
-  }
+async function collectTreeManifest(
+  root: string,
+  prefix = '',
+  boundary = root
+): Promise<InstallFileDigest[]> {
+  const rootIdentity = await captureRegularDirectoryPath(boundary, root, 'install tree');
 
   const files: InstallFileDigest[] = [];
   async function walk(current: string, relative: string): Promise<void> {
+    const directoryIdentity = await captureRegularDirectoryPath(boundary, current, 'install tree');
     const entries = await fsp.readdir(current, { withFileTypes: true });
     entries.sort((left, right) => compareStableText(left.name, right.name));
     for (const entry of entries) {
@@ -219,26 +389,30 @@ async function collectTreeManifest(root: string, prefix = ''): Promise<InstallFi
       if (entry.isDirectory()) {
         await walk(absolute, nextRelative);
       } else if (entry.isFile()) {
-        files.push(await digestFile(absolute, path.join(prefix, nextRelative)));
+        files.push(await digestFile(absolute, path.join(prefix, nextRelative), boundary));
       } else {
         throw new Error(`unsupported install tree entry: ${absolute}`);
       }
     }
+    await revalidateRegularParentPath(directoryIdentity, 'install tree');
   }
 
   await walk(root, '');
+  await revalidateRegularParentPath(rootIdentity, 'install tree');
   return files.sort((left, right) => compareStableText(left.path, right.path));
 }
 
 async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
+  const sourceIdentity = await captureRegularDirectoryPath(sourceRoot, sourceRoot, 'install source root');
   const referencesRoot = path.join(sourceRoot, 'references');
-  const referenceFiles = await collectTreeManifest(referencesRoot);
+  const referenceFiles = await collectTreeManifest(referencesRoot, '', sourceRoot);
   if (referenceFiles.length === 0) throw new Error(`no reference files found: ${referencesRoot}`);
 
   const files: InstallFileDigest[] = [];
   for (const skill of skills) {
     const skillFile = path.join(sourceRoot, 'skills', skill, 'SKILL.md');
-    const skillText = await fsp.readFile(skillFile, 'utf8');
+    const skillBytes = await readRegularFileBytes(skillFile, sourceRoot);
+    const skillText = skillBytes.toString('utf8');
     const frontmatter = skillText.match(/^---\n([\s\S]*?)\n---/);
     const name = frontmatter?.[1].match(/^name:\s*([^\n]+)\s*$/m)?.[1]
       ?.trim()
@@ -246,7 +420,11 @@ async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
     if (name !== skill) {
       throw new Error(`skill source frontmatter mismatch for ${skill}: ${name || 'missing'}`);
     }
-    files.push(await digestFile(skillFile, path.join(skill, 'SKILL.md')));
+    files.push({
+      path: path.join(skill, 'SKILL.md').split(path.sep).join('/'),
+      bytes: skillBytes.byteLength,
+      sha256: createHash('sha256').update(skillBytes).digest('hex')
+    });
     for (const reference of referenceFiles) {
       files.push({
         ...reference,
@@ -254,27 +432,96 @@ async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
       });
     }
   }
+  await revalidateRegularParentPath(sourceIdentity, 'install source root');
   return files.sort((left, right) => compareStableText(left.path, right.path));
 }
 
-async function copyTree(source: string, target: string): Promise<void> {
-  const stat = await fsp.lstat(source);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) {
-    throw new Error(`install source must be a regular directory: ${source}`);
-  }
+async function copyTree(
+  source: string,
+  target: string,
+  sourceBoundary = source,
+  targetBoundary = target
+): Promise<void> {
+  const sourceIdentity = await captureRegularDirectoryPath(sourceBoundary, source, 'install source tree');
+  const targetParents = await captureRegularParentPath(targetBoundary, target, 'install target tree');
   await fsp.mkdir(target, { recursive: true });
+  const targetIdentity = await captureRegularDirectoryPath(targetBoundary, target, 'install target tree');
+  await revalidateRegularParentPath(sourceIdentity, 'install source tree');
+  await revalidateRegularParentPath(targetParents, 'install target tree');
   const entries = await fsp.readdir(source, { withFileTypes: true });
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
     const from = path.join(source, entry.name);
     const to = path.join(target, entry.name);
     if (entry.isDirectory()) {
-      await copyTree(from, to);
+      await copyTree(from, to, sourceBoundary, targetBoundary);
     } else if (entry.isFile()) {
-      await fsp.copyFile(from, to);
+      await copyRegularFile(from, to, sourceBoundary, targetBoundary);
     } else {
       throw new Error(`unsupported install source entry: ${from}`);
     }
+  }
+  await revalidateRegularParentPath(sourceIdentity, 'install source tree');
+  await revalidateRegularParentPath(targetIdentity, 'install target tree');
+}
+
+async function moveRegularDirectory(
+  source: string,
+  target: string,
+  sourceBoundary: string,
+  targetBoundary: string,
+  label: string,
+  onMoved?: (entry: InstalledEntry) => void
+) {
+  const sourceParents = await captureRegularParentPath(sourceBoundary, source, `${label} source`);
+  const sourceStat = await fsp.lstat(source);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) {
+    throw new Error(`${label} source must be a regular directory: ${source}`);
+  }
+  const targetParents = await captureRegularParentPath(targetBoundary, target, `${label} target`);
+  if (await exists(target)) throw new Error(`${label} target unexpectedly exists: ${target}`);
+  await fsp.rename(source, target);
+  onMoved?.({ path: target, dev: sourceStat.dev, ino: sourceStat.ino, kind: 'directory' });
+  await revalidateRegularParentPath(sourceParents, `${label} source`);
+  await revalidateRegularParentPath(targetParents, `${label} target`);
+  const targetStat = await fsp.lstat(target);
+  if (
+    !targetStat.isDirectory()
+    || targetStat.isSymbolicLink()
+    || targetStat.dev !== sourceStat.dev
+    || targetStat.ino !== sourceStat.ino
+  ) {
+    throw new Error(`${label} directory changed identity while being moved: ${target}`);
+  }
+}
+
+async function moveRegularFile(
+  source: string,
+  target: string,
+  sourceBoundary: string,
+  targetBoundary: string,
+  label: string,
+  onMoved?: (entry: InstalledEntry) => void
+) {
+  const sourceParents = await captureRegularParentPath(sourceBoundary, source, `${label} source`);
+  const sourceStat = await fsp.lstat(source);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw new Error(`${label} source must be a regular file: ${source}`);
+  }
+  const targetParents = await captureRegularParentPath(targetBoundary, target, `${label} target`);
+  if (await exists(target)) throw new Error(`${label} target unexpectedly exists: ${target}`);
+  await fsp.rename(source, target);
+  onMoved?.({ path: target, dev: sourceStat.dev, ino: sourceStat.ino, kind: 'file' });
+  await revalidateRegularParentPath(sourceParents, `${label} source`);
+  await revalidateRegularParentPath(targetParents, `${label} target`);
+  const targetStat = await fsp.lstat(target);
+  if (
+    !targetStat.isFile()
+    || targetStat.isSymbolicLink()
+    || targetStat.dev !== sourceStat.dev
+    || targetStat.ino !== sourceStat.ino
+  ) {
+    throw new Error(`${label} file changed identity while being moved: ${target}`);
   }
 }
 
@@ -430,7 +677,7 @@ async function readOwnershipReceipt(
     if (!stat.isFile() || stat.isSymbolicLink()) {
       return { exists: true, issues: [`install receipt must be a regular file: ${receiptPath}`] };
     }
-    const parsed = JSON.parse(await fsp.readFile(receiptPath, 'utf8'));
+    const parsed = JSON.parse((await readRegularFileBytes(receiptPath, destination)).toString('utf8'));
     const issues = ownershipReceiptIssues(parsed, packageName, destination);
     return issues.length
       ? { exists: true, issues }
@@ -457,7 +704,7 @@ async function verifyReceiptOwnedSkill(
   const target = path.join(root, skill);
   if (!await exists(target)) return [`receipt-owned skill is missing: ${skill}`];
   try {
-    const actual = await collectTreeManifest(target, skill);
+    const actual = await collectTreeManifest(target, skill, root);
     return manifestIssues(expected, actual, `installed ${skill}`);
   } catch (error) {
     return [`installed ${skill} cannot be verified: ${message(error)}`];
@@ -552,31 +799,6 @@ async function preflightSafeUninstallOwnership(
   return receipt;
 }
 
-async function readRegularFileBytes(file: string) {
-  const before = await fsp.lstat(file);
-  if (!before.isFile() || before.isSymbolicLink()) throw new Error(`expected a regular file: ${file}`);
-  const handle = await fsp.open(file, 'r');
-  try {
-    const opened = await handle.stat();
-    if (!opened.isFile()) throw new Error(`expected a regular file: ${file}`);
-    const bytes = await handle.readFile();
-    const after = await fsp.lstat(file);
-    if (
-      !after.isFile()
-      || after.isSymbolicLink()
-      || before.dev !== opened.dev
-      || before.ino !== opened.ino
-      || after.dev !== opened.dev
-      || after.ino !== opened.ino
-    ) {
-      throw new Error(`regular file changed identity while being captured: ${file}`);
-    }
-    return bytes;
-  } finally {
-    await handle.close();
-  }
-}
-
 async function captureReceiptMutationSnapshot(
   destination: string,
   packageName: string
@@ -584,7 +806,7 @@ async function captureReceiptMutationSnapshot(
   const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
   let bytes: Buffer;
   try {
-    bytes = await readRegularFileBytes(receiptPath);
+    bytes = await readRegularFileBytes(receiptPath, destination);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { exists: false };
     throw new Error(`cannot capture install receipt ownership boundary: ${message(error)}`);
@@ -616,7 +838,7 @@ async function captureMutationSnapshot(
   const receipt = await captureReceiptMutationSnapshot(destination, packageName);
   const trees: TreeMutationSnapshot[] = [];
   for (const name of names) {
-    const files = await collectTreeManifest(path.join(destination, name), name);
+    const files = await collectTreeManifest(path.join(destination, name), name, destination);
     if (!explicitReplacements.includes(name)) {
       if (!receipt.exists) {
         throw new Error(`cannot capture receipt-owned skill without an install receipt: ${name}`);
@@ -651,7 +873,11 @@ async function verifyMovedMutationSnapshot(
       continue;
     }
     try {
-      const actual = await collectTreeManifest(movedEntry.backup, tree.name);
+      const actual = await collectTreeManifest(
+        movedEntry.backup,
+        tree.name,
+        path.dirname(movedEntry.backup)
+      );
       issues.push(...manifestIssues(tree.files, actual, `moved backup ${tree.name}`));
     } catch (error) {
       issues.push(`moved backup ${tree.name} cannot be verified: ${message(error)}`);
@@ -666,7 +892,7 @@ async function verifyMovedMutationSnapshot(
     );
   } else if (snapshot.receipt.exists && receiptBackedUp) {
     try {
-      const bytes = await readRegularFileBytes(receiptBackupPath);
+      const bytes = await readRegularFileBytes(receiptBackupPath, path.dirname(receiptBackupPath));
       const sha256 = createHash('sha256').update(bytes).digest('hex');
       if (sha256 !== snapshot.receipt.sha256 || !bytes.equals(snapshot.receipt.bytes)) {
         issues.push('moved install receipt differs from the captured bytes');
@@ -739,7 +965,7 @@ export async function inspectSkillInstallation(options: InstallationInspectionOp
       continue;
     }
     try {
-      const installed = (await collectTreeManifest(target, skill));
+      const installed = (await collectTreeManifest(target, skill, destination));
       const skillIssues = manifestIssues(expectedForSkill, installed, `installed ${skill}`);
       skillStatuses.push({ skill, status: skillIssues.length ? 'drift' : 'ok', issues: skillIssues });
       issues.push(...skillIssues);
@@ -756,7 +982,7 @@ export async function inspectSkillInstallation(options: InstallationInspectionOp
     issues.push(`install receipt missing: ${receiptPath}`);
   } else {
     try {
-      const parsed = JSON.parse(await fsp.readFile(receiptPath, 'utf8'));
+      const parsed = JSON.parse((await readRegularFileBytes(receiptPath, destination)).toString('utf8'));
       const problems = receiptIssues(parsed, options, destination, expected);
       if (problems.length) {
         receiptStatus = 'drift';
@@ -786,6 +1012,7 @@ export async function inspectSkillInstallation(options: InstallationInspectionOp
 
 async function acquireInstallLock(destination: string) {
   const lockPath = path.join(destination, INSTALL_LOCK_NAME);
+  const destinationIdentity = await captureRegularDirectoryPath(destination, destination, 'skill destination');
   let handle: fsp.FileHandle;
   try {
     handle = await fsp.open(lockPath, 'wx', 0o600);
@@ -795,24 +1022,64 @@ async function acquireInstallLock(destination: string) {
     }
     throw error;
   }
+  let lockIdentity: InstalledEntry | undefined;
   try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) throw new Error(`install lock must be a regular file: ${lockPath}`);
+    lockIdentity = { path: lockPath, dev: opened.dev, ino: opened.ino, kind: 'file' };
     await handle.writeFile(JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }, null, 2));
+    await revalidateRegularParentPath(destinationIdentity, 'skill destination');
+    const current = await fsp.lstat(lockPath);
+    if (
+      current.isSymbolicLink()
+      || !current.isFile()
+      || current.dev !== lockIdentity.dev
+      || current.ino !== lockIdentity.ino
+    ) {
+      throw new Error(`install lock changed identity while being acquired: ${lockPath}`);
+    }
   } catch (error) {
-    await handle.close().catch(() => undefined);
-    await fsp.rm(lockPath, { force: true }).catch(() => undefined);
+    const cleanupErrors: string[] = [];
+    try {
+      await handle.close();
+    } catch (closeError) {
+      cleanupErrors.push(message(closeError));
+    }
+    try {
+      await revalidateRegularParentPath(destinationIdentity, 'skill destination');
+      if (!lockIdentity) throw new Error(`install lock identity was not captured: ${lockPath}`);
+      await removeRecordedEntry(lockIdentity, 'install lock');
+    } catch (cleanupError) {
+      cleanupErrors.push(message(cleanupError));
+    }
+    if (cleanupErrors.length) {
+      throw new Error(`${message(error)}. Install lock cleanup failed: ${cleanupErrors.join('; ')}`);
+    }
     throw error;
   }
-  return { handle, lockPath };
+  return { handle, lockPath, lockIdentity, destinationIdentity };
 }
 
 async function moveExistingEntries(root: string, names: string[], backupRoot: string, moved: MovedEntry[]) {
   await fsp.mkdir(backupRoot, { recursive: true });
+  const backupBoundary = path.dirname(backupRoot);
   for (const name of names) {
     const original = path.join(root, name);
     if (!await exists(original)) continue;
     const backup = path.join(backupRoot, name);
-    await fsp.rename(original, backup);
-    moved.push({ original, backup });
+    await moveRegularDirectory(
+      original,
+      backup,
+      root,
+      backupBoundary,
+      'managed install backup',
+      () => moved.push({
+        original,
+        backup,
+        originalBoundary: root,
+        backupBoundary
+      })
+    );
   }
 }
 
@@ -824,7 +1091,13 @@ async function restoreMovedEntries(entries: MovedEntry[]) {
         throw new Error(`rollback target unexpectedly exists: ${entry.original}`);
       }
       await fsp.mkdir(path.dirname(entry.original), { recursive: true });
-      await fsp.rename(entry.backup, entry.original);
+      await moveRegularDirectory(
+        entry.backup,
+        entry.original,
+        entry.backupBoundary,
+        entry.originalBoundary,
+        'managed install rollback'
+      );
     } catch (error) {
       errors.push(message(error));
     }
@@ -832,16 +1105,42 @@ async function restoreMovedEntries(entries: MovedEntry[]) {
   return errors;
 }
 
-async function removeInstalledEntries(entries: string[]) {
+async function removeInstalledEntries(entries: InstalledEntry[]) {
   const errors: string[] = [];
   for (const entry of [...entries].reverse()) {
     try {
-      await fsp.rm(entry, { recursive: true, force: true });
+      await removeRecordedEntry(entry, 'rollback removal');
     } catch (error) {
-      errors.push(`could not remove new install ${entry}: ${message(error)}`);
+      errors.push(`could not remove new install ${entry.path}: ${message(error)}`);
     }
   }
   return errors;
+}
+
+async function captureRecordedEntry(target: string, kind: InstalledEntry['kind'], label: string): Promise<InstalledEntry> {
+  const stat = await fsp.lstat(target);
+  const typeMatches = kind === 'directory'
+    ? stat.isDirectory() && !stat.isSymbolicLink()
+    : stat.isFile() && !stat.isSymbolicLink();
+  if (!typeMatches) throw new Error(`${label} must be a regular ${kind}: ${target}`);
+  return { path: target, dev: stat.dev, ino: stat.ino, kind };
+}
+
+async function removeRecordedEntry(entry: InstalledEntry, label: string) {
+  let current;
+  try {
+    current = await fsp.lstat(entry.path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  const typeMatches = entry.kind === 'directory'
+    ? current.isDirectory() && !current.isSymbolicLink()
+    : current.isFile() && !current.isSymbolicLink();
+  if (!typeMatches || current.dev !== entry.dev || current.ino !== entry.ino) {
+    throw new Error(`${label} identity mismatch; preserved current path: ${entry.path}`);
+  }
+  await fsp.rm(entry.path, { recursive: entry.kind === 'directory', force: entry.kind === 'file' });
 }
 
 export async function installSkillSetTransactional(options: TransactionalInstallOptions): Promise<TransactionalInstallResult> {
@@ -859,6 +1158,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
   let result: TransactionalInstallResult | undefined;
   let primaryError: unknown;
   try {
+    await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
     const recoveryArtifacts = await findInstallRecoveryArtifacts(destination);
     if (recoveryArtifacts.length) {
       throw new Error(
@@ -876,15 +1176,16 @@ export async function installSkillSetTransactional(options: TransactionalInstall
     const expected = await expectedInstallManifest(sourceRoot, skills);
     const transactionId = options.transactionId || randomUUID();
     const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-'));
+    const transactionEntry = await captureRecordedEntry(transactionRoot, 'directory', 'install transaction root');
     const stagedRoot = path.join(transactionRoot, 'staged');
     const backupRoot = path.join(transactionRoot, 'backup');
     const stagedReceiptPath = path.join(transactionRoot, 'receipt.json');
     const destinationReceiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
     const receiptBackupPath = path.join(transactionRoot, 'receipt.backup');
-    const installedEntries: string[] = [];
+    const installedEntries: InstalledEntry[] = [];
     let destinationBackups: MovedEntry[] = [];
     let receiptBackedUp = false;
-    let receiptInstalled = false;
+    let receiptInstalled: InstalledEntry | undefined;
     let mutationStarted = false;
 
     try {
@@ -892,8 +1193,18 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       for (const skill of skills) {
         const stagedSkill = path.join(stagedRoot, skill);
         await fsp.mkdir(stagedSkill, { recursive: true });
-        await fsp.copyFile(path.join(sourceRoot, 'skills', skill, 'SKILL.md'), path.join(stagedSkill, 'SKILL.md'));
-        await copyTree(path.join(sourceRoot, 'references'), path.join(stagedSkill, 'references'));
+        await copyRegularFile(
+          path.join(sourceRoot, 'skills', skill, 'SKILL.md'),
+          path.join(stagedSkill, 'SKILL.md'),
+          sourceRoot,
+          stagedRoot
+        );
+        await copyTree(
+          path.join(sourceRoot, 'references'),
+          path.join(stagedSkill, 'references'),
+          sourceRoot,
+          stagedRoot
+        );
       }
       const stagedManifest = await collectTreeManifest(stagedRoot);
       const stagedIssues = manifestIssues(expected, stagedManifest, 'staged install');
@@ -931,11 +1242,18 @@ export async function installSkillSetTransactional(options: TransactionalInstall
         replaceSkills
       );
       await options.failpoint?.({ phase: 'before-mutation' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
       mutationStarted = true;
       await moveExistingEntries(destination, mutationOwnership.replaceNames, backupRoot, destinationBackups);
       if (await exists(destinationReceiptPath)) {
-        await fsp.rename(destinationReceiptPath, receiptBackupPath);
-        receiptBackedUp = true;
+        await moveRegularFile(
+          destinationReceiptPath,
+          receiptBackupPath,
+          destination,
+          transactionRoot,
+          'install receipt backup',
+          () => { receiptBackedUp = true; }
+        );
       }
       await verifyMovedMutationSnapshot(
         destination,
@@ -945,18 +1263,34 @@ export async function installSkillSetTransactional(options: TransactionalInstall
         receiptBackupPath
       );
       await options.failpoint?.({ phase: 'after-backup' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
 
       for (const skill of skills) {
+        await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
         const target = path.join(destination, skill);
-        await fsp.rename(path.join(stagedRoot, skill), target);
-        installedEntries.push(target);
+        await moveRegularDirectory(
+          path.join(stagedRoot, skill),
+          target,
+          stagedRoot,
+          destination,
+          'staged skill install',
+          (entry) => installedEntries.push(entry)
+        );
         await options.failpoint?.({ phase: 'skill-installed', skill });
       }
-      await fsp.rename(stagedReceiptPath, destinationReceiptPath);
-      receiptInstalled = true;
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
+      await moveRegularFile(
+        stagedReceiptPath,
+        destinationReceiptPath,
+        transactionRoot,
+        destination,
+        'staged install receipt',
+        (entry) => { receiptInstalled = entry; }
+      );
       await options.failpoint?.({ phase: 'receipt-installed' });
 
       await options.failpoint?.({ phase: 'before-verify' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
       const inspection = await inspectSkillInstallation({
         sourceRoot,
         destination,
@@ -967,13 +1301,10 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       });
       if (!inspection.ok) throw new Error(`post-install verification failed: ${inspection.issues.join('; ')}`);
 
-      for (const cleanup of [transactionRoot]) {
-        if (!cleanup) continue;
-        try {
-          await fsp.rm(cleanup, { recursive: true, force: true });
-        } catch (error) {
-          cleanupWarnings.push(`verified install retained cleanup artifact ${cleanup}: ${message(error)}`);
-        }
+      try {
+        await removeRecordedEntry(transactionEntry, 'install transaction cleanup');
+      } catch (error) {
+        cleanupWarnings.push(`verified install retained cleanup artifact ${transactionRoot}: ${message(error)}`);
       }
       result = {
         receipt,
@@ -984,14 +1315,27 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       };
     } catch (error) {
       const rollbackErrors: string[] = [];
-      if (mutationStarted) {
-        if (receiptInstalled) rollbackErrors.push(...await removeInstalledEntries([destinationReceiptPath]));
+      let destinationStillOwned = true;
+      try {
+        await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
+      } catch (identityError) {
+        destinationStillOwned = false;
+        rollbackErrors.push(`skill destination identity changed; path-based rollback was not attempted: ${message(identityError)}`);
+      }
+      if (mutationStarted && destinationStillOwned) {
+        if (receiptInstalled) rollbackErrors.push(...await removeInstalledEntries([receiptInstalled]));
         rollbackErrors.push(...await removeInstalledEntries(installedEntries));
         rollbackErrors.push(...await restoreMovedEntries(destinationBackups));
         if (receiptBackedUp) {
           try {
             if (await exists(destinationReceiptPath)) throw new Error(`rollback target unexpectedly exists: ${destinationReceiptPath}`);
-            await fsp.rename(receiptBackupPath, destinationReceiptPath);
+            await moveRegularFile(
+              receiptBackupPath,
+              destinationReceiptPath,
+              transactionRoot,
+              destination,
+              'install receipt rollback'
+            );
           } catch (receiptError) {
             rollbackErrors.push(message(receiptError));
           }
@@ -1000,13 +1344,10 @@ export async function installSkillSetTransactional(options: TransactionalInstall
 
       if (rollbackErrors.length === 0) {
         const cleanupErrors: string[] = [];
-        for (const cleanup of [transactionRoot]) {
-          if (!cleanup) continue;
-          try {
-            await fsp.rm(cleanup, { recursive: true, force: true });
-          } catch (cleanupError) {
-            cleanupErrors.push(`${cleanup}: ${message(cleanupError)}`);
-          }
+        try {
+          await removeRecordedEntry(transactionEntry, 'install transaction cleanup');
+        } catch (cleanupError) {
+          cleanupErrors.push(`${transactionRoot}: ${message(cleanupError)}`);
         }
         if (cleanupErrors.length) {
           throw new Error(
@@ -1033,7 +1374,8 @@ export async function installSkillSetTransactional(options: TransactionalInstall
     lockCleanupErrors.push(message(error));
   }
   try {
-    await fsp.rm(lock.lockPath, { force: true });
+    await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
+    await removeRecordedEntry(lock.lockIdentity, 'install lock cleanup');
   } catch (error) {
     lockCleanupErrors.push(message(error));
   }
@@ -1063,6 +1405,7 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
   let result: SafeUninstallResult | undefined;
   let primaryError: unknown;
   try {
+    await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
     const recoveryArtifacts = await findInstallRecoveryArtifacts(destination);
     if (recoveryArtifacts.length) {
       throw new Error(
@@ -1073,6 +1416,7 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
     await preflightSafeUninstallOwnership(destination, options.packageName, skills);
 
     const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-uninstall-'));
+    const transactionEntry = await captureRecordedEntry(transactionRoot, 'directory', 'uninstall transaction root');
     const backupRoot = path.join(transactionRoot, 'backup');
     const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
     const receiptBackup = path.join(transactionRoot, INSTALL_RECEIPT_NAME);
@@ -1088,10 +1432,17 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
         []
       );
       await options.failpoint?.({ phase: 'before-mutation' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
       mutationStarted = true;
       await moveExistingEntries(destination, skills, backupRoot, moved);
-      await fsp.rename(receiptPath, receiptBackup);
-      receiptMoved = true;
+      await moveRegularFile(
+        receiptPath,
+        receiptBackup,
+        destination,
+        transactionRoot,
+        'uninstall receipt backup',
+        () => { receiptMoved = true; }
+      );
       await verifyMovedMutationSnapshot(
         destination,
         mutationSnapshot,
@@ -1100,7 +1451,9 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
         receiptBackup
       );
       await options.failpoint?.({ phase: 'after-backup' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
       await options.failpoint?.({ phase: 'before-verify' });
+      await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
 
       const remaining = [];
       for (const skill of skills) {
@@ -1112,7 +1465,7 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
       }
 
       try {
-        await fsp.rm(transactionRoot, { recursive: true, force: true });
+        await removeRecordedEntry(transactionEntry, 'uninstall transaction cleanup');
       } catch (error) {
         cleanupWarnings.push(`verified uninstall retained cleanup artifact ${transactionRoot}: ${message(error)}`);
       }
@@ -1123,11 +1476,24 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
       };
     } catch (error) {
       const rollbackErrors: string[] = [];
-      if (mutationStarted) {
+      let destinationStillOwned = true;
+      try {
+        await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
+      } catch (identityError) {
+        destinationStillOwned = false;
+        rollbackErrors.push(`skill destination identity changed; path-based rollback was not attempted: ${message(identityError)}`);
+      }
+      if (mutationStarted && destinationStillOwned) {
         if (receiptMoved) {
           try {
             if (await exists(receiptPath)) throw new Error(`rollback target unexpectedly exists: ${receiptPath}`);
-            await fsp.rename(receiptBackup, receiptPath);
+            await moveRegularFile(
+              receiptBackup,
+              receiptPath,
+              transactionRoot,
+              destination,
+              'uninstall receipt rollback'
+            );
           } catch (receiptError) {
             rollbackErrors.push(message(receiptError));
           }
@@ -1136,7 +1502,7 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
       }
       if (rollbackErrors.length === 0) {
         try {
-          await fsp.rm(transactionRoot, { recursive: true, force: true });
+          await removeRecordedEntry(transactionEntry, 'uninstall transaction cleanup');
         } catch (cleanupError) {
           throw new Error(
             `yam uninstall failed; previous installation state restored, but transaction cleanup is incomplete: ${message(error)}. `
@@ -1161,7 +1527,8 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
     lockCleanupErrors.push(message(error));
   }
   try {
-    await fsp.rm(lock.lockPath, { force: true });
+    await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
+    await removeRecordedEntry(lock.lockIdentity, 'install lock cleanup');
   } catch (error) {
     lockCleanupErrors.push(message(error));
   }

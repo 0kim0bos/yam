@@ -112,7 +112,9 @@ cd ~/Documents/Codex/tools/yam
 yam install
 ```
 
-`yam install` first checks ownership of every existing active skill. A skill is replaced automatically only when the previous yam receipt names it and its complete regular-file inventory and content hashes still match the receipt. The installer then stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and replaces the verified active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt.
+`yam install` first checks ownership of every existing active skill. A skill is replaced automatically only when the previous yam receipt names it and its complete regular-file inventory and content hashes still match the receipt. The installer then stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and replaces the verified active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt. Rollback and cleanup remove newly installed skills, receipts, locks, and transaction roots only while their recorded type and device/inode identity still match; an identity-swapped path is preserved and reported instead of being treated as yam-owned.
+
+Install source, destination, receipt, and managed-tree paths must use canonical physical directories. A symlink alias used as the package source or `YAM_SKILLS_HOME`, or a symlinked parent segment inside either boundary, fails closed; resolve the alias to its real path before retrying. Regular-file reads use descriptor identity checks and `O_NOFOLLOW` where the platform exposes it, while mutation boundaries revalidate parent directory identities. This narrows symlink-swap risk but is not `openat`-grade proof because Node does not expose descriptor-relative traversal here. Arbitrary Windows reparse-point handling is also unverified, so Windows receives the portable identity checks without a claim of complete reparse coverage.
 
 If an existing active directory is user-owned, locally modified, or cannot be proven yam-owned, installation stops before staging and preserves it. After reviewing the files, replace only the intended conflicting name explicitly:
 
@@ -335,6 +337,8 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Bounded promotion receipt: `yam benchmark report` can compare paired candidate/baseline measurements under explicit sample, mean-delta, and win-rate thresholds. Arithmetic is verified, while measurement provenance remains `operator_asserted` and overall truth stays `partial`.
 - Honest capability matrix: `yam tools doctor --json` reports feature maturity separately from observed runtime readiness; instruction-only or unprobed capabilities are not reported as executed.
 - Strict gate result: release, update, benchmark-promotion, and Mission completion boundaries emit a digest-bound `yam.gate-result.v1` and fail closed on missing or inconsistent required evidence.
+- Final-scope verification closure: `yam verification closure create|verify` binds the planned boundary, current Git dirty/staged/untracked paths, release-sensitive escalation, selected versus operator-declared executed commands, skipped/truncated reasons, and an immutable digest. Missing required execution, unknown results, unplanned files, unavailable Git scope, and later receipt tampering fail closed; yam does not execute the recorded commands or upgrade their truth beyond `partial`.
+- Optional media provider receipt: `yam media provider create|verify` records an explicit demand trigger, exact `provider_calls`/`provider_execution`/`dry_run`/`submit` state, and identity-bound local asset provenance. It never calls a provider, and integrity verification never proves visual or implementation correctness.
 
 ## Ueye Capture And Compare
 
@@ -365,5 +369,9 @@ Generated media can guide visual direction, but it cannot prove the implemented 
 ```bash
 yam media proof --requested --attempted --output ./generated.png --wait-loop --json
 ```
+
+When real repeated media work needs an execution boundary, prepare bounded JSON asset specs and opt in explicitly. Dry-run receipts require zero calls/no submit; execution receipts require a submitted call plus a provider-provenance output. Both the receipt and local asset paths are confined below the project root and can be re-read with `yam media provider verify`. The existing `yam media proof` command remains the lightweight default.
+
+For completion evidence, `yam verification closure create` consumes small selected/executed/skipped/truncated JSON specs. It snapshots actual Git status before writing under `.yam/verification/`; declare every expected changed path with repeated `--changed-file`, then use `verify` to detect semantic, digest, or current Git path-set drift. `current_git_scope_drift` means checks must be rerun against the final state and a new immutable receipt must be created. This remains an explicit artifact, not an always-on hook or command runner.
 
 For agent-driven visual QA, prefer the Codex in-app Browser plugin. Use the user's Chrome browser only when explicitly requested or when Chrome-only session/profile state is required.

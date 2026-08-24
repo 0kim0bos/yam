@@ -44,6 +44,8 @@ const baseOptions = {
 
 try {
   assertStableManifestAcrossLocales();
+  await assertSourceBoundaryHardening();
+  await assertCleanupIdentityHardening();
   const userQuick = '# user-owned quick\n';
   mkdirSync(join(destination, 'quick'), { recursive: true });
   writeFileSync(join(destination, 'quick', 'SKILL.md'), userQuick);
@@ -105,6 +107,8 @@ try {
   const rollbackInspection = await inspectSkillInstallation(baseOptions);
   assert(rollbackInspection.ok, `rollback should restore a verified installation: ${rollbackInspection.issues.join('; ')}`);
   assertTransactionClean(destination, 'rollback');
+
+  await assertRollbackRemovalIdentity(baseOptions);
 
   const receiptBeforeInstallRace = readFileSync(firstInstall.receiptPath, 'utf8');
   const installRaceFailure = await failureOf(() => installSkillSetTransactional({
@@ -271,6 +275,35 @@ try {
   assert(nestedSymlinkFailure.includes('unsupported install tree entry'), 'nested skill symlink should fail closed');
   assert(readFileSync(nestedReference, 'utf8') === 'external nested reference', 'nested symlink target must be preserved');
   assertTransactionClean(nestedSymlinkDestination, 'nested symlink');
+
+  const mutationSymlinkDestination = join(root, 'mutation-symlink-swap');
+  const mutationSymlinkOptions = { ...baseOptions, destination: mutationSymlinkDestination };
+  await installSkillSetTransactional(mutationSymlinkOptions);
+  const mutationExternalTarget = join(root, 'mutation-symlink-external');
+  mkdirSync(mutationExternalTarget, { recursive: true });
+  writeFileSync(join(mutationExternalTarget, 'SKILL.md'), 'external mutation target\n');
+  const mutationSymlinkFailure = await failureOf(() => installSkillSetTransactional({
+    ...mutationSymlinkOptions,
+    failpoint(event) {
+      if (event.phase === 'before-mutation') {
+        rmSync(join(mutationSymlinkDestination, 'quick'), { recursive: true, force: true });
+        symlinkSync(mutationExternalTarget, join(mutationSymlinkDestination, 'quick'));
+      }
+    }
+  }));
+  assert(
+    mutationSymlinkFailure.includes('source must be a regular directory'),
+    'a final path symlink swapped in at the mutation boundary must fail closed'
+  );
+  assert(
+    readFileSync(join(mutationExternalTarget, 'SKILL.md'), 'utf8') === 'external mutation target\n',
+    'a mutation-boundary symlink failure must not change the external target'
+  );
+  assert(
+    lstatSync(join(mutationSymlinkDestination, 'quick')).isSymbolicLink(),
+    'the raced symlink itself must be preserved for operator inspection'
+  );
+  assertTransactionClean(mutationSymlinkDestination, 'mutation symlink swap');
 
   const uninstallDestination = join(root, 'uninstall-clean');
   const uninstallMirror = join(root, 'uninstall-clean-mirror');
@@ -461,6 +494,182 @@ function assertStableManifestAcrossLocales() {
     ]),
     'install manifest should use stable ordinal path ordering'
   );
+}
+
+async function assertSourceBoundaryHardening() {
+  const parentSymlinkSource = join(root, 'source-parent-symlink');
+  const externalSkills = join(root, 'source-parent-symlink-external-skills');
+  mkdirSync(join(externalSkills, 'quick'), { recursive: true });
+  writeFileSync(join(externalSkills, 'quick', 'SKILL.md'), '---\nname: quick\n---\n# external source\n');
+  mkdirSync(join(parentSymlinkSource, 'references'), { recursive: true });
+  writeFileSync(join(parentSymlinkSource, 'references', 'quick.md'), '# reference\n');
+  symlinkSync(externalSkills, join(parentSymlinkSource, 'skills'));
+  const parentSymlinkDestination = join(root, 'source-parent-symlink-destination');
+  const parentSymlinkFailure = await failureOf(() => installSkillSetTransactional({
+    sourceRoot: parentSymlinkSource,
+    destination: parentSymlinkDestination,
+    packageName: 'yam-source-boundary-probe',
+    version: '1.0.0',
+    skills: ['quick']
+  }));
+  assert(
+    parentSymlinkFailure.includes('symlinked parent path segment'),
+    'a symlinked source parent path must fail closed'
+  );
+  assert(
+    readFileSync(join(externalSkills, 'quick', 'SKILL.md'), 'utf8').includes('# external source'),
+    'a rejected source parent symlink must not mutate its external target'
+  );
+  assert(!existsSync(join(parentSymlinkDestination, 'quick')), 'a rejected source parent symlink must not install a skill');
+  assertTransactionClean(parentSymlinkDestination, 'source parent symlink');
+
+  const changedSource = join(root, 'source-identity-change');
+  mkdirSync(join(changedSource, 'skills', 'quick'), { recursive: true });
+  mkdirSync(join(changedSource, 'references'), { recursive: true });
+  const changedSkill = join(changedSource, 'skills', 'quick', 'SKILL.md');
+  writeFileSync(changedSkill, '---\nname: quick\n---\n# original source identity\n');
+  writeFileSync(join(changedSource, 'references', 'quick.md'), '# reference\n');
+  const changedDestination = join(root, 'source-identity-change-destination');
+  const changedFailure = await failureOf(() => installSkillSetTransactional({
+    sourceRoot: changedSource,
+    destination: changedDestination,
+    packageName: 'yam-source-identity-probe',
+    version: '1.0.0',
+    skills: ['quick'],
+    failpoint(event) {
+      if (event.phase === 'after-stage') {
+        rmSync(changedSkill, { force: true });
+        writeFileSync(changedSkill, '---\nname: quick\n---\n# replaced source identity\n');
+      }
+    }
+  }));
+  assert(
+    changedFailure.includes('post-install verification failed'),
+    'a source identity replacement after staging must invalidate the transaction'
+  );
+  assert(!existsSync(join(changedDestination, 'quick')), 'source identity drift must roll back the staged skill');
+  assert(
+    !existsSync(join(changedDestination, INSTALL_RECEIPT_NAME)),
+    'source identity drift must roll back the staged receipt'
+  );
+  assertTransactionClean(changedDestination, 'source identity change');
+}
+
+async function assertRollbackRemovalIdentity(options) {
+  const skillSwapDestination = join(root, 'rollback-skill-identity-swap');
+  const skillSwapOptions = { ...options, destination: skillSwapDestination };
+  await installSkillSetTransactional(skillSwapOptions);
+  const replacementSkill = '# user replacement after installed skill swap\n';
+  const skillSwapFailure = await failureOf(() => installSkillSetTransactional({
+    ...skillSwapOptions,
+    failpoint(event) {
+      if (event.phase === 'skill-installed' && event.skill === 'quick') {
+        rmSync(join(skillSwapDestination, 'quick'), { recursive: true, force: true });
+        mkdirSync(join(skillSwapDestination, 'quick'), { recursive: true });
+        writeFileSync(join(skillSwapDestination, 'quick', 'SKILL.md'), replacementSkill);
+        throw new Error('forced installed skill identity swap');
+      }
+    }
+  }));
+  assert(
+    skillSwapFailure.includes('rollback removal identity mismatch'),
+    'rollback must reject a different directory installed at a recorded skill path'
+  );
+  assert(
+    readFileSync(join(skillSwapDestination, 'quick', 'SKILL.md'), 'utf8') === replacementSkill,
+    'rollback must preserve a replacement directory whose identity is not yam-recorded'
+  );
+  assertRecoveryArtifactPreserved(skillSwapDestination, 'installed skill identity swap');
+
+  const receiptSwapDestination = join(root, 'rollback-receipt-identity-swap');
+  const receiptSwapOptions = { ...options, destination: receiptSwapDestination };
+  await installSkillSetTransactional(receiptSwapOptions);
+  const replacementReceipt = '{"owner":"user replacement"}\n';
+  const receiptSwapFailure = await failureOf(() => installSkillSetTransactional({
+    ...receiptSwapOptions,
+    failpoint(event) {
+      if (event.phase === 'receipt-installed') {
+        rmSync(join(receiptSwapDestination, INSTALL_RECEIPT_NAME), { force: true });
+        writeFileSync(join(receiptSwapDestination, INSTALL_RECEIPT_NAME), replacementReceipt, { mode: 0o600 });
+        throw new Error('forced installed receipt identity swap');
+      }
+    }
+  }));
+  assert(
+    receiptSwapFailure.includes('rollback removal identity mismatch'),
+    'rollback must reject a different file installed at the recorded receipt path'
+  );
+  assert(
+    readFileSync(join(receiptSwapDestination, INSTALL_RECEIPT_NAME), 'utf8') === replacementReceipt,
+    'rollback must preserve a replacement receipt whose identity is not yam-recorded'
+  );
+  assertRecoveryArtifactPreserved(receiptSwapDestination, 'installed receipt identity swap');
+}
+
+async function assertCleanupIdentityHardening() {
+  const transactionDestination = join(root, 'transaction-cleanup-identity-swap');
+  const replacementTransactionBytes = 'user transaction replacement\n';
+  let replacementTransactionPath = '';
+  const transactionFailure = await failureOf(() => installSkillSetTransactional({
+    ...baseOptions,
+    destination: transactionDestination,
+    failpoint(event) {
+      if (event.phase === 'after-stage') {
+        const transactionName = readdirSync(transactionDestination)
+          .find((name) => name.startsWith('.yam-flow-install-'));
+        assert(transactionName, 'transaction cleanup identity test must find the active transaction directory');
+        replacementTransactionPath = join(transactionDestination, transactionName);
+        rmSync(replacementTransactionPath, { recursive: true, force: true });
+        mkdirSync(replacementTransactionPath, { recursive: true });
+        writeFileSync(join(replacementTransactionPath, 'user.txt'), replacementTransactionBytes);
+        throw new Error('forced transaction cleanup identity swap');
+      }
+    }
+  }));
+  assert(
+    transactionFailure.includes('install transaction cleanup identity mismatch'),
+    'transaction cleanup must reject a different directory at its recorded path'
+  );
+  assert(
+    readFileSync(join(replacementTransactionPath, 'user.txt'), 'utf8') === replacementTransactionBytes,
+    'transaction cleanup must preserve a replacement directory whose identity is not yam-recorded'
+  );
+  assert(!existsSync(join(transactionDestination, INSTALL_LOCK_NAME)), 'transaction cleanup failure must still release the owned lock');
+
+  const lockDestination = join(root, 'lock-cleanup-identity-swap');
+  const replacementLockBytes = 'user lock replacement\n';
+  const lockFailure = await failureOf(() => installSkillSetTransactional({
+    ...baseOptions,
+    destination: lockDestination,
+    failpoint(event) {
+      if (event.phase === 'after-stage') {
+        const lockPath = join(lockDestination, INSTALL_LOCK_NAME);
+        rmSync(lockPath, { force: true });
+        writeFileSync(lockPath, replacementLockBytes, { mode: 0o600 });
+        throw new Error('forced lock cleanup identity swap');
+      }
+    }
+  }));
+  assert(
+    lockFailure.includes('install lock cleanup identity mismatch'),
+    'lock cleanup must reject a different file at its recorded path'
+  );
+  assert(
+    readFileSync(join(lockDestination, INSTALL_LOCK_NAME), 'utf8') === replacementLockBytes,
+    'lock cleanup must preserve a replacement file whose identity is not yam-recorded'
+  );
+  assert(
+    !readdirSync(lockDestination).some((name) => name.startsWith('.yam-flow-install-')),
+    'lock cleanup identity failure must still remove the owned transaction directory'
+  );
+}
+
+function assertRecoveryArtifactPreserved(destination, label) {
+  assert(
+    readdirSync(destination).some((name) => name.startsWith('.yam-flow-install-') && name !== INSTALL_RECEIPT_NAME),
+    `${label} must retain a recovery artifact for operator inspection`
+  );
+  assert(!existsSync(join(destination, INSTALL_LOCK_NAME)), `${label} must still release the install lock`);
 }
 
 function digestManifestInStoredOrder(files) {

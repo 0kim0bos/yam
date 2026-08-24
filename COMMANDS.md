@@ -174,6 +174,36 @@ yam ueye production phase verify --receipt-path .yam/ueye/design-production/camp
 
 Canvas artifact specs use `{ "id", "role", "file_path" }`; gallery specs include `{ "id", "role", "provenance", "revision_ref", "dimensions", "sha256", "completion_state", "final_path" }`. A revision reference also carries the archive receipt's exact `archived_at`, which must match its Ueye manifest entry. All project paths are relative and confined; Canvas session/render paths and the single revision state are fixed under the session-specific `.yam/ueye/design-production/` directory. Revision init binds that state to the closed `request_changes` Canvas path and digest; record/show/finalize reject alternate state files, and record immediately checks the source Canvas comment plus the current archive-time boundary. Demand is operator-asserted but must be recorded before Canvas creation and match at finalize. Canvas source hashes and exact anchors are rechecked before comment/close/finalize. Every phase round names its source Canvas comment and supplies at least one newly archived Ueye revision created within that round's review window; gallery artifacts bind to the final round. Ueye asset/revision hashes are rechecked, a protected `do_not_replace` asset requires `intent: "preserve"`, and `edit_copy` requires `allowed_for_edit: true`. The phase receipt stores upstream and canonical receipt digests, and `phase verify` re-reads their semantics as well as detecting later byte changes. Overall phase truth remains `partial`, and gallery visual, license, and implementation claims always remain `not_verified`.
 
+## Verification Closure And Media Provider Receipts
+
+These are explicit, immutable artifacts. They do not run verification commands or contact media providers.
+
+Prepare one JSON file per selected/executed/skipped/truncated command record, then repeat the corresponding flag:
+
+```json
+{"id":"typecheck","command":"npm run typecheck","scope":"affected","required":true}
+```
+
+```json
+{"id":"typecheck","command":"npm run typecheck","exit_code":0,"evidence":"exit 0 observed in the final worktree"}
+```
+
+```bash
+yam verification closure create --root /path/to/project --receipt-path .yam/verification/final.json --planned-scope affected --changed-file src/example.ts --selected-spec ./selected.json --executed-spec ./executed.json --json
+yam verification closure verify --root /path/to/project --receipt-path .yam/verification/final.json --json
+```
+
+`create` snapshots the Git top-level dirty, staged, and untracked path set. Every observed path must be declared; unplanned paths, missing declared paths, unavailable Git scope, missing required execution, and release-sensitive paths without a required release-scope check fail closed. `verify` re-reads the current Git path set as well as the receipt digest. A later path-set change returns `current_git_scope_drift`; rerun checks against the final state and create a new receipt path because receipts are non-overwriting. Content-only changes to an already-dirty path do not alter the Git path set, and command results remain operator-asserted `partial` evidence.
+
+Media provider receipts are optional and should be used only after real execution-tracking demand exists. Each asset spec contains `{ "id", "role", "file_path", "provenance": { "kind", "source_ref", "recorded_at" } }`.
+
+```bash
+yam media provider create --root /path/to/project --receipt-path .yam/media/dry-run.json --demand-kind media_generation --demand-evidence "coordinated asset work needs an execution boundary" --provider example --model example-v1 --provider-calls 0 --dry-run --asset-spec ./input-asset.json --json
+yam media provider verify --root /path/to/project --receipt-path .yam/media/dry-run.json --json
+```
+
+A dry run requires zero calls, no execution, and no submit. Explicit execution requires `--provider-execution --submit`, at least one call, and a provider-provenance output asset. Local asset and receipt integrity is verified, but provider execution, visual quality, and implementation correctness are not independently proven.
+
 ## Bounded Promotion
 
 ```bash

@@ -53,6 +53,7 @@ Tasks:
 - Detect common commands: typecheck, lint, test, build. Done.
 - Map changed files to likely checks. Done: dirty, staged, and untracked paths now map to focused rules with confidence, reason, fallback, and available commands.
 - Keep this advisory, not mandatory. Done.
+- Add an explicit final-scope closure artifact without turning the detector into an auto-runner. Done: immutable receipts bind current Git scope, release escalation, selected/executed command separation, skipped/truncated reasons, and partial operator-asserted truth.
 
 ### 4. Token Budget Reporter
 
@@ -76,6 +77,7 @@ Tasks:
 - Add local reference asset provenance/protection manifest and non-overwriting revision history. Done.
 - Add optional browser/screenshot capture notes.
 - Keep image generation optional, never a gate.
+- Add an optional provider-execution boundary only when real media demand exists. Done: exact fail-closed execution fields, confined hash-bound local assets/provenance, and verify/tamper detection without provider calls or correctness claims.
 
 ### 6. Deep Runtime Workflow
 
@@ -94,7 +96,7 @@ Goal: make install/update simpler.
 
 Tasks:
 
-- Add symlink-friendly local install.
+- Reconsider symlink-friendly local install only if Node exposes a safe descriptor-relative traversal boundary or an equivalent proven design. Deferred: current package source, `YAM_SKILLS_HOME`, and managed-tree paths intentionally reject symlink aliases and symlinked parent segments.
 - Add version command. Done.
 - Add staged transactional install, rollback, receipt, and drift-aware status. Done.
 - Add checked component updates for yam, Scrapling, and Insane Search with explicit authorization, receipts, and rollback guidance. Done.

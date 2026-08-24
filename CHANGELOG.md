@@ -2,6 +2,28 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.7.0 - 2026-08-24
+
+### Added
+
+- Added immutable final-scope verification closure receipts that bind declared work to the current Git dirty, staged, and untracked path set, promote release-sensitive changes, and separate selected checks from operator-declared execution evidence.
+- Added optional demand-gated media provider receipts with exact call/execution/dry-run/submit state plus confined, identity-bound local asset provenance.
+
+### Improved
+
+- Skill installation and removal now use no-follow regular-file access where available, verify descriptor and path identity, and revalidate parent-directory identity around read, copy, move, rollback, and mutation boundaries.
+- Verification closure and media receipt reads and immutable writes apply confined path, non-symlink parent, descriptor identity, size, and digest checks; media asset hashing is sequential and bounded.
+
+### Security
+
+- Symlinked install source/destination segments, raced path identities, rollback or cleanup targets whose recorded type/device/inode no longer match, unplanned final Git paths, unavailable Git scope, receipt path escapes, local asset symlinks, and incoherent provider-execution claims fail closed.
+- Node does not expose descriptor-relative `openat` traversal, and arbitrary Windows reparse-point coverage remains unverified; these limits are documented instead of overstated.
+
+### Verification
+
+- Focused install-transaction and phase-adoption smokes cover source/destination race handling, rollback preservation, Git-scope drift, immutable/tampered receipts, bounded media assets, and packaged CLI compatibility.
+- Release checks include typecheck, clean build/self-verification, distribution freshness, package boundary/secrets, registry version availability, and CLI smoke.
+
 ## v2.6.0 - 2026-08-07
 
 ### Added

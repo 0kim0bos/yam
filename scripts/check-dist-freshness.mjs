@@ -10,6 +10,8 @@ const pairs = [
   ['src/lib/gate-result.ts', 'dist/lib/gate-result.js'],
   ['src/lib/benchmark-promotion.ts', 'dist/lib/benchmark-promotion.js'],
   ['src/lib/design-production.ts', 'dist/lib/design-production.js'],
+  ['src/lib/verification-closure.ts', 'dist/lib/verification-closure.js'],
+  ['src/lib/media-provider-receipt.ts', 'dist/lib/media-provider-receipt.js'],
   ['src/lib/trust-kernel.ts', 'dist/lib/trust-kernel.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
 ];

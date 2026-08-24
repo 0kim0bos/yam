@@ -67,6 +67,14 @@ import {
   verifyStrictGateResult
 } from '../lib/gate-result.js';
 import {
+  createVerificationClosureReceipt,
+  verifyVerificationClosureReceiptFile
+} from '../lib/verification-closure.js';
+import {
+  createMediaProviderReceipt,
+  verifyMediaProviderReceipt
+} from '../lib/media-provider-receipt.js';
+import {
   BoundedInputError,
   GENERAL_STDIN_MAX_BYTES,
   HOOK_STDIN_MAX_BYTES,
@@ -215,6 +223,7 @@ Usage:
   yam mission queue [--agent-id id] [--scope text] [--changed file] [--verification-hint text] [--json]
   yam mission receipt [--thread-id id] [--role reviewer] [--lifecycle stopped] [--outcome passed] [--evidence text] [--json]
   yam mission gate [--expected-thread id] [--receipt file] [--json]
+  yam verification closure <create|verify> [options]
   yam update check [--json]
   yam update apply --component yam|scrapling|insane-search [--json]
   yam update apply --all [--json]
@@ -1412,6 +1421,8 @@ function buildCapabilityMatrix(readinessRows = [], liteHook: AnyRecord = {}, stu
     capabilityRow('bounded_design_revisions', 'beta', 'ready', 'maximum two reviewer-finding-backed revision rounds', 'round state does not replace Ueye artifact hash verification'),
     capabilityRow('final_gallery_manifest', 'beta', 'ready', 'path-confined hash-verified packaging manifest', 'gallery completeness does not prove visual or license correctness'),
     capabilityRow('demand_gated_design_production', 'beta', 'ready', 'pre-recorded operator trigger, Canvas, chronological bounded revisions, gallery, and digest-verifiable phase receipt', 'demand evidence is operator-asserted and overall phase truth remains partial'),
+    capabilityRow('final_scope_verification_closure', 'beta', 'ready', 'explicit Git-scope and selected/executed command receipt with digest verification', 'does not execute checks; unavailable or unplanned Git scope blocks and successful operator evidence remains partial'),
+    capabilityRow('media_provider_execution_receipt', 'beta', 'ready', 'optional demand-gated exact execution boundary plus identity-bound local assets', 'never contacts providers and does not prove visual or implementation correctness'),
     capabilityRow('yam_lite_hook', 'beta', String(liteHook.state || readiness.get('yam-lite hook') || 'unknown'), 'optional hook health inspection', 'advisory only; disabled unless explicitly enabled'),
     capabilityRow('study_note_hook', 'beta', String(studyNoteHook.state || readiness.get('yam-study-note hook') || 'unknown'), 'optional prompt and bounded Stop check', 'does not generate the Study Note or run verification')
   ];
@@ -3158,13 +3169,53 @@ async function readProductionSpecs(value: unknown, label: string) {
   return specs;
 }
 
+async function readOptionalSpecs(value: unknown, label: string) {
+  const files = arrayFlag(value);
+  const specs: AnyRecord[] = [];
+  for (const file of files) specs.push(await readBoundedJsonSpec(path.resolve(expandHome(file)), label));
+  return specs;
+}
+
 async function readBoundedJsonSpec(file: string, label: string) {
-  const stat = await fsp.stat(file);
-  if (!stat.isFile()) throw new Error(`${label} must be a regular file: ${file}`);
-  if (stat.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
-  const value = JSON.parse(await fsp.readFile(file, 'utf8'));
+  const before = await fsp.lstat(file);
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular non-symlink file: ${file}`);
+  if (before.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
+  const noFollow = process.platform !== 'win32' && typeof fs.constants.O_NOFOLLOW === 'number'
+    ? fs.constants.O_NOFOLLOW
+    : 0;
+  const handle = await fsp.open(file, fs.constants.O_RDONLY | noFollow);
+  let text = '';
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile() || !sameSpecFileIdentity(before, opened)) throw new Error(`${label} identity changed before open: ${file}`);
+    if (opened.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
+    const bytes = Buffer.alloc(opened.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (!bytesRead) throw new Error(`${label} became shorter while reading: ${file}`);
+      offset += bytesRead;
+    }
+    const openedAfter = await handle.stat();
+    const after = await fsp.lstat(file);
+    if (!sameSpecFileIdentity(opened, openedAfter) || openedAfter.size !== opened.size
+      || after.isSymbolicLink() || !after.isFile() || !sameSpecFileIdentity(opened, after)) {
+      throw new Error(`${label} changed size or identity while reading: ${file}`);
+    }
+    text = bytes.toString('utf8');
+  } finally {
+    await handle.close();
+  }
+  const value = JSON.parse(text);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must contain one JSON object: ${file}`);
   return value;
+}
+
+function sameSpecFileIdentity(
+  left: { dev: number | bigint; ino: number | bigint },
+  right: { dev: number | bigint; ino: number | bigint }
+) {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 async function existingProductionPath(root: string, value: string, label: string) {
@@ -3738,10 +3789,77 @@ function normalizeUeyeComparisonResult(value = '') {
   return 'not-verified';
 }
 
+async function verification(args = []) {
+  const surface = String(args[0] || 'help');
+  const action = String(args[1] || 'help');
+  if (surface === 'help' || action === 'help' || surface === '--help' || surface === '-h') return verificationUsage();
+  if (surface !== 'closure') {
+    console.error(`unknown verification command: ${surface}`);
+    return verificationUsage();
+  }
+  const flags = parseSimpleFlags(args.slice(2), new Set([
+    'root', 'receipt-path', 'planned-scope', 'changed-file', 'selected-spec',
+    'executed-spec', 'skipped-spec', 'truncated-spec', 'json'
+  ]));
+  const root = path.resolve(expandHome(flags.root || process.cwd()));
+  try {
+    let result: AnyRecord;
+    if (action === 'create') {
+      requireProductionFlags(flags, ['receipt_path', 'planned_scope', 'changed_file', 'selected_spec']);
+      result = await createVerificationClosureReceipt({
+        root,
+        receipt_path: String(flags.receipt_path),
+        planned_scope: String(flags.planned_scope) as 'affected' | 'release',
+        changed_files: arrayFlag(flags.changed_file),
+        selected_commands: await readProductionSpecs(flags.selected_spec, 'selected command spec') as any,
+        executed_commands: await readOptionalSpecs(flags.executed_spec, 'executed command spec') as any,
+        skipped: await readOptionalSpecs(flags.skipped_spec, 'skipped command spec') as any,
+        truncated: await readOptionalSpecs(flags.truncated_spec, 'truncated output spec') as any
+      });
+    } else if (action === 'verify') {
+      requireProductionFlags(flags, ['receipt_path']);
+      result = await verifyVerificationClosureReceiptFile({ root, receipt_path: String(flags.receipt_path) });
+    } else {
+      throw new Error(`unknown verification closure command: ${action}`);
+    }
+    printJsonOrHuman(result, Boolean(flags.json), 'Verification closure');
+    if (result.truth_status === 'blocked') process.exitCode = 1;
+  } catch (error) {
+    const result = {
+      schema: 'yam.verification-closure-error.v1',
+      action,
+      status: 'blocked',
+      reason: summarizeCheckOutput(errorMessage(error)),
+      next_action: 'repair changed-file scope, selected/executed command evidence, skipped/truncated reasons, or receipt integrity before retrying',
+      truth_status: 'blocked'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Verification closure');
+    process.exitCode = 1;
+  }
+}
+
+function verificationUsage() {
+  console.log(`yam verification closure
+
+Explicit, immutable completion receipts. Create records operator-supplied results; it does not execute commands or replace advisory yam detect output.
+
+Usage:
+  yam verification closure create [--root dir] --receipt-path .yam/verification/closure.json --planned-scope affected|release --changed-file file --selected-spec file [--executed-spec file] [--skipped-spec file] [--truncated-spec file] [--json]
+  yam verification closure verify [--root dir] --receipt-path .yam/verification/closure.json [--json]
+
+Selected spec: {"id":"typecheck","command":"npm run typecheck","scope":"affected","required":true}
+Executed spec: {"id":"typecheck","command":"npm run typecheck","exit_code":0,"evidence":"exit 0 observed"}
+Skipped/truncated spec: {"check_id":"browser","reason":"no UI surface changed"}
+
+Repeat spec and changed-file flags as needed. Release-sensitive paths promote affected to release and require an executed required release-scope command. Required selected commands cannot be skipped. Digest verification does not upgrade operator-declared execution results beyond partial truth.
+`);
+}
+
 async function media(args = []) {
   const subcommand = args[0] || 'help';
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return mediaUsage();
   if (subcommand === 'proof') return mediaProof(args.slice(1));
+  if (subcommand === 'provider') return mediaProvider(args.slice(1));
   console.error(`unknown media command: ${subcommand}`);
   return mediaUsage();
 }
@@ -3753,7 +3871,61 @@ Opt-in media generation proof helpers. Generated media can support visual direct
 
 Usage:
   yam media proof [--tool name] [--requested] [--attempted] [--output file] [--wait-loop] [--blocked-reason text] [--json]
+  yam media provider create [--root dir] --receipt-path .yam/media/run.json --demand-kind media_generation|media_transformation --demand-evidence text --provider name --model name --provider-calls n [--provider-execution] [--dry-run] [--submit] --asset-spec file [--json]
+  yam media provider verify [--root dir] --receipt-path .yam/media/run.json [--json]
+
+Provider receipts are optional and demand-gated. This command hashes local assets and records an operator-asserted boundary; it never contacts a provider. Dry runs require zero calls and no submit. Explicit execution requires at least one call, submit, and a provider-provenance output asset.
 `);
+}
+
+async function mediaProvider(args = []) {
+  const action = String(args[0] || 'help');
+  if (action === 'help' || action === '--help' || action === '-h') return mediaUsage();
+  const flags = parseSimpleFlags(args.slice(1), new Set([
+    'root', 'receipt-path', 'demand-kind', 'demand-evidence', 'provider', 'model',
+    'provider-calls', 'provider-execution', 'dry-run', 'submit', 'asset-spec', 'json'
+  ]));
+  const root = path.resolve(expandHome(flags.root || process.cwd()));
+  try {
+    let result: AnyRecord;
+    if (action === 'create') {
+      requireProductionFlags(flags, [
+        'receipt_path', 'demand_kind', 'demand_evidence', 'provider', 'model', 'provider_calls', 'asset_spec'
+      ]);
+      result = await createMediaProviderReceipt({
+        root,
+        receipt_path: String(flags.receipt_path),
+        demand_trigger: {
+          kind: String(flags.demand_kind) as 'media_generation' | 'media_transformation',
+          evidence: String(flags.demand_evidence)
+        },
+        provider: { name: String(flags.provider), model: String(flags.model) },
+        provider_calls: Number(flags.provider_calls),
+        provider_execution: Boolean(flags.provider_execution),
+        dry_run: Boolean(flags.dry_run),
+        submit: Boolean(flags.submit),
+        assets: await readProductionSpecs(flags.asset_spec, 'media asset spec') as any
+      });
+    } else if (action === 'verify') {
+      requireProductionFlags(flags, ['receipt_path']);
+      result = await verifyMediaProviderReceipt({ root, receipt_path: String(flags.receipt_path) });
+    } else {
+      throw new Error(`unknown media provider command: ${action}`);
+    }
+    printJsonOrHuman(result, Boolean(flags.json), 'Media provider receipt');
+    if (result.truth_status === 'blocked') process.exitCode = 1;
+  } catch (error) {
+    const result = {
+      schema: 'yam.media-provider-receipt-error.v1',
+      action,
+      status: 'blocked',
+      reason: summarizeCheckOutput(errorMessage(error)),
+      next_action: 'repair the demand, exact execution fields, confined asset provenance, or receipt integrity before retrying',
+      truth_status: 'blocked'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Media provider receipt');
+    process.exitCode = 1;
+  }
 }
 
 async function mediaProof(args = []) {
@@ -4257,7 +4429,7 @@ function parseSimpleFlags(args = [], allowed = new Set<string>()) {
     const key = rawKey.slice(2);
     if (allowed.size && !allowed.has(key)) continue;
     const normalizedKey = key.replace(/-/g, '_');
-    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'invented-metric', 'placeholder-copy', 'generic-visual', 'operator-provided', 'do-not-replace', 'allowed-for-edit', 'replace'].includes(key)) {
+    if (['json', 'full-page', 'requested', 'attempted', 'available', 'wait-loop', 'cleanup-checked', 'cleanup-observed', 'left-running-intentionally', 'strict', 'preserved-state', 'states-checked', 'mobile-checked', 'responsive-checked', 'contrast-checked', 'accessibility-checked', 'cta-checked', 'direction-locked', 'reference-read', 'invented-metric', 'placeholder-copy', 'generic-visual', 'operator-provided', 'do-not-replace', 'allowed-for-edit', 'replace', 'provider-execution', 'dry-run', 'submit'].includes(key)) {
       flags[normalizedKey] = true;
       continue;
     }
@@ -5812,6 +5984,7 @@ function showRequestedHelp(args: string[]) {
     loop: loopUsage,
     ueye: ueyeUsage,
     media: mediaUsage,
+    verification: verificationUsage,
     runtime: runtimeUsage,
     mission: missionUsage,
     update: updateUsage,
@@ -5842,6 +6015,7 @@ async function main() {
   if (command === 'loop') return loop(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'media') return media(process.argv.slice(3));
+  if (command === 'verification') return verification(process.argv.slice(3));
   if (command === 'runtime') return runtime(process.argv.slice(3));
   if (command === 'mission') return mission(process.argv.slice(3));
   if (command === 'update') return updateCommand(process.argv.slice(3));
