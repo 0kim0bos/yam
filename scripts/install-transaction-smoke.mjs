@@ -124,7 +124,12 @@ try {
   assert(firstInstall.receipt.package.version === packageJson.version, 'install receipt version mismatch');
   assert(firstInstall.receipt.integrity.file_count > skills.length, 'install receipt file manifest is incomplete');
   assert(readFileSync(join(destination, 'quick', 'SKILL.md'), 'utf8') !== userQuick, 'explicit active replacement should install yam skill');
-  assert((statSync(firstInstall.receiptPath).mode & 0o077) === 0, 'install receipt should not grant group or other permissions');
+  const receiptStat = statSync(firstInstall.receiptPath);
+  if (process.platform === 'win32') {
+    assert(receiptStat.isFile(), 'install receipt should remain a regular file on Windows');
+  } else {
+    assert((receiptStat.mode & 0o077) === 0, 'install receipt should not grant group or other permissions');
+  }
   assertPreservedEntries(destination, mirror);
 
   const firstInspection = await inspectSkillInstallation(baseOptions);
