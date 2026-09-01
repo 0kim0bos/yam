@@ -711,6 +711,42 @@ async function assertCleanupIdentityHardening() {
     !readdirSync(lockDestination).some((name) => name.startsWith('.yam-flow-install-')),
     'lock cleanup identity failure must still remove the owned transaction directory'
   );
+
+  const uninstallTransactionDestination = join(root, 'uninstall-transaction-cleanup-identity-swap');
+  const uninstallTransactionOptions = {
+    ...baseOptions,
+    destination: uninstallTransactionDestination,
+    codexMirror: undefined
+  };
+  await installSkillSetTransactional(uninstallTransactionOptions);
+  const replacementUninstallBytes = 'user uninstall transaction replacement\n';
+  let replacementUninstallPath = '';
+  const uninstallResult = await uninstallSkillSetSafely({
+    ...uninstallTransactionOptions,
+    failpoint(event) {
+      if (event.phase === 'before-verify') {
+        const transactionName = readdirSync(uninstallTransactionDestination)
+          .find((name) => name.startsWith('.yam-flow-install-uninstall-'));
+        assert(transactionName, 'uninstall cleanup identity test must find the active transaction directory');
+        replacementUninstallPath = join(uninstallTransactionDestination, transactionName);
+        rmSync(replacementUninstallPath, { recursive: true, force: true });
+        mkdirSync(replacementUninstallPath, { recursive: true });
+        writeFileSync(join(replacementUninstallPath, 'user.txt'), replacementUninstallBytes);
+      }
+    }
+  });
+  assert(
+    uninstallResult.cleanupWarnings.some((warning) => warning.includes('uninstall transaction cleanup identity mismatch')),
+    'uninstall cleanup must reject a different directory at its recorded path'
+  );
+  assert(
+    readFileSync(join(replacementUninstallPath, 'user.txt'), 'utf8') === replacementUninstallBytes,
+    'uninstall cleanup must preserve a replacement directory whose identity is not yam-recorded'
+  );
+  assert(
+    !existsSync(join(uninstallTransactionDestination, INSTALL_LOCK_NAME)),
+    'uninstall cleanup identity failure must still release the owned lock'
+  );
 }
 
 function assertRecoveryArtifactPreserved(destination, label) {

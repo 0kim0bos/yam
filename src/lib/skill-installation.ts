@@ -8,6 +8,7 @@ export const INSTALL_RECEIPT_NAME = '.yam-flow-install-receipt.json';
 export const INSTALL_LOCK_NAME = '.yam-flow-install.lock';
 export const INSTALL_RECEIPT_SCHEMA = 'yam.install-receipt.v1';
 export const INSTALL_TRANSACTION_PREFIX = '.yam-flow-install-';
+const TRANSACTION_OWNER_MARKER = '.yam-flow-transaction-owner';
 
 export type InstallFileDigest = {
   path: string;
@@ -190,6 +191,12 @@ type InstalledEntry = {
   kind: 'directory' | 'file';
   birthtimeNs?: bigint;
   handle?: fsp.FileHandle;
+  contentsSha256?: string;
+  treeDigest?: string;
+  ownershipMarker?: {
+    name: string;
+    sha256: string;
+  };
 };
 
 function message(error: unknown) {
@@ -1130,10 +1137,12 @@ async function acquireInstallLock(destination: string) {
   }
   let lockIdentity: InstalledEntry | undefined;
   try {
+    const lockContents = JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }, null, 2);
+    await handle.writeFile(lockContents);
     const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) throw new Error(`install lock must be a regular file: ${lockPath}`);
     lockIdentity = await captureLockIdentity(lockPath, opened);
-    await handle.writeFile(JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }, null, 2));
+    lockIdentity.contentsSha256 = createHash('sha256').update(lockContents).digest('hex');
     await revalidateRegularParentPath(destinationIdentity, 'skill destination');
     const current = await fsp.lstat(lockPath, { bigint: true });
     if (
@@ -1225,7 +1234,12 @@ async function removeInstalledEntries(entries: InstalledEntry[]) {
   return errors;
 }
 
-async function captureRecordedEntry(target: string, kind: InstalledEntry['kind'], label: string): Promise<InstalledEntry> {
+async function captureRecordedEntry(
+  target: string,
+  kind: InstalledEntry['kind'],
+  label: string,
+  ownershipMarker?: InstalledEntry['ownershipMarker']
+): Promise<InstalledEntry> {
   const noFollow = process.platform !== 'win32' && typeof fsConstants.O_NOFOLLOW === 'number'
     ? fsConstants.O_NOFOLLOW
     : 0;
@@ -1247,7 +1261,21 @@ async function captureRecordedEntry(target: string, kind: InstalledEntry['kind']
     if (!typeMatches || stat.birthtimeNs <= 0n) {
       throw new Error(`${label} must be one stable regular ${kind} with a positive birthtime: ${target}`);
     }
-    return { path: target, dev: stat.dev, ino: stat.ino, kind, birthtimeNs: stat.birthtimeNs };
+    const entry: InstalledEntry = {
+      path: target,
+      dev: stat.dev,
+      ino: stat.ino,
+      kind,
+      birthtimeNs: stat.birthtimeNs,
+      ownershipMarker
+    };
+    if (kind === 'file') {
+      const bytes = await readRegularFileBytes(target, path.dirname(target));
+      entry.contentsSha256 = createHash('sha256').update(bytes).digest('hex');
+    } else if (!ownershipMarker) {
+      entry.treeDigest = manifestDigest(await collectTreeManifest(target));
+    }
+    return entry;
   } catch (error) {
     if (handle) await handle.close().catch(() => {});
     throw error;
@@ -1360,10 +1388,47 @@ async function removeRecordedEntry(entry: InstalledEntry, label: string) {
     ) {
       throw new Error(`${label} identity mismatch; preserved current path: ${entry.path}`);
     }
+    if (entry.contentsSha256) {
+      try {
+        const bytes = await readRegularFileBytes(entry.path, path.dirname(entry.path));
+        const currentSha256 = createHash('sha256').update(bytes).digest('hex');
+        if (currentSha256 !== entry.contentsSha256) throw new Error('content digest changed');
+      } catch (error) {
+        throw new Error(`${label} identity mismatch (content: ${message(error)}); preserved current path: ${entry.path}`);
+      }
+    }
+    if (entry.treeDigest) {
+      try {
+        const currentTreeDigest = manifestDigest(await collectTreeManifest(entry.path));
+        if (currentTreeDigest !== entry.treeDigest) throw new Error('tree digest changed');
+      } catch (error) {
+        throw new Error(`${label} identity mismatch (tree: ${message(error)}); preserved current path: ${entry.path}`);
+      }
+    }
+    if (entry.ownershipMarker) {
+      try {
+        const markerPath = path.join(entry.path, entry.ownershipMarker.name);
+        const markerBytes = await readRegularFileBytes(markerPath, entry.path);
+        const markerSha256 = createHash('sha256').update(markerBytes).digest('hex');
+        if (markerSha256 !== entry.ownershipMarker.sha256) throw new Error('ownership marker digest changed');
+      } catch (error) {
+        throw new Error(`${label} identity mismatch (ownership marker: ${message(error)}); preserved current path: ${entry.path}`);
+      }
+    }
     await fsp.rm(entry.path, { recursive: entry.kind === 'directory', force: entry.kind === 'file' });
   } finally {
     await closeRecordedEntry(entry);
   }
+}
+
+async function captureTransactionRoot(target: string, label: string) {
+  const markerContents = `${randomUUID()}\n`;
+  const markerPath = path.join(target, TRANSACTION_OWNER_MARKER);
+  await fsp.writeFile(markerPath, markerContents, { flag: 'wx', mode: 0o600 });
+  return captureRecordedEntry(target, 'directory', label, {
+    name: TRANSACTION_OWNER_MARKER,
+    sha256: createHash('sha256').update(markerContents).digest('hex')
+  });
 }
 
 async function closeRecordedEntry(entry: InstalledEntry) {
@@ -1553,7 +1618,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
     const expected = await expectedInstallManifest(sourceRoot, skills);
     const transactionId = options.transactionId || randomUUID();
     const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-'));
-    const transactionEntry = await captureRecordedEntry(transactionRoot, 'directory', 'install transaction root');
+    const transactionEntry = await captureTransactionRoot(transactionRoot, 'install transaction root');
     const stagedRoot = path.join(transactionRoot, 'staged');
     const backupRoot = path.join(transactionRoot, 'backup');
     const stagedReceiptPath = path.join(transactionRoot, 'receipt.json');
@@ -1806,7 +1871,7 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
     await preflightSafeUninstallOwnership(destination, options.packageName, skills);
 
     const transactionRoot = await fsp.mkdtemp(path.join(destination, '.yam-flow-install-uninstall-'));
-    const transactionEntry = await captureRecordedEntry(transactionRoot, 'directory', 'uninstall transaction root');
+    const transactionEntry = await captureTransactionRoot(transactionRoot, 'uninstall transaction root');
     const backupRoot = path.join(transactionRoot, 'backup');
     const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
     const receiptBackup = path.join(transactionRoot, INSTALL_RECEIPT_NAME);
