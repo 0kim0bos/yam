@@ -498,8 +498,8 @@ async function expectedInstallManifest(sourceRoot: string, skills: string[]) {
     const skillFile = path.join(sourceRoot, 'skills', skill, 'SKILL.md');
     const skillBytes = await readRegularFileBytes(skillFile, sourceRoot);
     const skillText = skillBytes.toString('utf8');
-    const frontmatter = skillText.match(/^---\n([\s\S]*?)\n---/);
-    const name = frontmatter?.[1].match(/^name:\s*([^\n]+)\s*$/m)?.[1]
+    const frontmatter = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+    const name = frontmatter?.[1].match(/^name:\s*([^\r\n]+)\s*$/m)?.[1]
       ?.trim()
       .replace(/^["']|["']$/g, '');
     if (name !== skill) {

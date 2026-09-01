@@ -547,6 +547,22 @@ function assertStableManifestAcrossLocales() {
 }
 
 async function assertSourceBoundaryHardening() {
+  const crlfSource = join(root, 'source-crlf');
+  mkdirSync(join(crlfSource, 'skills', 'quick'), { recursive: true });
+  mkdirSync(join(crlfSource, 'references'), { recursive: true });
+  writeFileSync(join(crlfSource, 'skills', 'quick', 'SKILL.md'), '---\r\nname: quick\r\n---\r\n# CRLF source\r\n');
+  writeFileSync(join(crlfSource, 'references', 'quick.md'), '# CRLF reference\r\n');
+  const crlfDestination = join(root, 'source-crlf-destination');
+  const crlfInstall = await installSkillSetTransactional({
+    sourceRoot: crlfSource,
+    destination: crlfDestination,
+    packageName: 'yam-crlf-source-probe',
+    version: '1.0.0',
+    skills: ['quick']
+  });
+  assert(crlfInstall.receipt.skills[0] === 'quick', 'CRLF skill frontmatter should preserve the declared skill name');
+  assertTransactionClean(crlfDestination, 'CRLF source');
+
   const parentSymlinkSource = join(root, 'source-parent-symlink');
   const externalSkills = join(root, 'source-parent-symlink-external-skills');
   mkdirSync(join(externalSkills, 'quick'), { recursive: true });
