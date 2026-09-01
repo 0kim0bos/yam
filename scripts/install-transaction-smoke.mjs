@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -668,7 +669,7 @@ async function assertCleanupIdentityHardening() {
           .find((name) => name.startsWith('.yam-flow-install-'));
         assert(transactionName, 'transaction cleanup identity test must find the active transaction directory');
         replacementTransactionPath = join(transactionDestination, transactionName);
-        rmSync(replacementTransactionPath, { recursive: true, force: true });
+        replaceOwnedPathForIdentityTest(replacementTransactionPath);
         mkdirSync(replacementTransactionPath, { recursive: true });
         writeFileSync(join(replacementTransactionPath, 'user.txt'), replacementTransactionBytes);
         throw new Error('forced transaction cleanup identity swap');
@@ -677,7 +678,7 @@ async function assertCleanupIdentityHardening() {
   }));
   assert(
     transactionFailure.includes('install transaction cleanup identity mismatch'),
-    'transaction cleanup must reject a different directory at its recorded path'
+    `transaction cleanup must reject a different directory at its recorded path; received: ${transactionFailure}`
   );
   assert(
     readFileSync(join(replacementTransactionPath, 'user.txt'), 'utf8') === replacementTransactionBytes,
@@ -693,7 +694,7 @@ async function assertCleanupIdentityHardening() {
     failpoint(event) {
       if (event.phase === 'after-stage') {
         const lockPath = join(lockDestination, INSTALL_LOCK_NAME);
-        rmSync(lockPath, { force: true });
+        replaceOwnedPathForIdentityTest(lockPath);
         writeFileSync(lockPath, replacementLockBytes, { mode: 0o600 });
         throw new Error('forced lock cleanup identity swap');
       }
@@ -729,7 +730,7 @@ async function assertCleanupIdentityHardening() {
           .find((name) => name.startsWith('.yam-flow-install-uninstall-'));
         assert(transactionName, 'uninstall cleanup identity test must find the active transaction directory');
         replacementUninstallPath = join(uninstallTransactionDestination, transactionName);
-        rmSync(replacementUninstallPath, { recursive: true, force: true });
+        replaceOwnedPathForIdentityTest(replacementUninstallPath);
         mkdirSync(replacementUninstallPath, { recursive: true });
         writeFileSync(join(replacementUninstallPath, 'user.txt'), replacementUninstallBytes);
       }
@@ -747,6 +748,14 @@ async function assertCleanupIdentityHardening() {
     !existsSync(join(uninstallTransactionDestination, INSTALL_LOCK_NAME)),
     'uninstall cleanup identity failure must still release the owned lock'
   );
+}
+
+function replaceOwnedPathForIdentityTest(target) {
+  if (process.platform === 'win32') {
+    renameSync(target, `${target}.yam-owned-original`);
+    return;
+  }
+  rmSync(target, { recursive: true, force: true });
 }
 
 function assertRecoveryArtifactPreserved(destination, label) {
