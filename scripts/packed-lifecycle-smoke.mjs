@@ -1,11 +1,9 @@
 #!/usr/bin/env node
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function parseArgs(argv) {
   const options = { artifactDir: '', receipt: '', writeReceipt: '', expectedSha256: '', verifyOnly: false, selfTest: false };
@@ -96,10 +94,51 @@ function run(command, args, options = {}) {
     maxBuffer: 16 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || '').trim();
-    throw new Error(`${command} ${args.join(' ')} failed with exit ${result.status}${detail ? `: ${detail}` : ''}`);
+    const output = String(result.stderr || result.stdout || '').trim();
+    const spawnError = result.error
+      ? `${result.error.code ? `${result.error.code}: ` : ''}${result.error.message}`
+      : '';
+    const detail = [
+      `exit ${result.status === null ? 'null' : result.status}`,
+      result.signal ? `signal ${result.signal}` : '',
+      spawnError,
+      output
+    ].filter(Boolean).join(': ');
+    throw new Error(`${command} ${args.join(' ')} failed (${detail})`);
   }
   return result.stdout;
+}
+
+function npmCliPath() {
+  const executableDir = dirname(process.execPath);
+  const candidates = [
+    join(executableDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(executableDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  ].map((candidate) => resolve(candidate));
+  const cli = [...new Set(candidates)].find((candidate) => {
+    try {
+      const canonical = realpathSync(candidate);
+      const packageRoot = resolve(dirname(canonical), '..');
+      const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+      const npmBin = typeof packageJson.bin === 'string' ? packageJson.bin : packageJson.bin?.npm;
+      return statSync(canonical).isFile()
+        && canonical.replaceAll('\\', '/').endsWith('/npm/bin/npm-cli.js')
+        && packageJson.name === 'npm'
+        && typeof npmBin === 'string'
+        && realpathSync(resolve(packageRoot, npmBin)) === canonical
+        && (!process.env.NPM_VERSION || packageJson.version === process.env.NPM_VERSION);
+    } catch {
+      return false;
+    }
+  });
+  if (!cli) {
+    throw new Error(`npm CLI JavaScript was not found beside the active Node runtime; checked ${candidates.join(', ')}`);
+  }
+  return realpathSync(cli);
+}
+
+function runNpm(args, options = {}) {
+  return run(process.execPath, [npmCliPath(), ...args], options);
 }
 
 function packageDirectory(consumer, packageName) {
@@ -129,7 +168,7 @@ function runLifecycle(receipt, tarball) {
   };
 
   try {
-    run(npmCommand, ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save-exact', tarball], { cwd: consumer, env });
+    runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save-exact', tarball], { cwd: consumer, env });
     const installedDir = packageDirectory(consumer, receipt.package);
     const installedPackage = JSON.parse(readFileSync(join(installedDir, 'package.json'), 'utf8'));
     if (installedPackage.name !== receipt.package || installedPackage.version !== receipt.version) throw new Error('installed package identity does not match the packed artifact receipt');
@@ -152,7 +191,7 @@ function runLifecycle(receipt, tarball) {
     run(process.execPath, [cli, 'install'], { cwd: consumer, env });
     run(process.execPath, [cli, 'status'], { cwd: consumer, env });
     run(process.execPath, [cli, 'uninstall'], { cwd: consumer, env });
-    run(npmCommand, ['uninstall', '--ignore-scripts', '--no-audit', '--no-fund', receipt.package], { cwd: consumer, env });
+    runNpm(['uninstall', '--ignore-scripts', '--no-audit', '--no-fund', receipt.package], { cwd: consumer, env });
     if (existsSync(installedDir)) throw new Error('npm uninstall left the packed package installed');
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -165,11 +204,18 @@ function runSelfTest() {
   const receiptPath = join(artifactDir, 'receipt.json');
   mkdirSync(artifactDir, { recursive: true });
   try {
-    execFileSync(npmCommand, ['pack', '--json', '--pack-destination', artifactDir], {
+    const argvFixture = ['space value', 'windows&meta', 'caret^value', '(parenthesized)'];
+    const observedArgv = JSON.parse(run(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      'console.log(JSON.stringify(process.argv.slice(1)))',
+      ...argvFixture
+    ]));
+    if (JSON.stringify(observedArgv) !== JSON.stringify(argvFixture)) {
+      throw new Error(`shell-free argv boundary changed values: ${JSON.stringify(observedArgv)}`);
+    }
+    runNpm(['pack', '--json', '--pack-destination', artifactDir], {
       cwd: process.cwd(),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      maxBuffer: 16 * 1024 * 1024,
     });
     findSingleTarball(artifactDir);
     writeReceipt(artifactDir, receiptPath);
