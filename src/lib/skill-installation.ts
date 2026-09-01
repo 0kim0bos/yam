@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants as fsConstants } from 'node:fs';
+import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { compareStableText } from './stable-order.js';
@@ -183,8 +183,13 @@ type PathIdentity = {
   ino: number;
 };
 
-type InstalledEntry = PathIdentity & {
+type InstalledEntry = {
+  path: string;
+  dev: bigint;
+  ino: bigint;
   kind: 'directory' | 'file';
+  birthtimeNs?: bigint;
+  handle?: fsp.FileHandle;
 };
 
 function message(error: unknown) {
@@ -502,8 +507,9 @@ async function moveRegularDirectory(
   sourceBoundary: string,
   targetBoundary: string,
   label: string,
-  onMoved?: (entry: InstalledEntry) => void
-) {
+  onMoved?: () => void,
+  identityOwner?: InstalledEntry[]
+): Promise<InstalledEntry | undefined> {
   const sourceParents = await captureRegularParentPath(sourceBoundary, source, `${label} source`);
   const sourceStat = await fsp.lstat(source);
   if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) {
@@ -511,18 +517,31 @@ async function moveRegularDirectory(
   }
   const targetParents = await captureRegularParentPath(targetBoundary, target, `${label} target`);
   if (await exists(target)) throw new Error(`${label} target unexpectedly exists: ${target}`);
-  await fsp.rename(source, target);
-  onMoved?.({ path: target, dev: sourceStat.dev, ino: sourceStat.ino, kind: 'directory' });
-  await revalidateRegularParentPath(sourceParents, `${label} source`);
-  await revalidateRegularParentPath(targetParents, `${label} target`);
-  const targetStat = await fsp.lstat(target);
-  if (
-    !targetStat.isDirectory()
-    || targetStat.isSymbolicLink()
-    || targetStat.dev !== sourceStat.dev
-    || targetStat.ino !== sourceStat.ino
-  ) {
-    throw new Error(`${label} directory changed identity while being moved: ${target}`);
+  const recorded = identityOwner ? await captureRecordedEntry(source, 'directory', label) : undefined;
+  let identityTransferred = false;
+  try {
+    await fsp.rename(source, target);
+    if (!recorded) onMoved?.();
+    if (recorded) {
+      recorded.path = target;
+      identityOwner?.push(recorded);
+      identityTransferred = true;
+    }
+    await revalidateRegularParentPath(sourceParents, `${label} source`);
+    await revalidateRegularParentPath(targetParents, `${label} target`);
+    const targetStat = await fsp.lstat(target);
+    if (
+      !targetStat.isDirectory()
+      || targetStat.isSymbolicLink()
+      || targetStat.dev !== sourceStat.dev
+      || targetStat.ino !== sourceStat.ino
+    ) {
+      throw new Error(`${label} directory changed identity while being moved: ${target}`);
+    }
+    return recorded;
+  } catch (error) {
+    if (recorded && !identityTransferred) await closeRecordedEntry(recorded);
+    throw error;
   }
 }
 
@@ -532,8 +551,9 @@ async function moveRegularFile(
   sourceBoundary: string,
   targetBoundary: string,
   label: string,
-  onMoved?: (entry: InstalledEntry) => void
-) {
+  onMoved?: () => void,
+  identityOwner?: InstalledEntry[]
+): Promise<InstalledEntry | undefined> {
   const sourceParents = await captureRegularParentPath(sourceBoundary, source, `${label} source`);
   const sourceStat = await fsp.lstat(source);
   if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
@@ -541,18 +561,31 @@ async function moveRegularFile(
   }
   const targetParents = await captureRegularParentPath(targetBoundary, target, `${label} target`);
   if (await exists(target)) throw new Error(`${label} target unexpectedly exists: ${target}`);
-  await fsp.rename(source, target);
-  onMoved?.({ path: target, dev: sourceStat.dev, ino: sourceStat.ino, kind: 'file' });
-  await revalidateRegularParentPath(sourceParents, `${label} source`);
-  await revalidateRegularParentPath(targetParents, `${label} target`);
-  const targetStat = await fsp.lstat(target);
-  if (
-    !targetStat.isFile()
-    || targetStat.isSymbolicLink()
-    || targetStat.dev !== sourceStat.dev
-    || targetStat.ino !== sourceStat.ino
-  ) {
-    throw new Error(`${label} file changed identity while being moved: ${target}`);
+  const recorded = identityOwner ? await captureRecordedEntry(source, 'file', label) : undefined;
+  let identityTransferred = false;
+  try {
+    await fsp.rename(source, target);
+    if (!recorded) onMoved?.();
+    if (recorded) {
+      recorded.path = target;
+      identityOwner?.push(recorded);
+      identityTransferred = true;
+    }
+    await revalidateRegularParentPath(sourceParents, `${label} source`);
+    await revalidateRegularParentPath(targetParents, `${label} target`);
+    const targetStat = await fsp.lstat(target);
+    if (
+      !targetStat.isFile()
+      || targetStat.isSymbolicLink()
+      || targetStat.dev !== sourceStat.dev
+      || targetStat.ino !== sourceStat.ino
+    ) {
+      throw new Error(`${label} file changed identity while being moved: ${target}`);
+    }
+    return recorded;
+  } catch (error) {
+    if (recorded && !identityTransferred) await closeRecordedEntry(recorded);
+    throw error;
   }
 }
 
@@ -1055,33 +1088,35 @@ async function acquireInstallLock(destination: string) {
   }
   let lockIdentity: InstalledEntry | undefined;
   try {
-    const opened = await handle.stat();
+    const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) throw new Error(`install lock must be a regular file: ${lockPath}`);
-    lockIdentity = { path: lockPath, dev: opened.dev, ino: opened.ino, kind: 'file' };
+    lockIdentity = await captureLockIdentity(lockPath, opened);
     await handle.writeFile(JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }, null, 2));
     await revalidateRegularParentPath(destinationIdentity, 'skill destination');
-    const current = await fsp.lstat(lockPath);
+    const current = await fsp.lstat(lockPath, { bigint: true });
     if (
       current.isSymbolicLink()
       || !current.isFile()
       || current.dev !== lockIdentity.dev
       || current.ino !== lockIdentity.ino
+      || (lockIdentity.birthtimeNs !== undefined && current.birthtimeNs !== lockIdentity.birthtimeNs)
     ) {
       throw new Error(`install lock changed identity while being acquired: ${lockPath}`);
     }
   } catch (error) {
     const cleanupErrors: string[] = [];
-    try {
-      await handle.close();
-    } catch (closeError) {
-      cleanupErrors.push(message(closeError));
-    }
+    cleanupErrors.push(...await closeFileHandle(handle, lockPath));
     try {
       await revalidateRegularParentPath(destinationIdentity, 'skill destination');
       if (!lockIdentity) throw new Error(`install lock identity was not captured: ${lockPath}`);
       await removeRecordedEntry(lockIdentity, 'install lock');
     } catch (cleanupError) {
       cleanupErrors.push(message(cleanupError));
+    } finally {
+      const closeErrors = lockIdentity
+        ? await closeRecordedEntries([lockIdentity])
+        : [];
+      cleanupErrors.push(...closeErrors);
     }
     if (cleanupErrors.length) {
       throw new Error(`${message(error)}. Install lock cleanup failed: ${cleanupErrors.join('; ')}`);
@@ -1149,29 +1184,167 @@ async function removeInstalledEntries(entries: InstalledEntry[]) {
 }
 
 async function captureRecordedEntry(target: string, kind: InstalledEntry['kind'], label: string): Promise<InstalledEntry> {
-  const stat = await fsp.lstat(target);
+  const noFollow = process.platform !== 'win32' && typeof fsConstants.O_NOFOLLOW === 'number'
+    ? fsConstants.O_NOFOLLOW
+    : 0;
+  const directoryOnly = kind === 'directory'
+    && process.platform !== 'win32'
+    && typeof fsConstants.O_DIRECTORY === 'number'
+    ? fsConstants.O_DIRECTORY
+    : 0;
+  let handle: fsp.FileHandle | undefined;
+  try {
+    if (process.platform !== 'win32') {
+      handle = await fsp.open(target, fsConstants.O_RDONLY | noFollow | directoryOnly);
+    }
+    if (handle) return await captureRecordedEntryFromHandle(target, kind, label, handle);
+    const stat = await fsp.lstat(target, { bigint: true });
+    const typeMatches = kind === 'directory'
+      ? stat.isDirectory() && !stat.isSymbolicLink()
+      : stat.isFile() && !stat.isSymbolicLink();
+    if (!typeMatches || stat.birthtimeNs <= 0n) {
+      throw new Error(`${label} must be one stable regular ${kind} with a positive birthtime: ${target}`);
+    }
+    return { path: target, dev: stat.dev, ino: stat.ino, kind, birthtimeNs: stat.birthtimeNs };
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function captureRecordedEntryFromHandle(
+  target: string,
+  kind: InstalledEntry['kind'],
+  label: string,
+  handle: fsp.FileHandle
+): Promise<InstalledEntry> {
+  const opened = await handle.stat({ bigint: true });
+  const current = await fsp.lstat(target, { bigint: true });
   const typeMatches = kind === 'directory'
-    ? stat.isDirectory() && !stat.isSymbolicLink()
-    : stat.isFile() && !stat.isSymbolicLink();
-  if (!typeMatches) throw new Error(`${label} must be a regular ${kind}: ${target}`);
-  return { path: target, dev: stat.dev, ino: stat.ino, kind };
+    ? opened.isDirectory() && current.isDirectory() && !current.isSymbolicLink()
+    : opened.isFile() && current.isFile() && !current.isSymbolicLink();
+  const birthtimeAvailable = opened.birthtimeNs > 0n && current.birthtimeNs > 0n;
+  if (
+    !typeMatches
+    || opened.dev !== current.dev
+    || opened.ino !== current.ino
+    || (birthtimeAvailable && opened.birthtimeNs !== current.birthtimeNs)
+  ) {
+    throw new Error(`${label} must be one stable regular ${kind}: ${target}`);
+  }
+  return {
+    path: target,
+    dev: opened.dev,
+    ino: opened.ino,
+    kind,
+    birthtimeNs: birthtimeAvailable ? opened.birthtimeNs : undefined,
+    handle
+  };
+}
+
+async function captureLockIdentity(target: string, created: BigIntStats): Promise<InstalledEntry> {
+  const current = await fsp.lstat(target, { bigint: true });
+  const birthtimeAvailable = created.birthtimeNs > 0n && current.birthtimeNs > 0n;
+  if (
+    !created.isFile()
+    || current.isSymbolicLink()
+    || !current.isFile()
+    || created.dev !== current.dev
+    || created.ino !== current.ino
+    || (birthtimeAvailable && created.birthtimeNs !== current.birthtimeNs)
+  ) {
+    throw new Error(`install lock changed identity after exclusive creation: ${target}`);
+  }
+
+  let pinHandle: fsp.FileHandle | undefined;
+  try {
+    if (process.platform !== 'win32') {
+      const noFollow = typeof fsConstants.O_NOFOLLOW === 'number' ? fsConstants.O_NOFOLLOW : 0;
+      pinHandle = await fsp.open(target, fsConstants.O_RDONLY | noFollow);
+      const pinned = await pinHandle.stat({ bigint: true });
+      if (
+        !pinned.isFile()
+        || pinned.dev !== created.dev
+        || pinned.ino !== created.ino
+        || (birthtimeAvailable && pinned.birthtimeNs !== created.birthtimeNs)
+      ) {
+        throw new Error(`install lock pin descriptor does not match exclusive creation: ${target}`);
+      }
+    } else if (!birthtimeAvailable) {
+      throw new Error(`install lock requires a positive birthtime when descriptor pinning is unavailable: ${target}`);
+    }
+    return {
+      path: target,
+      dev: created.dev,
+      ino: created.ino,
+      kind: 'file',
+      birthtimeNs: birthtimeAvailable ? created.birthtimeNs : undefined,
+      handle: pinHandle
+    };
+  } catch (error) {
+    if (pinHandle) await pinHandle.close().catch(() => {});
+    throw error;
+  }
 }
 
 async function removeRecordedEntry(entry: InstalledEntry, label: string) {
-  let current;
   try {
-    current = await fsp.lstat(entry.path);
+    let current;
+    try {
+      current = await fsp.lstat(entry.path, { bigint: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    const opened = entry.handle ? await entry.handle.stat({ bigint: true }) : undefined;
+    const typeMatches = entry.kind === 'directory'
+      ? current.isDirectory() && !current.isSymbolicLink()
+      : current.isFile() && !current.isSymbolicLink();
+    if (
+      !typeMatches
+      || current.dev !== entry.dev
+      || current.ino !== entry.ino
+      || (entry.birthtimeNs !== undefined && current.birthtimeNs !== entry.birthtimeNs)
+      || (opened && (
+        opened.dev !== current.dev
+        || opened.ino !== current.ino
+        || (entry.birthtimeNs !== undefined && opened.birthtimeNs !== current.birthtimeNs)
+      ))
+    ) {
+      throw new Error(`${label} identity mismatch; preserved current path: ${entry.path}`);
+    }
+    await fsp.rm(entry.path, { recursive: entry.kind === 'directory', force: entry.kind === 'file' });
+  } finally {
+    await closeRecordedEntry(entry);
+  }
+}
+
+async function closeRecordedEntry(entry: InstalledEntry) {
+  const handle = entry.handle;
+  entry.handle = undefined;
+  if (handle) await handle.close();
+}
+
+async function closeRecordedEntries(entries: Array<InstalledEntry | undefined>) {
+  const errors: string[] = [];
+  for (const entry of entries) {
+    if (!entry) continue;
+    try {
+      await closeRecordedEntry(entry);
+    } catch (error) {
+      errors.push(`${entry.path}: ${message(error)}`);
+    }
+  }
+  return errors;
+}
+
+async function closeFileHandle(handle: fsp.FileHandle, pathLabel: string) {
+  try {
+    await handle.close();
+    return [];
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
+    return [`${pathLabel}: ${message(error)}`];
   }
-  const typeMatches = entry.kind === 'directory'
-    ? current.isDirectory() && !current.isSymbolicLink()
-    : current.isFile() && !current.isSymbolicLink();
-  if (!typeMatches || current.dev !== entry.dev || current.ino !== entry.ino) {
-    throw new Error(`${label} identity mismatch; preserved current path: ${entry.path}`);
-  }
-  await fsp.rm(entry.path, { recursive: entry.kind === 'directory', force: entry.kind === 'file' });
 }
 
 export async function planSkillSetInstallation(options: TransactionalInstallOptions): Promise<SkillInstallPlan> {
@@ -1340,6 +1513,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
     const destinationReceiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
     const receiptBackupPath = path.join(transactionRoot, 'receipt.backup');
     const installedEntries: InstalledEntry[] = [];
+    const receiptInstalledEntries: InstalledEntry[] = [];
     let destinationBackups: MovedEntry[] = [];
     let receiptBackedUp = false;
     let receiptInstalled: InstalledEntry | undefined;
@@ -1425,25 +1599,31 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       for (const skill of skills) {
         await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
         const target = path.join(destination, skill);
-        await moveRegularDirectory(
+        const installedEntry = await moveRegularDirectory(
           path.join(stagedRoot, skill),
           target,
           stagedRoot,
           destination,
           'staged skill install',
-          (entry) => installedEntries.push(entry)
+          undefined,
+          installedEntries
         );
+        if (!installedEntry) throw new Error(`staged skill install identity was not recorded: ${target}`);
         await options.failpoint?.({ phase: 'skill-installed', skill });
       }
       await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
-      await moveRegularFile(
+      receiptInstalled = await moveRegularFile(
         stagedReceiptPath,
         destinationReceiptPath,
         transactionRoot,
         destination,
         'staged install receipt',
-        (entry) => { receiptInstalled = entry; }
+        undefined,
+        receiptInstalledEntries
       );
+      if (!receiptInstalled) {
+        throw new Error(`staged install receipt identity was not recorded: ${destinationReceiptPath}`);
+      }
       await options.failpoint?.({ phase: 'receipt-installed' });
 
       await options.failpoint?.({ phase: 'before-verify' });
@@ -1457,6 +1637,11 @@ export async function installSkillSetTransactional(options: TransactionalInstall
         ignoreRecoveryArtifacts: true
       });
       if (!inspection.ok) throw new Error(`post-install verification failed: ${inspection.issues.join('; ')}`);
+
+      const ownershipHandleErrors = await closeRecordedEntries([receiptInstalled, ...installedEntries]);
+      if (ownershipHandleErrors.length) {
+        cleanupWarnings.push(`verified install identity handle cleanup failed: ${ownershipHandleErrors.join('; ')}`);
+      }
 
       try {
         await removeRecordedEntry(transactionEntry, 'install transaction cleanup');
@@ -1472,6 +1657,7 @@ export async function installSkillSetTransactional(options: TransactionalInstall
       };
     } catch (error) {
       const rollbackErrors: string[] = [];
+      receiptInstalled ||= receiptInstalledEntries[0];
       let destinationStillOwned = true;
       try {
         await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
@@ -1514,6 +1700,8 @@ export async function installSkillSetTransactional(options: TransactionalInstall
         }
         throw new Error(`yam install failed; previous installation state restored: ${message(error)}`);
       }
+      const retainedHandleErrors = await closeRecordedEntries([transactionEntry, receiptInstalled, ...installedEntries]);
+      rollbackErrors.push(...retainedHandleErrors.map((item) => `identity handle cleanup failed: ${item}`));
       throw new Error(
         `yam install failed and rollback is incomplete: ${message(error)}. `
         + `Recovery artifacts were kept at ${transactionRoot}. `
@@ -1525,16 +1713,14 @@ export async function installSkillSetTransactional(options: TransactionalInstall
   }
 
   const lockCleanupErrors: string[] = [];
-  try {
-    await lock.handle.close();
-  } catch (error) {
-    lockCleanupErrors.push(message(error));
-  }
+  lockCleanupErrors.push(...await closeFileHandle(lock.handle, lock.lockPath));
   try {
     await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
     await removeRecordedEntry(lock.lockIdentity, 'install lock cleanup');
   } catch (error) {
     lockCleanupErrors.push(message(error));
+  } finally {
+    lockCleanupErrors.push(...await closeRecordedEntries([lock.lockIdentity]));
   }
   if (lockCleanupErrors.length) {
     const warning = `install lock cleanup failed at ${lock.lockPath}: ${lockCleanupErrors.join('; ')}`;
@@ -1668,6 +1854,8 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
         }
         throw new Error(`yam uninstall failed; previous installation state restored: ${message(error)}`);
       }
+      const retainedHandleErrors = await closeRecordedEntries([transactionEntry]);
+      rollbackErrors.push(...retainedHandleErrors.map((item) => `identity handle cleanup failed: ${item}`));
       throw new Error(
         `yam uninstall failed and rollback is incomplete: ${message(error)}. `
         + `Recovery artifacts were kept at ${transactionRoot}. Rollback errors: ${rollbackErrors.join('; ')}`
@@ -1678,16 +1866,14 @@ export async function uninstallSkillSetSafely(options: SafeUninstallOptions): Pr
   }
 
   const lockCleanupErrors: string[] = [];
-  try {
-    await lock.handle.close();
-  } catch (error) {
-    lockCleanupErrors.push(message(error));
-  }
+  lockCleanupErrors.push(...await closeFileHandle(lock.handle, lock.lockPath));
   try {
     await revalidateRegularParentPath(lock.destinationIdentity, 'skill destination');
     await removeRecordedEntry(lock.lockIdentity, 'install lock cleanup');
   } catch (error) {
     lockCleanupErrors.push(message(error));
+  } finally {
+    lockCleanupErrors.push(...await closeRecordedEntries([lock.lockIdentity]));
   }
   if (lockCleanupErrors.length) {
     const warning = `install lock cleanup failed at ${lock.lockPath}: ${lockCleanupErrors.join('; ')}`;
