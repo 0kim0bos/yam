@@ -303,31 +303,68 @@ function readOnlyNoFollowFlags() {
   return fsConstants.O_RDONLY | noFollow;
 }
 
+async function confirmWindowsPathForHandle(
+  target: string,
+  opened: BigIntStats,
+  before: BigIntStats,
+  label: string
+) {
+  if (before.birthtimeNs <= 0n) {
+    throw new Error(`${label} requires a positive birthtime on Windows: ${target}`);
+  }
+  let pathHandle: fsp.FileHandle | undefined;
+  try {
+    pathHandle = await fsp.open(target, fsConstants.O_RDONLY);
+    const pathOpened = await pathHandle.stat({ bigint: true });
+    const confirmed = await fsp.lstat(target, { bigint: true });
+    if (
+      !opened.isFile()
+      || !pathOpened.isFile()
+      || pathOpened.dev !== opened.dev
+      || pathOpened.ino !== opened.ino
+      || confirmed.isSymbolicLink()
+      || !confirmed.isFile()
+      || confirmed.dev !== before.dev
+      || confirmed.ino !== before.ino
+      || confirmed.birthtimeNs !== before.birthtimeNs
+    ) {
+      throw new Error(`${label} changed identity while confirming Windows path ownership: ${target}`);
+    }
+    return confirmed;
+  } finally {
+    if (pathHandle) await pathHandle.close();
+  }
+}
+
 async function captureRegularFile(file: string, boundary = path.dirname(file)) {
   const parents = await captureRegularParentPath(boundary, file, 'regular file read');
-  const before = await fsp.lstat(file);
+  const before = await fsp.lstat(file, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink()) throw new Error(`expected a regular file: ${file}`);
   const handle = await fsp.open(file, readOnlyNoFollowFlags());
   try {
-    const opened = await handle.stat();
+    const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) throw new Error(`expected a regular file: ${file}`);
     const bytes = await handle.readFile();
-    const afterOpened = await handle.stat();
-    const after = await fsp.lstat(file);
+    const afterOpened = await handle.stat({ bigint: true });
+    const after = process.platform === 'win32'
+      ? await confirmWindowsPathForHandle(file, opened, before, 'regular file')
+      : await fsp.lstat(file, { bigint: true });
     await revalidateRegularParentPath(parents, 'regular file read');
     if (
       !after.isFile()
       || after.isSymbolicLink()
-      || before.dev !== opened.dev
-      || before.ino !== opened.ino
       || afterOpened.dev !== opened.dev
       || afterOpened.ino !== opened.ino
-      || after.dev !== opened.dev
-      || after.ino !== opened.ino
+      || (process.platform !== 'win32' && (
+        before.dev !== opened.dev
+        || before.ino !== opened.ino
+        || after.dev !== opened.dev
+        || after.ino !== opened.ino
+      ))
     ) {
       throw new Error(`regular file changed identity while being captured: ${file}`);
     }
-    return { bytes, mode: opened.mode & 0o777 };
+    return { bytes, mode: Number(opened.mode & 0o777n) };
   } finally {
     await handle.close();
   }
@@ -355,20 +392,25 @@ async function copyRegularFile(
   );
   try {
     await handle.writeFile(sourceFile.bytes);
-    const opened = await handle.stat();
+    const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) throw new Error(`install copy target must be a regular file: ${target}`);
     const openedIdentity = { dev: opened.dev, ino: opened.ino };
-    const afterOpened = await handle.stat();
+    const afterOpened = await handle.stat({ bigint: true });
     if (afterOpened.dev !== openedIdentity.dev || afterOpened.ino !== openedIdentity.ino) {
       throw new Error(`install copy target changed descriptor identity: ${target}`);
     }
     await revalidateRegularParentPath(targetParents, 'install copy target');
-    const installed = await fsp.lstat(target);
+    const beforeInstalled = await fsp.lstat(target, { bigint: true });
+    const installed = process.platform === 'win32'
+      ? await confirmWindowsPathForHandle(target, opened, beforeInstalled, 'install copy target')
+      : beforeInstalled;
     if (
       !installed.isFile()
       || installed.isSymbolicLink()
-      || installed.dev !== openedIdentity.dev
-      || installed.ino !== openedIdentity.ino
+      || (process.platform !== 'win32' && (
+        installed.dev !== openedIdentity.dev
+        || installed.ino !== openedIdentity.ino
+      ))
     ) {
       throw new Error(`install copy target changed path identity: ${target}`);
     }
@@ -1270,26 +1312,7 @@ async function captureLockIdentity(target: string, created: BigIntStats): Promis
         throw new Error(`install lock pin descriptor does not match exclusive creation: ${target}`);
       }
     } else {
-      if (current.birthtimeNs <= 0n) {
-        throw new Error(`install lock requires a positive birthtime when descriptor pinning is unavailable: ${target}`);
-      }
-      pinHandle = await fsp.open(target, fsConstants.O_RDONLY);
-      const pinned = await pinHandle.stat({ bigint: true });
-      const confirmed = await fsp.lstat(target, { bigint: true });
-      if (
-        !pinned.isFile()
-        || pinned.dev !== created.dev
-        || pinned.ino !== created.ino
-        || confirmed.isSymbolicLink()
-        || !confirmed.isFile()
-        || confirmed.dev !== current.dev
-        || confirmed.ino !== current.ino
-        || confirmed.birthtimeNs !== current.birthtimeNs
-      ) {
-        throw new Error(`install lock changed identity while confirming Windows path ownership: ${target}`);
-      }
-      await pinHandle.close();
-      pinHandle = undefined;
+      const confirmed = await confirmWindowsPathForHandle(target, created, current, 'install lock');
       return {
         path: target,
         dev: confirmed.dev,
