@@ -53,6 +53,8 @@ const required = [
   'dist/lib/scout-receipt.d.ts',
   'dist/lib/release-registry-status.js',
   'dist/lib/release-registry-status.d.ts',
+  'dist/lib/release-auth-readiness.js',
+  'dist/lib/release-auth-readiness.d.ts',
   'README.md',
   'LICENSE',
   'package.json',

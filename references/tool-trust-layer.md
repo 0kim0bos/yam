@@ -161,6 +161,8 @@ Reviewer and doctor Mission lanes use `read_only` intent by default. A receipt t
 - diagnostics with structured next action
 - final truth status
 
+Release authentication is path-specific. `--auth-mode auto` selects a reviewed Trusted Publisher workflow when present, `--auth-mode oidc` requires that path, and `--auth-mode token` explicitly selects direct local token readiness. `npm whoami` is evidence only for the token path; it cannot prove or disprove publish-time OIDC authentication. Local workflow inspection must keep the npmjs account binding and hosted token exchange unverified until external evidence exists.
+
 ## Compact Artifact Contracts
 
 Runtime evidence mini:

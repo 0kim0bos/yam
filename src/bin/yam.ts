@@ -85,6 +85,10 @@ import {
 } from '../lib/next-step.js';
 import { releaseRegistryStatusFromChecks } from '../lib/release-registry-status.js';
 import {
+  buildReleaseAuthReadiness,
+  inspectTrustedPublisherWorkflowText
+} from '../lib/release-auth-readiness.js';
+import {
   BoundedInputError,
   GENERAL_STDIN_MAX_BYTES,
   HOOK_STDIN_MAX_BYTES,
@@ -241,7 +245,7 @@ Usage:
   yam update apply --all [--json]
   yam benchmark report [--baseline n] [--current n] [--unit ms] [--target lower|higher] [--json]
   yam benchmark report --candidate-digest sha256 --baseline-digest sha256 --sample seed:candidate:baseline --unit score --evidence-source text [--min-samples n] [--min-mean-delta n] [--min-win-rate n] [--json]
-  yam release report [--json]
+  yam release report [--auth-mode auto|oidc|token] [--json]
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
   yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
@@ -2523,12 +2527,15 @@ async function safety(args = []) {
 async function release(args = []) {
   const subcommand = args[0] || 'help';
   if (subcommand !== 'report') {
-    console.error('usage: yam release report [--json]');
+    console.error('usage: yam release report [--auth-mode auto|oidc|token] [--json]');
     process.exitCode = 1;
     return;
   }
-  const asJson = args.includes('--json');
-  const report = runReleaseReport();
+  const flags = parseSimpleFlags(args.slice(1), new Set(['auth-mode', 'json']));
+  const authMode = String(flags.auth_mode || 'auto');
+  if (!['auto', 'oidc', 'token'].includes(authMode)) throw new Error('--auth-mode must be auto, oidc, or token');
+  const asJson = Boolean(flags.json);
+  const report = runReleaseReport(authMode);
   if (asJson) {
     console.log(JSON.stringify(report, null, 2));
     if (!report.ok) process.exitCode = 1;
@@ -2553,7 +2560,7 @@ async function release(args = []) {
   if (report.publish_readiness) {
     console.log(`- Publish readiness: ${report.publish_readiness.status}`);
     console.log(`- Registry: ${report.publish_readiness.registry.url || 'not-verified'}`);
-    console.log(`- npm auth: ${report.publish_readiness.auth.status}`);
+    console.log(`- Publish auth: ${report.publish_readiness.auth.mode} (${report.publish_readiness.auth.status})`);
   }
   if (report.failed.length) {
     console.log('- Failed:');
@@ -2576,7 +2583,7 @@ async function release(args = []) {
   if (!report.ok) process.exitCode = 1;
 }
 
-function runReleaseReport() {
+function runReleaseReport(authMode = 'auto') {
   const startedAt = new Date().toISOString();
   const checks = [
     ['typecheck', ['npm', ['run', 'typecheck']]],
@@ -2591,7 +2598,7 @@ function runReleaseReport() {
   const tarball = releaseTarballProvenance();
   const freshness = releaseFreshness(checks, provenance, tarball);
   const publishBlockerEvidence = publishBlockerEvidenceFromRelease(checks, tarball);
-  const publishReadiness = releasePublishReadiness(checks, provenance, tarball, publishBlockerEvidence);
+  const publishReadiness = releasePublishReadiness(checks, provenance, tarball, publishBlockerEvidence, authMode);
   const nextActions = releaseNextActions(checks, provenance, tarball, publishBlockerEvidence, publishReadiness);
   const preliminaryOk = failed.length === 0 && publishReadiness.status === 'ready';
   const readinessReceipt = releaseReadinessReceipt(provenance, freshness, tarball, publishReadiness, preliminaryOk);
@@ -2657,9 +2664,14 @@ function releaseReadinessReceipt(provenance: AnyRecord = {}, freshness: AnyRecor
       truth_status: publishReadiness.registry?.truth_status || 'partial'
     },
     auth: {
-      command: 'npm whoami',
+      requested_mode: String(publishReadiness.auth?.requested_mode || 'auto'),
+      mode: String(publishReadiness.auth?.mode || 'manual_token'),
+      command: String(publishReadiness.auth?.command || 'npm whoami'),
+      required_for_selected_mode: Boolean(publishReadiness.auth?.required_for_selected_mode),
       status: String(publishReadiness.auth?.status || 'not_verified'),
-      account: publishReadiness.auth?.status === 'authenticated' ? 'observed_redacted' : '',
+      account: String(publishReadiness.auth?.account || ''),
+      local_token: publishReadiness.auth?.local_token || null,
+      trusted_publisher: publishReadiness.auth?.trusted_publisher || null,
       truth_status: publishReadiness.auth?.truth_status || 'partial'
     },
     git: {
@@ -2761,11 +2773,28 @@ function releaseFreshness(checks = [], provenance: AnyRecord = {}, tarball: AnyR
   };
 }
 
-function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = []) {
+function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarball: AnyRecord = {}, publishBlockers = [], authMode = 'auto') {
   const failedChecks = checks.filter((check) => check.status !== 'passed');
   const registryProbe = runReadOnlyCommandResult('npm', ['config', 'get', 'registry']);
   const registryUrl = registryProbe.stdout.trim() || String(PACKAGE_JSON.publishConfig?.registry || 'https://registry.npmjs.org/');
   const whoamiProbe = runReadOnlyCommandResult('npm', ['whoami', '--registry', registryUrl]);
+  const trustedPublisherWorkflowPath = '.github/workflows/release.yml';
+  const trustedPublisherWorkflowFile = path.join(ROOT, trustedPublisherWorkflowPath);
+  const trustedPublisherWorkflowExists = fs.existsSync(trustedPublisherWorkflowFile);
+  const trustedPublisherWorkflow = inspectTrustedPublisherWorkflowText(
+    trustedPublisherWorkflowExists ? fs.readFileSync(trustedPublisherWorkflowFile, 'utf8') : '',
+    trustedPublisherWorkflowPath,
+    trustedPublisherWorkflowExists
+  );
+  const authReadiness = buildReleaseAuthReadiness({
+    workflow: trustedPublisherWorkflow,
+    local_token: {
+      command: 'npm whoami',
+      ok: whoamiProbe.ok,
+      note: whoamiProbe.note
+    },
+    requested_mode: authMode as 'auto' | 'oidc' | 'token'
+  });
   const registryStatus = releaseRegistryStatusFromChecks(checks, {
     package_name: PACKAGE_JSON.name,
     version: VERSION
@@ -2784,8 +2813,8 @@ function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarbal
   if (!registryProbe.ok) {
     blockers.push(readinessBlocker('registry_not_verified', 'npm registry could not be read from this shell', 'run `npm config get registry` and confirm it points to the intended public registry', 'npm config get registry', 'error'));
   }
-  if (!whoamiProbe.ok) {
-    blockers.push(readinessBlocker('auth_not_verified', whoamiProbe.note || 'npm whoami did not confirm an authenticated publisher in this shell', 'refresh npm login/token, then rerun `npm whoami` before publishing', 'npm whoami', 'error'));
+  for (const blocker of authReadiness.blockers) {
+    blockers.push(readinessBlocker(blocker.kind, blocker.reason, blocker.safe_next_action, blocker.command, blocker.severity));
   }
   if (!latestProbe.ok) {
     const blocker = classifyPublishBlockerText(latestProbe.note);
@@ -2825,11 +2854,16 @@ function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarbal
       truth_status: latestProbe.ok ? 'verified' : 'blocked'
     },
     auth: {
-      command: 'npm whoami',
-      status: whoamiProbe.ok ? 'authenticated' : 'not_authenticated',
-      account: whoamiProbe.ok ? 'observed_redacted' : '',
-      note: whoamiProbe.ok ? 'npm account observed; username intentionally redacted' : whoamiProbe.note,
-      truth_status: whoamiProbe.ok ? 'verified' : 'blocked'
+      requested_mode: authReadiness.requested_mode,
+      mode: authReadiness.mode,
+      command: authReadiness.local_token.command,
+      required_for_selected_mode: authReadiness.local_token.required_for_selected_mode,
+      status: authReadiness.status,
+      account: authReadiness.local_token.account,
+      note: authReadiness.next_action,
+      local_token: authReadiness.local_token,
+      trusted_publisher: authReadiness.trusted_publisher,
+      truth_status: authReadiness.truth_status
     },
     blockers: uniqueBlockers,
     next_action: uniqueBlockers[0]?.safe_next_action || 'publish readiness is complete; run publish only when the user explicitly intends it',
@@ -2872,13 +2906,13 @@ function releaseStudyNote(publishReadiness: AnyRecord = {}, publishBlockers = []
   }
   return buildStudyNote({
     issue_code: 'npm publish readiness',
-    issue_role: 'This part checks registry, version, auth, tarball, and local release checks before any public publish.',
+    issue_role: 'This part checks registry, version, the selected OIDC or manual-token authentication path, tarball, and local release checks before any public publish.',
     issue_symptom: firstBlocker.reason || firstBlocker.likely_cause || 'Publish readiness is blocked.',
     changed_code: 'yam release report',
     changed_role: 'It now explains the likely publish blocker instead of only showing a raw npm failure.',
-    change_summary: 'The report adds auth-safe readiness, safe next action, and beginner-readable blocker evidence.',
-    why_important: 'A bad token or wrong npm account can make publish fail or target the wrong package context.',
-    learning_note: 'When release readiness is blocked, fix the first blocker before trying a publish command.'
+    change_summary: 'The report separates Trusted Publisher OIDC evidence from optional local-token evidence and gives a path-specific safe next action.',
+    why_important: 'npm whoami cannot prove OIDC readiness; treating its E401 as an OIDC blocker would recommend the wrong credential model.',
+    learning_note: 'For Trusted Publisher releases, verify the hosted workflow and npmjs package binding; use npm whoami only for an explicitly selected manual-token path.'
   });
 }
 

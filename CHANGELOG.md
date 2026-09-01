@@ -13,6 +13,7 @@ All notable changes to yam-flow are documented here.
 
 ### Improved
 
+- Aligned release readiness with npm Trusted Publisher OIDC: local `npm whoami` no longer blocks the selected OIDC path, while missing workflow controls and unverified npmjs account binding fail closed with path-specific guidance.
 - Strengthened Scout guidance with canonical entity resolution, registry/release/main/latest-commit comparison, stable/RC/unreleased classification, opposition, stop reasons, and delta-scan receipts.
 - Updater checks and component receipts now retain npm integrity/`gitHead`, PyPI release-file SHA-256 values, or the Git-pinned Insane Search manifest commit as applicable. Apply commands pin the official npm registry or isolated PyPI index, and Insane Search requires a clean tracked local manifest whose bytes match Git plus matching pre/post-add marketplace commits and pinned manifest versions.
 - Registry readiness now probes the exact immutable package version, accepts only an explicit E404 as unpublished, fails closed on auth or network errors, and binds downstream release-report parsing to the same package/version identity.

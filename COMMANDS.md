@@ -281,8 +281,12 @@ yam safety "supabase db reset --linked"
 
 Release reporting intentionally runs the release checks and returns a machine-readable summary.
 
+With the default `--auth-mode auto`, `.github/workflows/release.yml` selects Trusted Publisher OIDC. A local `npm whoami` result is recorded only as an optional manual-token probe because the [official npm Trusted Publisher documentation](https://docs.npmjs.com/trusted-publishers/) states that it does not reflect publish-time OIDC authentication. Use `--auth-mode token` only when intentionally preparing a direct local token publish. The report stays blocked until the selected path has appropriate evidence; it never publishes.
+
 ```bash
 yam release report --json
+yam release report --auth-mode oidc --json
+yam release report --auth-mode token --json
 ```
 
 ## Flow Artifact Shapes
@@ -298,7 +302,7 @@ yam release report --json
 yam runtime evidence --backend terminal --claim cleanup-verified --cleanup-observed --exit-code 0 --cleanup-method "exit observed" --json
 yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "changed files review" --evidence "read-only findings recorded" --json
 yam benchmark report --label "bundle size" --baseline 120 --current 118 --unit kB --target lower --json
-yam loop report --route deep --intent "verify release readiness" --blocked "npm auth not verified" --next-action "refresh npm token, then rerun npm whoami" --json
+yam loop report --route deep --intent "verify an explicitly selected manual-token release path" --blocked "npm auth not verified" --next-action "refresh npm token, then rerun npm whoami" --json
 ```
 
 Supported report shapes:

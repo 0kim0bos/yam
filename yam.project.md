@@ -76,6 +76,7 @@
 - Add a pure install dry-run plan before mutation while keeping actual install authorization explicit.
 - Build and reuse one exact tarball across operating-system lifecycle checks.
 - Keep Next step as a reusable contract connected to loop reports and the Study Note completion guard.
+- Keep release authentication path-specific: auto-select the reviewed Trusted Publisher OIDC workflow, preserve explicit manual-token readiness, and never use `npm whoami` as OIDC proof.
 
 ## No-Go Rules
 

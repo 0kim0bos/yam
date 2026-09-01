@@ -16,6 +16,7 @@ const pairs = [
   ['src/lib/next-step.ts', 'dist/lib/next-step.js'],
   ['src/lib/scout-receipt.ts', 'dist/lib/scout-receipt.js'],
   ['src/lib/release-registry-status.ts', 'dist/lib/release-registry-status.js'],
+  ['src/lib/release-auth-readiness.ts', 'dist/lib/release-auth-readiness.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
 ];
 
