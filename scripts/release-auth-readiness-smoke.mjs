@@ -99,7 +99,7 @@ function activeStepCommands(jobLines) {
   }
   if (current.length) steps.push(current);
 
-  return steps.flatMap((step) => {
+  return steps.flatMap((step, stepIndex) => {
     const runIndex = step.findIndex((line) => /^(?:      -\s+|        )run:\s*/.test(line));
     if (runIndex < 0) return [];
     const runMatch = step[runIndex].match(/^(?:      -\s+|        )run:\s*(.*)$/);
@@ -113,7 +113,10 @@ function activeStepCommands(jobLines) {
     return command ? [{
       command,
       conditional: step.some((line) => /^(?:      -\s+|        )if:\s*/.test(line)),
-      non_blocking: step.some((line) => /^(?:      -\s+|        )continue-on-error:\s*/.test(line))
+      non_blocking: step.some((line) => /^(?:      -\s+|        )continue-on-error:\s*/.test(line)),
+      lines: step,
+      step_index: stepIndex,
+      step_count: steps.length
     }] : [];
   });
 }
@@ -211,10 +214,39 @@ function assertReleaseLifecycleGate(workflowText) {
   );
   const publishSteps = activeStepCommands(publishLines);
   const expectedPublish = 'npm publish "package-artifact/yam-flow-${{ needs.package.outputs.version }}.tgz" --access public --provenance --ignore-scripts --registry https://registry.npmjs.org/';
-  const publishStep = publishSteps.find((step) => step.command === expectedPublish);
+  const npmPublishSteps = publishSteps.filter((step) => /^npm\s+publish(?:\s|$)/.test(step.command));
+  assert(npmPublishSteps.length === 1, 'release publish job must contain exactly one npm publish step');
+  const publishStep = npmPublishSteps[0];
+  assert(publishStep.command === expectedPublish, 'release publish job must publish the exact tested tarball with provenance');
+  const artifactVerificationSteps = publishSteps.filter((step) => [
+    'const directory = "package-artifact";',
+    'const expectedName = `yam-flow-${process.env.PACKAGE_VERSION}.tgz`;',
+    'if (digest !== process.env.EXPECTED_SHA256)',
+    'const receipt = JSON.parse(readFileSync(join(directory, "receipt.json"), "utf8"));',
+    'receipt.artifact !== basename(tarball)',
+    'receipt.sha256 !== digest',
+    'receipt.bytes !== statSync(tarball).size'
+  ].every((fragment) => step.command.includes(fragment)));
+  assert(artifactVerificationSteps.length === 1, 'release publish job must verify the artifact SHA and receipt exactly once');
+  const artifactVerificationStep = artifactVerificationSteps[0];
+  assert(!artifactVerificationStep.conditional, 'release artifact verification must be unconditional');
+  assert(!artifactVerificationStep.non_blocking, 'release artifact verification must block on failure');
+  assert(
+    artifactVerificationStep.lines.some((line) => /^          EXPECTED_SHA256:\s*\$\{\{\s*needs\.package\.outputs\.sha256\s*\}\}\s*(?:#.*)?$/.test(line))
+      && artifactVerificationStep.lines.some((line) => /^          PACKAGE_VERSION:\s*\$\{\{\s*needs\.package\.outputs\.version\s*\}\}\s*(?:#.*)?$/.test(line)),
+    'release artifact verification must bind package SHA and version outputs'
+  );
   assert(publishStep, 'release publish job must publish the exact tested tarball with provenance');
   assert(!publishStep.conditional, 'release publish step must be unconditional after successful dependencies');
   assert(!publishStep.non_blocking, 'release publish step must report failure');
+  assert(
+    publishStep.step_index === artifactVerificationStep.step_index + 1,
+    'release publish must immediately follow artifact verification without mutation steps'
+  );
+  assert(
+    publishStep.step_index === publishStep.step_count - 1,
+    'release publish must be the final publish-job step'
+  );
 }
 
 const actualWorkflowText = readFileSync('.github/workflows/release.yml', 'utf8');
@@ -370,6 +402,24 @@ assert.throws(
     '          --dry-run\n'
   )),
   /publish the exact tested tarball with provenance/
+);
+assert.throws(
+  () => assertReleaseLifecycleGate(actualWorkflowText.replace(
+    /\n      - name: Verify artifact bytes without executing repository code[\s\S]*?(?=\n      - name: Publish the tested bytes)/,
+    ''
+  )),
+  /verify the artifact SHA and receipt exactly once/
+);
+assert.throws(
+  () => assertReleaseLifecycleGate(actualWorkflowText.replace(
+    '      - name: Publish the tested bytes with OIDC and provenance',
+    '      - name: Mutate the tested artifact\n        run: node -e "require(\'node:fs\').appendFileSync(\'package-artifact/yam-flow-2.8.0.tgz\', \'x\')"\n\n      - name: Publish the tested bytes with OIDC and provenance'
+  )),
+  /immediately follow artifact verification/
+);
+assert.throws(
+  () => assertReleaseLifecycleGate(`${actualWorkflowText}\n      - name: Publish duplicate\n        run: >-\n          npm publish\n          "package-artifact/yam-flow-\${{ needs.package.outputs.version }}.tgz"\n          --access public\n          --provenance\n          --ignore-scripts\n          --registry https://registry.npmjs.org/\n`),
+  /exactly one npm publish step/
 );
 
 console.log('release-auth-readiness-smoke: ok (OIDC boundary, manual fallback, and cross-platform transaction publish gate preserved)');
