@@ -1248,8 +1248,10 @@ async function captureLockIdentity(target: string, created: BigIntStats): Promis
     !created.isFile()
     || current.isSymbolicLink()
     || !current.isFile()
-    || created.dev !== current.dev
-    || created.ino !== current.ino
+    || (process.platform !== 'win32' && (
+      created.dev !== current.dev
+      || created.ino !== current.ino
+    ))
   ) {
     throw new Error(`install lock changed identity after exclusive creation: ${target}`);
   }
@@ -1267,15 +1269,40 @@ async function captureLockIdentity(target: string, created: BigIntStats): Promis
       ) {
         throw new Error(`install lock pin descriptor does not match exclusive creation: ${target}`);
       }
-    } else if (current.birthtimeNs <= 0n) {
-      throw new Error(`install lock requires a positive birthtime when descriptor pinning is unavailable: ${target}`);
+    } else {
+      if (current.birthtimeNs <= 0n) {
+        throw new Error(`install lock requires a positive birthtime when descriptor pinning is unavailable: ${target}`);
+      }
+      pinHandle = await fsp.open(target, fsConstants.O_RDONLY);
+      const pinned = await pinHandle.stat({ bigint: true });
+      const confirmed = await fsp.lstat(target, { bigint: true });
+      if (
+        !pinned.isFile()
+        || pinned.dev !== created.dev
+        || pinned.ino !== created.ino
+        || confirmed.isSymbolicLink()
+        || !confirmed.isFile()
+        || confirmed.dev !== current.dev
+        || confirmed.ino !== current.ino
+        || confirmed.birthtimeNs !== current.birthtimeNs
+      ) {
+        throw new Error(`install lock changed identity while confirming Windows path ownership: ${target}`);
+      }
+      await pinHandle.close();
+      pinHandle = undefined;
+      return {
+        path: target,
+        dev: confirmed.dev,
+        ino: confirmed.ino,
+        kind: 'file',
+        birthtimeNs: confirmed.birthtimeNs
+      };
     }
     return {
       path: target,
       dev: created.dev,
       ino: created.ino,
       kind: 'file',
-      birthtimeNs: process.platform === 'win32' ? current.birthtimeNs : undefined,
       handle: pinHandle
     };
   } catch (error) {
