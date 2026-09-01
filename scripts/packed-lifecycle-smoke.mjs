@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, delimiter as pathDelimiter, dirname, join, resolve } from 'node:path';
 
 function parseArgs(argv) {
   const options = { artifactDir: '', receipt: '', writeReceipt: '', expectedSha256: '', verifyOnly: false, selfTest: false };
@@ -111,10 +111,18 @@ function run(command, args, options = {}) {
 
 function npmCliPath() {
   const executableDir = dirname(process.execPath);
-  const candidates = [
+  const runtimeCandidates = [
     join(executableDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
     join(executableDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
-  ].map((candidate) => resolve(candidate));
+  ];
+  const windowsPathCandidates = process.platform === 'win32'
+    ? String(process.env.PATH || '')
+      .split(pathDelimiter)
+      .map((entry) => entry.replace(/^"(.*)"$/, '$1').trim())
+      .filter(Boolean)
+      .map((entry) => join(entry, 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    : [];
+  const candidates = [...runtimeCandidates, ...windowsPathCandidates].map((candidate) => resolve(candidate));
   const cli = [...new Set(candidates)].find((candidate) => {
     try {
       const canonical = realpathSync(candidate);
