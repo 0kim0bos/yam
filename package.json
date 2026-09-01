@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
@@ -23,6 +23,14 @@
     "./trust-kernel": {
       "types": "./dist/lib/trust-kernel.d.ts",
       "import": "./dist/lib/trust-kernel.js"
+    },
+    "./next-step": {
+      "types": "./dist/lib/next-step.d.ts",
+      "import": "./dist/lib/next-step.js"
+    },
+    "./scout-receipt": {
+      "types": "./dist/lib/scout-receipt.d.ts",
+      "import": "./dist/lib/scout-receipt.js"
     }
   },
   "files": [
@@ -52,19 +60,22 @@
     "doctor": "node ./dist/bin/yam.js doctor",
     "list": "node ./dist/bin/yam.js list",
     "examples": "node ./dist/bin/yam.js examples",
-    "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node --check ./dist/lib/skill-installation.js && node --check ./dist/lib/external-updates.js && node --check ./dist/lib/gate-result.js && node --check ./dist/lib/benchmark-promotion.js && node --check ./dist/lib/design-production.js && node --check ./dist/lib/verification-closure.js && node --check ./dist/lib/media-provider-receipt.js && npm run hook-latency-smoke && node ./scripts/external-updates-smoke.mjs && node ./scripts/install-transaction-smoke.mjs && node ./scripts/trust-adoptions-smoke.mjs && node ./scripts/design-production-smoke.mjs && node ./scripts/phase-adoptions-smoke.mjs && npm run package-secrets:check && npm run package-secrets-smoke && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
+    "verify:self": "npm run build && node --check ./dist/bin/yam.js && node --check ./dist/lib/trust-kernel.js && node --check ./dist/lib/skill-installation.js && node --check ./dist/lib/external-updates.js && node --check ./dist/lib/next-step.js && node --check ./dist/lib/scout-receipt.js && node --check ./dist/lib/release-registry-status.js && node --check ./dist/lib/gate-result.js && node --check ./dist/lib/benchmark-promotion.js && node --check ./dist/lib/design-production.js && node --check ./dist/lib/verification-closure.js && node --check ./dist/lib/media-provider-receipt.js && npm run hook-latency-smoke && npm run next-step-smoke && npm run scout-receipt-smoke && npm run release:registry-parser:smoke && node ./scripts/external-updates-smoke.mjs && node ./scripts/install-transaction-smoke.mjs && node ./scripts/trust-adoptions-smoke.mjs && node ./scripts/design-production-smoke.mjs && node ./scripts/phase-adoptions-smoke.mjs && npm run package-secrets:check && npm run package-secrets-smoke && node ./dist/bin/yam.js verify && node ./dist/bin/yam.js doctor",
     "prepare": "npm run build",
     "prepack": "npm run verify:self",
     "prepublishOnly": "npm run verify:self",
     "pack:dry-run": "npm pack --dry-run",
     "publish:dry": "npm publish --dry-run --access public",
     "forbidden-names:check": "node ./scripts/check-forbidden-names.mjs",
+    "workflow-pins:check": "node ./scripts/check-workflow-pins.mjs",
     "study-note:check": "node ./dist/bin/yam.js study-note check --json",
     "package-boundary:check": "node ./scripts/check-package-boundary.mjs",
     "package-secrets:check": "node ./scripts/check-package-secrets.mjs",
     "package-secrets-smoke": "node ./scripts/package-secrets-smoke.mjs",
     "dist:freshness": "node ./scripts/check-dist-freshness.mjs",
     "registry:check": "node ./scripts/check-registry-version.mjs",
+    "registry:check:smoke": "node ./scripts/check-registry-version.mjs --self-test",
+    "release:registry-parser:smoke": "node ./scripts/release-registry-status-smoke.mjs",
     "cli-smoke": "node ./scripts/cli-smoke.mjs",
     "external-updates-smoke": "npm run build && node ./scripts/external-updates-smoke.mjs",
     "trust-adoptions-smoke": "npm run build && node ./scripts/trust-adoptions-smoke.mjs",
@@ -72,7 +83,14 @@
     "phase-adoptions-smoke": "npm run build && node ./scripts/phase-adoptions-smoke.mjs",
     "hook-latency-smoke": "node ./scripts/hook-latency-smoke.mjs",
     "install-transaction-smoke": "npm run build && node ./scripts/install-transaction-smoke.mjs",
-    "release:check": "npm run typecheck && npm run forbidden-names:check && npm run verify:self && npm run dist:freshness && npm run package-boundary:check && npm run registry:check && npm run cli-smoke",
+    "next-step-smoke": "node ./scripts/next-step-smoke.mjs",
+    "scout-receipt-smoke": "node ./scripts/scout-receipt-smoke.mjs",
+    "release:ref:check": "node ./scripts/check-release-ref.mjs --mode verify",
+    "release:ref:check:strict": "node ./scripts/check-release-ref.mjs --mode release --remote-ref origin/main --tag-policy signed",
+    "release:ref:smoke": "node ./scripts/check-release-ref.mjs --self-test",
+    "release:packed-lifecycle:smoke": "node ./scripts/packed-lifecycle-smoke.mjs --self-test",
+    "release:supply-chain:smoke": "npm run build && npm run registry:check:smoke && npm run release:ref:smoke && npm run release:packed-lifecycle:smoke",
+    "release:check": "npm run release:ref:check && npm run typecheck && npm run forbidden-names:check && npm run workflow-pins:check && npm run verify:self && npm run dist:freshness && npm run package-boundary:check && npm run registry:check && npm run cli-smoke",
     "budget": "node ./dist/bin/yam.js budget",
     "measure": "node ./dist/bin/yam.js measure",
     "tools": "node ./dist/bin/yam.js tools",

@@ -50,6 +50,7 @@ import {
 import {
   inspectSkillInstallation,
   installSkillSetTransactional,
+  planSkillSetInstallation,
   uninstallSkillSetSafely
 } from '../lib/skill-installation.js';
 import {
@@ -74,6 +75,15 @@ import {
   createMediaProviderReceipt,
   verifyMediaProviderReceipt
 } from '../lib/media-provider-receipt.js';
+import {
+  createScoutReceipt,
+  verifyScoutReceiptFile
+} from '../lib/scout-receipt.js';
+import {
+  buildNextStep,
+  verifyNextStep
+} from '../lib/next-step.js';
+import { releaseRegistryStatusFromChecks } from '../lib/release-registry-status.js';
 import {
   BoundedInputError,
   GENERAL_STDIN_MAX_BYTES,
@@ -210,7 +220,9 @@ Usage:
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam study-note check [dir] [--report file|--text text] [--json]
+  yam next-step <report|verify> [--spec file|--receipt file] [--json]
   yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
+  yam scout receipt <create|verify> [options]
   yam ueye capture --url URL --out screenshot.png [--viewport 1440x900] [--full-page] [--json]
   yam ueye compare --reference ref.png --actual screenshot.png [--json]
   yam ueye preflight [dir] [--json]
@@ -235,7 +247,7 @@ Usage:
   yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
   yam template <project|ueye|mission|proof|tuning>
   yam tune-log [dir]
-  yam install [--replace-user-skill name]
+  yam install [--dry-run] [--json] [--replace-user-skill name]
   yam uninstall
   yam doctor [--json]
   yam examples
@@ -261,10 +273,20 @@ async function rmrf(target) {
   await fsp.rm(target, { recursive: true, force: true });
 }
 
-function installReplacementSkills(args: string[] = []) {
+function installOptions(args: string[] = []) {
   const skills: string[] = [];
+  let dryRun = false;
+  let json = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = String(args[index] || '');
+    if (arg === '--dry-run') {
+      dryRun = true;
+      continue;
+    }
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
     if (arg === '--replace-user-skill') {
       const skill = String(args[index + 1] || '');
       if (!skill || skill.startsWith('--')) {
@@ -282,21 +304,31 @@ function installReplacementSkills(args: string[] = []) {
     }
     throw new Error(`unknown yam install argument: ${arg}`);
   }
-  return [...new Set(skills)];
+  if (json && !dryRun) throw new Error('yam install --json currently requires --dry-run');
+  return { replaceSkills: [...new Set(skills)], dryRun, json };
 }
 
 async function install(args: string[] = []) {
-  const replaceSkills = installReplacementSkills(args);
-  const result = await installSkillSetTransactional({
+  const options = installOptions(args);
+  const installInput = {
     sourceRoot: ROOT,
     destination: DEST,
     codexMirror: CODEX_MIRROR,
     packageName: String(PACKAGE_JSON.name || 'yam-flow'),
     version: VERSION,
     skills: SKILLS,
-    replaceSkills,
+    replaceSkills: options.replaceSkills,
     legacySkills: LEGACY_SKILLS,
     retiredSkills: RETIRED_SKILLS
+  };
+  if (options.dryRun) {
+    const plan = await planSkillSetInstallation(installInput);
+    printJsonOrHuman(plan, options.json, 'yam install dry run');
+    if (!plan.ready) process.exitCode = 1;
+    return;
+  }
+  const result = await installSkillSetTransactional({
+    ...installInput
   });
   console.log(`yam installed to ${DEST}`);
   console.log(`install receipt: ${result.receiptPath}`);
@@ -372,6 +404,92 @@ async function loadManifest() {
 
 async function readJson(file): Promise<AnyRecord> {
   return JSON.parse(await fsp.readFile(file, 'utf8'));
+}
+
+async function readBoundedRegularJson(file, label = 'JSON input', maxBytes = GENERAL_STDIN_MAX_BYTES): Promise<AnyRecord> {
+  const requested = path.resolve(expandHome(String(file || '')));
+  const physicalParent = await fsp.realpath(path.dirname(requested));
+  const target = path.join(physicalParent, path.basename(requested));
+  const parents = await captureAbsoluteRegularDirectoryPath(physicalParent, label);
+  const noFollow = process.platform !== 'win32' && typeof fs.constants.O_NOFOLLOW === 'number'
+    ? fs.constants.O_NOFOLLOW
+    : 0;
+  const before = await fsp.lstat(target);
+  if (!before.isFile() || before.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular JSON file no larger than ${maxBytes} bytes`);
+  }
+  const handle = await fsp.open(target, fs.constants.O_RDONLY | noFollow);
+  try {
+    const opened = await handle.stat();
+    await revalidateAbsoluteRegularDirectoryPath(parents, label);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size > maxBytes) {
+      throw new Error(`${label} must be a stable regular JSON file no larger than ${maxBytes} bytes`);
+    }
+    const bytes = await readBoundedFileHandle(handle, maxBytes);
+    const afterOpened = await handle.stat();
+    const after = await fsp.lstat(target);
+    await revalidateAbsoluteRegularDirectoryPath(parents, label);
+    if (
+      bytes.length > maxBytes
+      || after.isSymbolicLink()
+      || !after.isFile()
+      || after.dev !== opened.dev
+      || after.ino !== opened.ino
+      || afterOpened.dev !== opened.dev
+      || afterOpened.ino !== opened.ino
+      || afterOpened.size !== bytes.length
+    ) {
+      throw new Error(`${label} changed identity or size while being read`);
+    }
+    return JSON.parse(bytes.toString('utf8'));
+  } finally {
+    await handle.close();
+  }
+}
+
+type CliPathIdentity = { path: string; dev: number; ino: number };
+
+async function captureAbsoluteRegularDirectoryPath(target: string, label: string) {
+  const absolute = path.resolve(target);
+  const filesystemRoot = path.parse(absolute).root;
+  const relative = path.relative(filesystemRoot, absolute);
+  const identities: CliPathIdentity[] = [];
+  let current = filesystemRoot;
+  for (const segment of relative ? ['', ...relative.split(path.sep)] : ['']) {
+    if (segment) current = path.join(current, segment);
+    const stat = await fsp.lstat(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new Error(`${label} parent must be a regular physical directory: ${current}`);
+    }
+    identities.push({ path: current, dev: stat.dev, ino: stat.ino });
+  }
+  return identities;
+}
+
+async function revalidateAbsoluteRegularDirectoryPath(identities: CliPathIdentity[], label: string) {
+  for (const identity of identities) {
+    const stat = await fsp.lstat(identity.path);
+    if (
+      stat.isSymbolicLink()
+      || !stat.isDirectory()
+      || stat.dev !== identity.dev
+      || stat.ino !== identity.ino
+    ) {
+      throw new Error(`${label} parent changed identity while being read: ${identity.path}`);
+    }
+  }
+}
+
+async function readBoundedFileHandle(handle: fsp.FileHandle, maxBytes: number) {
+  const buffer = Buffer.alloc(maxBytes + 1);
+  let total = 0;
+  while (total < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, total, buffer.length - total, null);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+  }
+  if (total > maxBytes) throw new Error(`JSON input exceeds ${maxBytes} bytes while being read`);
+  return buffer.subarray(0, total);
 }
 
 async function readJsonOrDefault(file, fallback: AnyRecord = {}): Promise<AnyRecord> {
@@ -845,8 +963,9 @@ Usage:
   yam study-note check [dir] [--report file|--text text] [--json]
 
 Notes:
-  Read-only guard. It checks whether changed work has a Study Note and whether relevant UI/CSS/DB hygiene was reported.
-  It does not generate, edit, or infer the Study Note for you.
+  Read-only guard. It checks whether changed work has a complete Study Note followed immediately by Next step,
+  including relevant UI/CSS/DB hygiene and the ordered fix-first/planned handoff contract.
+  It does not generate, edit, or infer either section for you.
 `);
 }
 
@@ -867,6 +986,7 @@ async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'n
   const needsStudyNote = changeScopeAvailable && changedFiles.length > 0;
   const scopeAwareStatus = (passes) => changeScopeAvailable ? (!needsStudyNote || passes ? 'pass' : 'fail') : 'partial';
   const hygieneRequirements = studyNoteHygieneRequirements(changedFiles);
+  const studyNoteText = studyNoteSectionText(reportText);
   const checks = [
     studyNoteGuardCheck(
       'changed_files',
@@ -876,16 +996,24 @@ async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'n
         : 'Git changed-file scope is unavailable; do not treat this project as clean and determine Study Note need manually'
     ),
     studyNoteGuardCheck('study_note_present', scopeAwareStatus(hasStudyNoteMarker(reportText)), 'final report should include a Study Note when project artifacts changed'),
-    studyNoteGuardCheck('role_or_responsibility', scopeAwareStatus(/(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(reportText)), 'Study Note should explain what the touched code/artifact does'),
-    studyNoteGuardCheck('execution_point', scopeAwareStatus(/(execution|\bruns?\b|\bloads?\b|\brenders?\b|validates?|builds?|publishes?|read by|실행|로드|렌더|검사|검증|빌드|게시|배포|읽)/i.test(reportText)), 'Study Note should explain where or when the touched code/artifact runs or is read'),
-    studyNoteGuardCheck('before_after_or_change', scopeAwareStatus(/(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(reportText)), 'Study Note should explain what changed from before to after'),
-    studyNoteGuardCheck('expected_behavior', scopeAwareStatus(/(expected|should|will|result|behavior|예상|기대|결과|동작|되어야|하게 됨)/i.test(reportText)), 'Study Note should describe the expected behavior or result'),
-    studyNoteGuardCheck('syntax_or_structure', scopeAwareStatus(/(syntax|structure|schema|\bapi\b|function|array|field|type|condition|문법|구조|스키마|함수|배열|필드|타입|조건)/i.test(reportText)), 'Study Note should include one useful syntax or structure insight'),
-    studyNoteGuardCheck('verification', scopeAwareStatus(/(verification|verified|checked|tested|검증|확인|테스트)/i.test(reportText)), 'Study Note should say what was checked'),
-    studyNoteGuardCheck('limits_or_uncertainty', scopeAwareStatus(/(limits?|uncertain|unknown|not checked|remaining|한계|불확실|모르는|미확인|남은)/i.test(reportText)), 'Study Note should say what remains uncertain or explicitly state that no meaningful uncertainty remains')
+    studyNoteGuardCheck('role_or_responsibility', scopeAwareStatus(/(\brole\b|\bresponsib|\bdoes\b|역할|기능)/i.test(studyNoteText)), 'Study Note should explain what the touched code/artifact does'),
+    studyNoteGuardCheck('execution_point', scopeAwareStatus(/(execution|\bruns?\b|\bloads?\b|\brenders?\b|validates?|builds?|publishes?|read by|실행|로드|렌더|검사|검증|빌드|게시|배포|읽)/i.test(studyNoteText)), 'Study Note should explain where or when the touched code/artifact runs or is read'),
+    studyNoteGuardCheck('before_after_or_change', scopeAwareStatus(/(\bbefore\b|\bafter\b|before\/after|changed|change meaning|바뀌|변경|수정)/i.test(studyNoteText)), 'Study Note should explain what changed from before to after'),
+    studyNoteGuardCheck('expected_behavior', scopeAwareStatus(/(expected|should|will|result|behavior|예상|기대|결과|동작|되어야|하게 됨)/i.test(studyNoteText)), 'Study Note should describe the expected behavior or result'),
+    studyNoteGuardCheck('syntax_or_structure', scopeAwareStatus(/(syntax|structure|schema|\bapi\b|function|array|field|type|condition|문법|구조|스키마|함수|배열|필드|타입|조건)/i.test(studyNoteText)), 'Study Note should include one useful syntax or structure insight'),
+    studyNoteGuardCheck('verification', scopeAwareStatus(/(verification|verified|checked|tested|검증|확인|테스트)/i.test(studyNoteText)), 'Study Note should say what was checked'),
+    studyNoteGuardCheck('limits_or_uncertainty', scopeAwareStatus(/(limits?|uncertain|unknown|not checked|remaining|한계|불확실|모르는|미확인|남은)/i.test(studyNoteText)), 'Study Note should say what remains uncertain or explicitly state that no meaningful uncertainty remains'),
+    studyNoteGuardCheck('next_step_present', scopeAwareStatus(hasNextStepMarker(reportText)), 'changed-artifact reports should include a Next step section'),
+    studyNoteGuardCheck('single_study_note_next_step_pair', scopeAwareStatus(hasSingleStudyNoteNextStepPair(reportText)), 'changed-artifact reports should contain one unambiguous Study Note followed by one Next step section'),
+    studyNoteGuardCheck('study_note_then_next_step', scopeAwareStatus(hasStudyNoteThenNextStepOrder(reportText)), 'Next step should be the next report section immediately after Study Note'),
+    studyNoteGuardCheck('next_step_whole_process_scan', scopeAwareStatus(hasNextStepWholeProcessScan(reportText)), 'Next step should include current situation, forward outlook, a critical opinion, and an improvement recommendation'),
+    studyNoteGuardCheck('next_step_ordered_actions', scopeAwareStatus(hasNextStepOrderedActions(reportText)), 'Next step should include an ordered action sequence with fix-first work before planned work'),
+    studyNoteGuardCheck('next_step_evidence_and_ownership', scopeAwareStatus(hasNextStepEvidenceAndOwnership(reportText)), 'Next step should name evidence level or stamp plus the owner route or scope'),
+    studyNoteGuardCheck('next_step_safety_context', scopeAwareStatus(hasNextStepSafetyContext(reportText)), 'Next step should state blocker status, safe retry guidance, and side effects'),
+    studyNoteGuardCheck('next_step_truth_status', scopeAwareStatus(hasNextStepTruthStatus(reportText)), 'Next step should state its evidence-bounded truth status')
   ];
   for (const requirement of hygieneRequirements) {
-    checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(reportText, requirement), requirement.note));
+    checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(studyNoteText, requirement), requirement.note));
   }
   const blockers = checks.filter((check) => check.status === 'fail').map((check) => `${check.id}: ${check.next_action}`);
   const result = {
@@ -965,6 +1093,121 @@ async function readStudyNoteReportText(flags, dir) {
 
 function hasStudyNoteMarker(text = '') {
   return /(study note|study-note|학습\s*노트|스터디\s*노트)/i.test(text);
+}
+
+function hasNextStepMarker(text = '') {
+  return /(next step|next-step|다음\s*(?:단계|할\s*일|작업))/i.test(text);
+}
+
+function reportSectionMarkers(text = '') {
+  return String(text || '').split(/\r?\n/).map((line, index) => {
+    const trimmed = line.trim();
+    const heading = trimmed.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    const named = trimmed.match(/^(study note|study-note|학습\s*노트|스터디\s*노트|next step|next-step|다음\s*(?:단계|할\s*일|작업))\s*:?[ \t]*$/i);
+    const rawLabel = heading?.[1] || named?.[1] || '';
+    if (!rawLabel) return null;
+    const label = rawLabel.toLowerCase().replace(/[-\s]+/g, ' ').trim();
+    const kind = /(study note|학습 노트|스터디 노트)/i.test(label)
+      ? 'study_note'
+      : /(next step|다음 단계|다음 할 일|다음 작업)/i.test(label)
+        ? 'next_step'
+        : 'other';
+    return { index, kind, level: heading?.[0].match(/^#+/)?.[0].length || 0 };
+  }).filter((item): item is { index: number; kind: string; level: number } => Boolean(item));
+}
+
+function hasStudyNoteThenNextStepOrder(text = '') {
+  const markers = reportSectionMarkers(text);
+  const studyIndex = markers.findIndex((item) => item.kind === 'study_note');
+  if (studyIndex < 0) return false;
+  return nextPeerSection(markers, studyIndex)?.kind === 'next_step';
+}
+
+function hasSingleStudyNoteNextStepPair(text = '') {
+  const markers = reportSectionMarkers(text);
+  return markers.filter((item) => item.kind === 'study_note').length === 1
+    && markers.filter((item) => item.kind === 'next_step').length === 1;
+}
+
+function hasNextStepWholeProcessScan(text = '') {
+  const value = nextStepSectionText(text);
+  const situation = /(situation|current state|현재\s*(?:상황|상태))/i.test(value);
+  const outlook = /(outlook|forward|앞으로|향후|전망)/i.test(value);
+  const critical = /(critical opinion|critique|비판적|비판\s*의견|tradeoff|약점)/i.test(value);
+  const recommendation = /(recommendation|recommend|개선\s*추천|추천\s*의견|권장)/i.test(value);
+  return situation && outlook && critical && recommendation;
+}
+
+function hasNextStepOrderedActions(text = '') {
+  const value = nextStepSectionText(text);
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const actionLines = lines.filter((line) => /^\d+[.)]\s+/.test(line));
+  const labeledLines = lines.filter((line) => /\[(fix[- ]first|우선\s*(?:수정|해결|처리)|planned|계획(?:된|한)?\s*(?:작업|단계)?)\]/i.test(line));
+  if (!actionLines.length || !/^1[.)]\s+/.test(actionLines[0])) return false;
+  if (labeledLines.length !== actionLines.length || labeledLines.some((line) => !/^\d+[.)]\s+/.test(line))) return false;
+  let plannedSeen = false;
+  for (const [index, line] of actionLines.entries()) {
+    const number = Number(line.match(/^(\d+)[.)]/)?.[1] || 0);
+    if (number !== index + 1) return false;
+    const kind = line.match(/\[(fix[- ]first|우선\s*(?:수정|해결|처리)|planned|계획(?:된|한)?\s*(?:작업|단계)?)\]/i)?.[1] || '';
+    if (!kind) return false;
+    const planned = /planned|계획/i.test(kind);
+    if (planned) plannedSeen = true;
+    else if (plannedSeen) return false;
+  }
+  return true;
+}
+
+function hasNextStepEvidenceAndOwnership(text = '') {
+  const value = nextStepSectionText(text);
+  const evidence = /(evidence(?:[_ -](?:level|stamp))?|\bL[0-5]\b|근거|증거|검증\s*(?:수준|스탬프))/i.test(value);
+  const ownership = /(owner(?:[_ -](?:route|scope))?|담당|소유|책임\s*(?:경로|범위|주체))/i.test(value);
+  return evidence && ownership;
+}
+
+function hasNextStepSafetyContext(text = '') {
+  const value = nextStepSectionText(text);
+  const blocker = /(blocker|blocked(?:[_ -]by)?|차단|막힘|방해)/i.test(value);
+  const safeRetry = /(safe[_ -]retry|안전[^\n]{0,20}재시도|재시도[^\n]{0,20}안전)/i.test(value);
+  const sideEffects = /(side[_ -]effects?|부작용|영향)/i.test(value);
+  return blocker && safeRetry && sideEffects;
+}
+
+function hasNextStepTruthStatus(text = '') {
+  return /(truth[_ -]status|진실\s*상태|검증\s*상태)/i.test(nextStepSectionText(text));
+}
+
+function nextStepSectionText(text = '') {
+  const value = String(text || '');
+  const lines = value.split(/\r?\n/);
+  const markers = reportSectionMarkers(value);
+  const study = markers.findIndex((item) => item.kind === 'study_note');
+  if (study < 0) return '';
+  const adjacent = nextPeerSectionIndex(markers, study);
+  if (adjacent < 0 || markers[adjacent].kind !== 'next_step') return '';
+  const end = nextPeerSection(markers, adjacent);
+  return lines.slice(markers[adjacent].index + 1, end?.index ?? lines.length).join('\n');
+}
+
+function studyNoteSectionText(text = '') {
+  const value = String(text || '');
+  const lines = value.split(/\r?\n/);
+  const markers = reportSectionMarkers(value);
+  const study = markers.findIndex((item) => item.kind === 'study_note');
+  if (study < 0) return '';
+  const end = nextPeerSection(markers, study);
+  return lines.slice(markers[study].index + 1, end?.index ?? lines.length).join('\n');
+}
+
+function nextPeerSection(markers: Array<{ index: number; kind: string; level: number }>, start: number) {
+  const nextIndex = nextPeerSectionIndex(markers, start);
+  return nextIndex < 0 ? undefined : markers[nextIndex];
+}
+
+function nextPeerSectionIndex(markers: Array<{ index: number; kind: string; level: number }>, start: number) {
+  const current = markers[start];
+  const relative = markers.slice(start + 1).findIndex((item) => current.level === 0 || item.level === 0 || item.level <= current.level);
+  return relative < 0 ? -1 : start + 1 + relative;
 }
 
 function studyNoteGuardCheck(id, status, nextAction) {
@@ -2182,26 +2425,27 @@ async function buildStudyNoteHookContext({ cwd }) {
   const changedFileDetection = gitChangedFileSnapshot(dir);
   const changedFiles = changedFileDetection.files;
   const lines = [
-    'yam Study Note guard active: if this turn changes code, config, release metadata, docs, or project artifacts, include a Study Note in the final response.'
+    'yam Study Note guard active: if this turn changes code, config, release metadata, docs, or project artifacts, include a Study Note followed immediately by Next step in the final response.'
   ];
   if (!changedFileDetection.available) {
     lines.push('Git changed-file scope is unavailable at prompt time; do not treat this as a clean project.');
-    lines.push('Determine manually whether artifacts changed and include the Study Note when they did; the Stop hook will keep this uncertainty visible.');
+    lines.push('Determine manually whether artifacts changed and include Study Note followed by Next step when they did; the Stop hook will keep this uncertainty visible.');
     return lines.join('\n');
   }
   if (!changedFiles.length) {
-    lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add the Study Note before final.');
+    lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add Study Note followed immediately by Next step before final.');
     lines.push('The Study Note Stop hook will check the final response if artifacts are changed later in the turn.');
     return lines.join('\n');
   }
   lines.push(`Changed files detected (${Math.min(changedFiles.length, 8)} shown): ${changedFiles.slice(0, 8).join(', ')}`);
   lines.push('Study Note minimum: touched code/artifact, role, execution point, before/after change, expected behavior, one syntax/structure insight, verification, and limits.');
+  lines.push('Next step minimum: quick whole-process scan, current situation, forward outlook, critical opinion, improvement recommendation, ordered fix-first then planned actions, evidence, ownership, blocker status, safe retry, side effects, and truth status.');
   const hygiene = studyNoteHygieneRequirements(changedFiles);
   if (hygiene.length) {
     lines.push(`Architecture hygiene required: ${hygiene.map((item) => item.id).join(', ')}.`);
     lines.push('Report whether the change avoided dumping unrelated logic into page.tsx, one-off CSS into global.css, or structured product data into broad DB jsonb.');
   }
-  lines.push('This prompt reminder does not generate or edit the Study Note; the paired Stop hook requests one correction pass if the final response is incomplete.');
+  lines.push('This prompt reminder does not generate or edit either section; the paired Stop hook requests one correction pass if the final response is incomplete or ordered incorrectly.');
   return lines.join('\n');
 }
 
@@ -2522,9 +2766,14 @@ function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarbal
   const registryProbe = runReadOnlyCommandResult('npm', ['config', 'get', 'registry']);
   const registryUrl = registryProbe.stdout.trim() || String(PACKAGE_JSON.publishConfig?.registry || 'https://registry.npmjs.org/');
   const whoamiProbe = runReadOnlyCommandResult('npm', ['whoami', '--registry', registryUrl]);
-  const registryStatus = releaseRegistryStatusFromChecks(checks);
+  const registryStatus = releaseRegistryStatusFromChecks(checks, {
+    package_name: PACKAGE_JSON.name,
+    version: VERSION
+  });
   const latestProbe = registryStatus.checked
     ? { ok: true, stdout: registryStatus.latest_version, note: registryStatus.note }
+    : registryStatus.parse_failed
+      ? { ok: false, stdout: '', note: `registry check output did not prove ${PACKAGE_JSON.name}@${VERSION} is unpublished: ${registryStatus.note}` }
     : runReadOnlyCommandResult('npm', ['view', PACKAGE_JSON.name, 'version', '--registry', registryUrl]);
   const latestVersion = latestProbe.ok ? String(latestProbe.stdout || '').trim() : '';
   const blockers = [];
@@ -2585,19 +2834,6 @@ function releasePublishReadiness(checks = [], provenance: AnyRecord = {}, tarbal
     blockers: uniqueBlockers,
     next_action: uniqueBlockers[0]?.safe_next_action || 'publish readiness is complete; run publish only when the user explicitly intends it',
     truth_status: status === 'ready' ? 'verified' : 'blocked'
-  };
-}
-
-function releaseRegistryStatusFromChecks(checks = []) {
-  const registryCheck = checks.find((check) => check.id === 'registry_status');
-  const note = String(registryCheck?.note || '');
-  if (registryCheck?.status !== 'passed') return { checked: false, latest_version: '', not_published: false, note };
-  const latest = note.match(/\blatest\s+([^,\s)]+)/i)?.[1] || '';
-  return {
-    checked: true,
-    latest_version: latest,
-    not_published: /not published yet/i.test(note),
-    note
   };
 }
 
@@ -2817,20 +3053,117 @@ async function loop(args = []) {
   return loopUsage();
 }
 
+async function scout(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return scoutUsage();
+  if (subcommand === 'receipt') return scoutReceipt(args.slice(1));
+  console.error(`unknown scout command: ${subcommand}`);
+  process.exitCode = 1;
+  return scoutUsage();
+}
+
+function scoutUsage() {
+  console.log(`yam scout
+
+Immutable, operator-supplied research evidence helpers. These commands do not browse, fetch, or trust external content as instructions.
+
+Usage:
+  yam scout receipt create [--root dir] --receipt-path .yam/scout/run.json --spec scout-spec.json [--json]
+  yam scout receipt verify [--root dir] --receipt-path .yam/scout/run.json [--json]
+`);
+}
+
+async function scoutReceipt(args = []) {
+  const action = args[0] || 'help';
+  if (action === 'help' || action === '--help' || action === '-h') return scoutUsage();
+  const flags = parseSimpleFlags(args.slice(1), new Set(['root', 'receipt-path', 'spec', 'json']));
+  const root = path.resolve(expandHome(String(flags.root || process.cwd())));
+  try {
+    let result;
+    if (action === 'create') {
+      if (!flags.receipt_path || !flags.spec) throw new Error('create requires --receipt-path and --spec');
+      result = await createScoutReceipt({
+        root,
+        receipt_path: String(flags.receipt_path),
+        spec: await readBoundedRegularJson(flags.spec, 'Scout spec') as any
+      });
+    } else if (action === 'verify') {
+      if (!flags.receipt_path) throw new Error('verify requires --receipt-path');
+      result = await verifyScoutReceiptFile({ root, receipt_path: String(flags.receipt_path) });
+    } else {
+      throw new Error(`unknown Scout receipt action: ${action}`);
+    }
+    printJsonOrHuman(result, Boolean(flags.json), 'Scout receipt');
+    if (result.truth_status === 'blocked') process.exitCode = 1;
+  } catch (error) {
+    const result = {
+      schema: 'yam.scout-receipt-error.v1',
+      truth_status: 'blocked',
+      error: errorMessage(error),
+      next_action: 'repair the confined receipt path, canonical entity, version clocks, source digests, claim links, or failure taxonomy before retrying'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Scout receipt');
+    process.exitCode = 1;
+  }
+}
+
+async function nextStepCommand(args = []) {
+  const subcommand = args[0] || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return nextStepUsage();
+  const flags = parseSimpleFlags(args.slice(1), new Set(['spec', 'receipt', 'json']));
+  try {
+    let result;
+    if (subcommand === 'report') {
+      if (!flags.spec) throw new Error('report requires --spec');
+      result = buildNextStep(await readBoundedRegularJson(flags.spec, 'Next step spec') as any);
+    } else if (subcommand === 'verify') {
+      if (!flags.receipt) throw new Error('verify requires --receipt');
+      result = verifyNextStep(await readBoundedRegularJson(flags.receipt, 'Next step receipt') as any);
+    } else {
+      throw new Error(`unknown Next step command: ${subcommand}`);
+    }
+    printJsonOrHuman(result, Boolean(flags.json), 'Next step');
+    if (result.truth_status === 'blocked') process.exitCode = 1;
+  } catch (error) {
+    const result = {
+      schema: 'yam.next-step-error.v1',
+      truth_status: 'blocked',
+      error: errorMessage(error),
+      next_action: 'repair the whole-process scan, ordered steps, evidence level/stamp, owner scope, blockers, or safe retry before retrying'
+    };
+    printJsonOrHuman(result, Boolean(flags.json), 'Next step');
+    process.exitCode = 1;
+  }
+}
+
+function nextStepUsage() {
+  console.log(`yam next-step
+
+Build or verify an evidence-bound ordered handoff after a quick whole-process scan.
+
+Usage:
+  yam next-step report --spec next-step-spec.json [--json]
+  yam next-step verify --receipt next-step-receipt.json [--json]
+`);
+}
+
 function loopUsage() {
   console.log(`yam loop
 
-Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, next action, handoff fields, and a short study note. It does not run agents, start processes, publish packages, or write files.
+Read-only loop artifact helpers. A loop report records intent, stages, evidence, blockers, a short Study Note, and an evidence-bound Next step receipt. It does not run agents, start processes, publish packages, or write files.
 
 Usage:
-  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--stop-condition text] [--resume-hint text] [--readiness-state usable|degraded|blocked|unknown] [--covered-requirement text] [--uncovered-requirement text] [--blocked text] [--blocked-kind text] [--failure-cause text] [--safe-retry text] [--recovery-hint text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--avoidance-note text] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
+  yam loop report [--route route] [--intent text] [--loop-kind harness|release|ueye|scout|deep|mission] [--stage id:status:note] [--evidence text] [--evidence-level none|fixture|smoke|local|real] [--evidence-stamp text] [--source-digest text] [--touched-file file] [--read-file file] [--verified-file file] [--skipped-check text] [--stop-condition text] [--resume-hint text] [--readiness-state usable|degraded|blocked|unknown] [--covered-requirement text] [--uncovered-requirement text] [--blocked text] [--blocked-kind text] [--failure-cause text] [--safe-retry text] [--recovery-hint text] [--fix-first-item text] [--remaining-task text] [--recommended-direction text] [--implementation-note text] [--why-this-next text] [--blocked-by text] [--owner-route route] [--owner-scope text] [--scope-owner text] [--side-effect text] [--avoidance-note text] [--next-step-spec file] [--truth status] [--intent-label read_only|write|destructive|runtime|visual|publish] [--issue-code text] [--issue-role text] [--issue-symptom text] [--changed-code text] [--changed-role text] [--change-summary text] [--why-important text] [--learning-note text] [--json]
 `);
 }
 
 async function loopReport(args = []) {
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') return loopUsage();
-  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'stop-condition', 'resume-hint', 'readiness-state', 'covered-requirement', 'uncovered-requirement', 'blocked', 'blocker', 'blocked-kind', 'failure-cause', 'next-action', 'safe-retry', 'recovery-hint', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'avoidance-note', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
+  const flags = parseSimpleFlags(args, new Set(['route', 'intent', 'loop-kind', 'stage', 'stage-convention', 'evidence', 'evidence-level', 'evidence-stamp', 'source-digest', 'touched-file', 'read-file', 'verified-file', 'skipped-check', 'stop-condition', 'resume-hint', 'readiness-state', 'covered-requirement', 'uncovered-requirement', 'blocked', 'blocker', 'blocked-kind', 'failure-cause', 'next-action', 'safe-retry', 'recovery-hint', 'fix-first-item', 'remaining-task', 'recommended-direction', 'direction', 'implementation-note', 'why-this-next', 'blocked-by', 'owner-route', 'owner-scope', 'scope-owner', 'owner', 'scope', 'side-effect', 'avoidance-note', 'next-step-spec', 'truth', 'intent-label', 'tool-intent', 'issue-code', 'issue-role', 'issue-symptom', 'changed-code', 'changed-role', 'change-summary', 'why-important', 'learning-note', 'json']));
   const blockers = [...arrayFlag(flags.blocked), ...arrayFlag(flags.blocker)];
+  const nextStepSpec = flags.next_step_spec
+    ? await readBoundedRegularJson(flags.next_step_spec, 'Next step spec')
+    : undefined;
   const report = buildLoopReport({
     route: normalizeRoute(flags.route) || String(flags.route || ''),
     intent: String(flags.intent || ''),
@@ -2869,6 +3202,7 @@ async function loopReport(args = []) {
     scope_owner: String(flags.scope_owner || flags.owner || ''),
     side_effects: arrayFlag(flags.side_effect),
     avoidance_note: String(flags.avoidance_note || ''),
+    next_step: nextStepSpec as any,
     issue_code: String(flags.issue_code || ''),
     issue_role: String(flags.issue_role || ''),
     issue_symptom: String(flags.issue_symptom || ''),
@@ -3177,37 +3511,42 @@ async function readOptionalSpecs(value: unknown, label: string) {
 }
 
 async function readBoundedJsonSpec(file: string, label: string) {
-  const before = await fsp.lstat(file);
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular non-symlink file: ${file}`);
-  if (before.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
+  const physicalParent = await fsp.realpath(path.dirname(file));
+  const target = path.join(physicalParent, path.basename(file));
+  const parents = await captureAbsoluteRegularDirectoryPath(physicalParent, label);
+  const before = await fsp.lstat(target);
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular non-symlink file: ${target}`);
+  if (before.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${target}`);
   const noFollow = process.platform !== 'win32' && typeof fs.constants.O_NOFOLLOW === 'number'
     ? fs.constants.O_NOFOLLOW
     : 0;
-  const handle = await fsp.open(file, fs.constants.O_RDONLY | noFollow);
+  const handle = await fsp.open(target, fs.constants.O_RDONLY | noFollow);
   let text = '';
   try {
     const opened = await handle.stat();
-    if (!opened.isFile() || !sameSpecFileIdentity(before, opened)) throw new Error(`${label} identity changed before open: ${file}`);
-    if (opened.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${file}`);
+    await revalidateAbsoluteRegularDirectoryPath(parents, label);
+    if (!opened.isFile() || !sameSpecFileIdentity(before, opened)) throw new Error(`${label} identity changed before open: ${target}`);
+    if (opened.size > 256 * 1024) throw new Error(`${label} exceeds the 256 KiB limit: ${target}`);
     const bytes = Buffer.alloc(opened.size);
     let offset = 0;
     while (offset < bytes.length) {
       const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (!bytesRead) throw new Error(`${label} became shorter while reading: ${file}`);
+      if (!bytesRead) throw new Error(`${label} became shorter while reading: ${target}`);
       offset += bytesRead;
     }
     const openedAfter = await handle.stat();
-    const after = await fsp.lstat(file);
+    const after = await fsp.lstat(target);
+    await revalidateAbsoluteRegularDirectoryPath(parents, label);
     if (!sameSpecFileIdentity(opened, openedAfter) || openedAfter.size !== opened.size
       || after.isSymbolicLink() || !after.isFile() || !sameSpecFileIdentity(opened, after)) {
-      throw new Error(`${label} changed size or identity while reading: ${file}`);
+      throw new Error(`${label} changed size or identity while reading: ${target}`);
     }
     text = bytes.toString('utf8');
   } finally {
     await handle.close();
   }
   const value = JSON.parse(text);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must contain one JSON object: ${file}`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must contain one JSON object: ${target}`);
   return value;
 }
 
@@ -5979,6 +6318,8 @@ function showRequestedHelp(args: string[]) {
     context: contextUsage,
     cleanup: cleanupUsage,
     'study-note': studyNoteUsage,
+    'next-step': nextStepUsage,
+    scout: scoutUsage,
     tools: toolsUsage,
     hook: hookUsage,
     loop: loopUsage,
@@ -6012,7 +6353,9 @@ async function main() {
   if (command === 'tools') return tools(process.argv.slice(3));
   if (command === 'proof') return proof(process.argv.slice(3));
   if (command === 'study-note') return studyNote(process.argv.slice(3));
+  if (command === 'next-step') return nextStepCommand(process.argv.slice(3));
   if (command === 'loop') return loop(process.argv.slice(3));
+  if (command === 'scout') return scout(process.argv.slice(3));
   if (command === 'ueye') return ueye(process.argv.slice(3));
   if (command === 'media') return media(process.argv.slice(3));
   if (command === 'verification') return verification(process.argv.slice(3));

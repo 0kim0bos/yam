@@ -21,6 +21,7 @@
 19. Treat security as the first project lens: identify sensitive surfaces early and guide safer defaults before convenience.
 20. Keep final reports short and concrete, but always include remaining tasks or state that none are meaningful.
 21. When relevant, include architecture hygiene in the Study Note: avoid dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs when existing project boundaries, scoped styles, typed tables, constraints, or indexes fit better.
+22. When an artifact changed, put `Next step` immediately after Study Note. Build it from a quick whole-process scan with current situation, forward outlook, a concrete critical opinion, improvement recommendations, and ordered fix-first then planned actions with evidence and ownership; do not merely rename remaining tasks.
 
 ## Latest Update Trigger
 

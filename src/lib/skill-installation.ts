@@ -97,6 +97,37 @@ export type TransactionalInstallResult = {
   cleanupWarnings: string[];
 };
 
+export type SkillInstallPlanOperation = {
+  action: 'create' | 'replace_managed' | 'replace_explicitly_authorized' | 'remove_retired' | 'write_receipt';
+  skill: string;
+  path: string;
+  reason: string;
+};
+
+export type SkillInstallPlan = {
+  schema: 'yam.install-plan.v1';
+  generated_at: string;
+  mutation_authorized: false;
+  package: {
+    name: string;
+    version: string;
+  };
+  source: {
+    root: string;
+    digest: string;
+    file_count: number;
+  };
+  destination: string;
+  receipt_path: string;
+  operations: SkillInstallPlanOperation[];
+  preserved_paths: string[];
+  blockers: string[];
+  ready: boolean;
+  truth_status: 'verified' | 'blocked';
+  plan_digest: string;
+  next_action: string;
+};
+
 export type SafeUninstallOptions = {
   destination: string;
   codexMirror?: string;
@@ -1141,6 +1172,132 @@ async function removeRecordedEntry(entry: InstalledEntry, label: string) {
     throw new Error(`${label} identity mismatch; preserved current path: ${entry.path}`);
   }
   await fsp.rm(entry.path, { recursive: entry.kind === 'directory', force: entry.kind === 'file' });
+}
+
+export async function planSkillSetInstallation(options: TransactionalInstallOptions): Promise<SkillInstallPlan> {
+  const sourceRoot = path.resolve(options.sourceRoot);
+  const destination = safeRoot(options.destination, 'skill destination');
+  const codexMirror = options.codexMirror ? safeRoot(options.codexMirror, 'Codex mirror') : '';
+  const skills = unique(options.skills);
+  const cleanupCandidates = unique([...(options.legacySkills || []), ...(options.retiredSkills || [])]);
+  const replaceSkills = unique(options.replaceSkills || []);
+  validateManagedNames([...skills, ...cleanupCandidates, ...replaceSkills]);
+
+  const expected = await expectedInstallManifest(sourceRoot, skills);
+  const sourceDigest = manifestDigest(expected);
+  const receiptPath = path.join(destination, INSTALL_RECEIPT_NAME);
+  const operations: SkillInstallPlanOperation[] = [];
+  const blockers = await nonMutatingInstallGateBlockers(destination);
+
+  let ownership: OwnershipPreflight | undefined;
+  try {
+    if (blockers.length) throw new Error(blockers[0]);
+    ownership = await preflightInstallOwnership(
+      destination,
+      options.packageName,
+      skills,
+      cleanupCandidates,
+      replaceSkills
+    );
+  } catch (error) {
+    if (!blockers.length) blockers.push(message(error));
+  }
+
+  if (ownership) {
+    const replaceNames = new Set(ownership.replaceNames);
+    for (const skill of skills) {
+      const target = path.join(destination, skill);
+      const existing = await exists(target);
+      operations.push({
+        action: !existing
+          ? 'create'
+          : replaceSkills.includes(skill)
+            ? 'replace_explicitly_authorized'
+            : 'replace_managed',
+        skill,
+        path: target,
+        reason: !existing
+          ? 'active skill is not installed'
+          : replaceSkills.includes(skill)
+            ? 'operator supplied an explicit per-skill replacement override'
+            : 'existing skill ownership and complete content integrity match the yam receipt'
+      });
+    }
+    for (const skill of cleanupCandidates) {
+      if (!replaceNames.has(skill) || skills.includes(skill)) continue;
+      operations.push({
+        action: 'remove_retired',
+        skill,
+        path: path.join(destination, skill),
+        reason: 'retired or legacy skill is still proven yam-owned by the current receipt'
+      });
+    }
+    operations.push({
+      action: 'write_receipt',
+      skill: '',
+      path: receiptPath,
+      reason: ownership.receipt ? 'replace the verified yam ownership receipt' : 'create the yam ownership receipt'
+    });
+  }
+
+  const preservedPaths = codexMirror && codexMirror !== destination ? [codexMirror] : [];
+  const replaceNames = new Set(ownership?.replaceNames || []);
+  for (const skill of cleanupCandidates) {
+    if (replaceNames.has(skill) || !await exists(path.join(destination, skill))) continue;
+    preservedPaths.push(path.join(destination, skill));
+  }
+  preservedPaths.sort(compareStableText);
+  const planBasis = {
+    package: { name: options.packageName, version: options.version },
+    source: { root: sourceRoot, digest: sourceDigest, file_count: expected.length },
+    destination,
+    receipt_path: receiptPath,
+    operations,
+    preserved_paths: preservedPaths,
+    blockers
+  };
+  const planDigest = createHash('sha256').update(JSON.stringify(planBasis)).digest('hex');
+  const ready = blockers.length === 0;
+  return {
+    schema: 'yam.install-plan.v1',
+    generated_at: (options.now || (() => new Date()))().toISOString(),
+    mutation_authorized: false,
+    ...planBasis,
+    ready,
+    truth_status: ready ? 'verified' : 'blocked',
+    plan_digest: planDigest,
+    next_action: ready
+      ? 'review this non-mutating plan, then run `yam install` without --dry-run to authorize the transaction'
+      : 'resolve the listed lock, recovery, destination, or ownership blocker without deleting unreviewed state, then regenerate the plan'
+  };
+}
+
+async function nonMutatingInstallGateBlockers(destination: string) {
+  let stat;
+  try {
+    stat = await fsp.lstat(destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    return [`skill destination cannot be inspected: ${message(error)}`];
+  }
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    return [`skill destination must be a regular physical directory: ${destination}`];
+  }
+
+  const blockers: string[] = [];
+  const lockPath = path.join(destination, INSTALL_LOCK_NAME);
+  if (await exists(lockPath)) {
+    blockers.push(`another yam install may be active; lock exists at ${lockPath}`);
+  }
+  try {
+    const recoveryArtifacts = await findInstallRecoveryArtifacts(destination);
+    if (recoveryArtifacts.length) {
+      blockers.push(`unfinished yam install transaction requires inspection: ${recoveryArtifacts.join(', ')}`);
+    }
+  } catch (error) {
+    blockers.push(`install recovery state cannot be inspected: ${message(error)}`);
+  }
+  return blockers;
 }
 
 export async function installSkillSetTransactional(options: TransactionalInstallOptions): Promise<TransactionalInstallResult> {

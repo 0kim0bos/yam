@@ -54,6 +54,14 @@ export interface ExternalComponentCheck {
     drift: boolean;
     note: string;
   };
+  source_receipt?: {
+    canonical_url: string;
+    retrieved_at: string;
+    access_path: string;
+    version: string;
+    revision: string;
+    integrity: string[];
+  };
   executable?: string;
   error?: string;
 }
@@ -68,6 +76,7 @@ export interface ExternalComponentReceipt {
   installed_version: string;
   source: string;
   source_revision: JsonRecord | null;
+  source_receipt: JsonRecord | null;
   checks: Array<{
     id: string;
     status: 'passed' | 'failed' | 'skipped';
@@ -129,7 +138,9 @@ interface YamRollbackResult {
 }
 
 const YAM_REGISTRY_URL = 'https://registry.npmjs.org/yam-flow/latest';
+const NPM_REGISTRY = 'https://registry.npmjs.org/';
 const SCRAPLING_PYPI_URL = 'https://pypi.org/pypi/scrapling/json';
+const SCRAPLING_PYPI_INDEX = 'https://pypi.org/simple';
 const INSANE_MARKETPLACE = 'gptaku-codex';
 const INSANE_PLUGIN_ID = 'insane-search-codex@gptaku-codex';
 const INSANE_MARKETPLACE_SOURCE = 'https://github.com/fivetaku/gptaku-plugins-codex.git';
@@ -402,7 +413,19 @@ async function checkYam(currentYamVersion: string, deps: ResolvedDependencies): 
     const data = await deps.fetchJson(YAM_REGISTRY_URL);
     const latest = requireStableVersion(data?.version, 'yam registry version');
     const installed = requireStableVersion(currentYamVersion, 'installed yam version');
-    return componentCheck('yam', installed, latest, 'npm:yam-flow');
+    const integrity = requireIntegrityValue(data?.dist?.integrity, 'yam registry integrity');
+    const revision = requireGitRevision(data?.gitHead, 'yam registry gitHead');
+    return {
+      ...componentCheck('yam', installed, latest, 'npm:yam-flow'),
+      source_receipt: {
+        canonical_url: YAM_REGISTRY_URL,
+        retrieved_at: deps.now().toISOString(),
+        access_path: 'npm registry latest endpoint',
+        version: latest,
+        revision,
+        integrity: [integrity]
+      }
+    };
   } catch (error) {
     return failedCheck('yam', currentYamVersion, 'npm:yam-flow', error);
   }
@@ -412,6 +435,7 @@ async function checkScrapling(deps: ResolvedDependencies): Promise<ExternalCompo
   try {
     const data = await deps.fetchJson(SCRAPLING_PYPI_URL);
     const latest = requireStableVersion(data?.info?.version, 'Scrapling PyPI version');
+    const releaseIntegrity = pypiReleaseIntegrity(data?.urls, latest);
     const executable = deps.paths.scraplingBin;
     const versionResult = await deps.run(executable, ['--version'], { env: deps.env, timeout: 30000 });
     if (!versionResult.ok) {
@@ -422,12 +446,28 @@ async function checkScrapling(deps: ResolvedDependencies): Promise<ExternalCompo
         update_available: true,
         status: 'not_installed',
         source: 'pypi:scrapling',
+        source_receipt: {
+          canonical_url: SCRAPLING_PYPI_URL,
+          retrieved_at: deps.now().toISOString(),
+          access_path: 'PyPI project JSON endpoint',
+          version: latest,
+          revision: '',
+          integrity: releaseIntegrity
+        },
         executable
       };
     }
     const installed = requireStableVersion(extractVersion(versionResult.stdout), 'installed Scrapling version');
     return {
       ...componentCheck('scrapling', installed, latest, 'pypi:scrapling'),
+      source_receipt: {
+        canonical_url: SCRAPLING_PYPI_URL,
+        retrieved_at: deps.now().toISOString(),
+        access_path: 'PyPI project JSON endpoint',
+        version: latest,
+        revision: '',
+        integrity: releaseIntegrity
+      },
       executable
     };
   } catch (error) {
@@ -510,6 +550,14 @@ async function checkInsaneSearch(deps: ResolvedDependencies): Promise<ExternalCo
         note: installed && compareVersions(installed, latest) === 0
           ? 'marketplace revision drift alone is not treated as an Insane Search update'
           : 'plugin update availability is based on the official plugin manifest version'
+      },
+      source_receipt: {
+        canonical_url: manifestUrl,
+        retrieved_at: deps.now().toISOString(),
+        access_path: 'Git-pinned raw marketplace manifest',
+        version: latest,
+        revision: remoteRevision,
+        integrity: [`git_commit:${remoteRevision.toLowerCase()}`]
       }
     };
   } catch (error) {
@@ -565,7 +613,13 @@ async function applyYam(currentYamVersion: string, deps: ResolvedDependencies) {
   const checks: ExternalComponentReceipt['checks'] = [];
   const sideEffects: string[] = [];
   const exactPackage = `yam-flow@${check.latest_version}`;
-  const install = await deps.run('npm', ['install', '-g', exactPackage], {
+  const install = await deps.run('npm', [
+    'install',
+    '-g',
+    exactPackage,
+    '--registry',
+    NPM_REGISTRY
+  ], {
     env: deps.env,
     timeout: 600000
   });
@@ -649,7 +703,13 @@ async function rollbackYam(
   checks: ExternalComponentReceipt['checks']
 ): Promise<YamRollbackResult> {
   if (!previousVersion) return { ok: false };
-  const result = await deps.run('npm', ['install', '-g', `yam-flow@${previousVersion}`], {
+  const result = await deps.run('npm', [
+    'install',
+    '-g',
+    `yam-flow@${previousVersion}`,
+    '--registry',
+    NPM_REGISTRY
+  ], {
     env: deps.env,
     timeout: 600000
   });
@@ -831,7 +891,15 @@ async function applyScrapling(deps: ResolvedDependencies) {
     const candidatePython = path.join(candidate, 'bin', 'python');
     const candidateScrapling = path.join(candidate, 'bin', 'scrapling');
     const packageSpec = `scrapling[fetchers]==${check.latest_version}`;
-    const install = await deps.run(candidatePython, ['-m', 'pip', 'install', packageSpec], {
+    const install = await deps.run(candidatePython, [
+      '-m',
+      'pip',
+      'install',
+      '--isolated',
+      '--index-url',
+      SCRAPLING_PYPI_INDEX,
+      packageSpec
+    ], {
       env: deps.env,
       timeout: 600000
     });
@@ -970,6 +1038,16 @@ async function applyInsaneSearch(deps: ResolvedDependencies) {
     }), deps);
   }
 
+  const pinnedSource = await verifyUpgradedInsaneSource(check, deps, 'pre_add_source_revision');
+  checks.push(pinnedSource.check);
+  if (!pinnedSource.ok) {
+    return persistReceipt(baseReceipt(check, 'failed', checks, insaneRollback(check.installed_version), {
+      installed_version: check.installed_version,
+      side_effects: ['The official Codex marketplace snapshot was upgraded; plugin add was blocked because the post-upgrade source did not match the checked revision.'],
+      error: pinnedSource.error
+    }), deps);
+  }
+
   let observation = await installedInsaneVersion(deps, checks, 'plugin_list_after_marketplace_upgrade');
   if (!observation.ok) {
     return persistReceipt(baseReceipt(check, 'failed', checks, insaneRollback(check.installed_version), {
@@ -1011,6 +1089,21 @@ async function applyInsaneSearch(deps: ResolvedDependencies) {
     }), deps);
   }
 
+  const finalPinnedSource = await verifyUpgradedInsaneSource(check, deps, 'final_source_revision');
+  checks.push(finalPinnedSource.check);
+  if (!finalPinnedSource.ok) {
+    return persistReceipt(baseReceipt(check, 'failed', checks, insaneRollback(check.installed_version), {
+      installed_version: installedAfter,
+      side_effects: [
+        `upgraded official marketplace ${INSANE_MARKETPLACE}`,
+        installedAfter === check.latest_version
+          ? `the plugin reached ${installedAfter}, but final source provenance changed and completion was blocked`
+          : 'plugin state did not reach the checked version'
+      ],
+      error: finalPinnedSource.error
+    }), deps);
+  }
+
   return persistReceipt(baseReceipt(check, 'updated', checks, insaneRollback(check.installed_version), {
     installed_version: installedAfter,
     side_effects: [
@@ -1019,6 +1112,131 @@ async function applyInsaneSearch(deps: ResolvedDependencies) {
     ],
     truth_status: 'verified'
   }), deps);
+}
+
+async function verifyUpgradedInsaneSource(
+  check: ExternalComponentCheck,
+  deps: ResolvedDependencies,
+  id: string
+) {
+  try {
+    const expectedRevision = requireGitRevision(
+      check.source_receipt?.revision,
+      'checked Insane Search source revision'
+    );
+    const marketplaceList = await deps.run('codex', ['plugin', 'marketplace', 'list', '--json'], {
+      env: deps.env,
+      timeout: 30000
+    });
+    if (!marketplaceList.ok) {
+      throw new Error(`post-upgrade marketplace state could not be observed: ${commandNote(marketplaceList)}`);
+    }
+    const parsedMarketplaces = parseJsonOutput(marketplaceList.stdout, 'post-upgrade codex plugin marketplace list');
+    const marketplaceEntry = arrayValue(parsedMarketplaces?.marketplaces).find((item) => item?.name === INSANE_MARKETPLACE);
+    if (!marketplaceEntry) throw new Error(`post-upgrade marketplace is missing: ${INSANE_MARKETPLACE}`);
+    const configuredSource = String(marketplaceEntry?.marketplaceSource?.source || '');
+    if (
+      marketplaceEntry?.marketplaceSource?.sourceType !== 'git'
+      || configuredSource !== INSANE_MARKETPLACE_SOURCE
+    ) {
+      throw new Error(`refusing unexpected post-upgrade ${INSANE_MARKETPLACE} marketplace source`);
+    }
+    const marketplaceRoot = String(marketplaceEntry.root || '');
+    if (!marketplaceRoot || !isSafeMarketplaceRoot(marketplaceRoot, deps.homeDir)) {
+      throw new Error(`refusing unsafe post-upgrade ${INSANE_MARKETPLACE} marketplace root`);
+    }
+    const localRevisionResult = await deps.run('git', ['-C', marketplaceRoot, 'rev-parse', 'HEAD'], {
+      env: deps.env,
+      timeout: 30000
+    });
+    if (!localRevisionResult.ok) {
+      throw new Error(`post-upgrade marketplace revision could not be read: ${commandNote(localRevisionResult)}`);
+    }
+    const actualRevision = requireGitRevision(
+      localRevisionResult.stdout.trim(),
+      'post-upgrade Insane Search marketplace revision'
+    );
+    const statusResult = await deps.run('git', [
+      '-C',
+      marketplaceRoot,
+      'status',
+      '--porcelain=v1',
+      '--untracked-files=all',
+      '--ignored=matching'
+    ], { env: deps.env, timeout: 30000 });
+    if (!statusResult.ok) {
+      throw new Error(`post-upgrade marketplace cleanliness could not be observed: ${commandNote(statusResult)}`);
+    }
+    if (statusResult.stdout.trim()) {
+      throw new Error('post-upgrade Insane Search marketplace working tree is dirty; refusing to bind plugin install to a clean commit receipt');
+    }
+    const trackedManifest = await deps.run('git', [
+      '-C',
+      marketplaceRoot,
+      'ls-files',
+      '--error-unmatch',
+      '--',
+      INSANE_MANIFEST_PATH
+    ], { env: deps.env, timeout: 30000 });
+    if (!trackedManifest.ok) {
+      throw new Error(`local Insane Search manifest is not tracked at the checked commit: ${commandNote(trackedManifest)}`);
+    }
+    const localManifestPath = path.join(marketplaceRoot, INSANE_MANIFEST_PATH);
+    assertChildPath(marketplaceRoot, localManifestPath, 'local Insane Search manifest');
+    const localManifestStat = await fsp.lstat(localManifestPath);
+    if (!localManifestStat.isFile() || localManifestStat.isSymbolicLink() || localManifestStat.size > 1024 * 1024) {
+      throw new Error('local Insane Search manifest must be a regular tracked file no larger than 1 MiB');
+    }
+    const localManifestBytes = await fsp.readFile(localManifestPath, 'utf8');
+    const committedManifest = await deps.run('git', [
+      '-C',
+      marketplaceRoot,
+      'show',
+      `${actualRevision}:${INSANE_MANIFEST_PATH}`
+    ], { env: deps.env, timeout: 30000 });
+    if (!committedManifest.ok) {
+      throw new Error(`checked Insane Search manifest bytes could not be read from Git: ${commandNote(committedManifest)}`);
+    }
+    if (localManifestBytes !== committedManifest.stdout) {
+      throw new Error('local Insane Search manifest bytes do not match the checked Git commit');
+    }
+    const localManifest = parseJsonOutput(localManifestBytes, 'local Insane Search manifest');
+    const localVersion = requireStableVersion(localManifest?.version, 'local Insane Search manifest version');
+    const manifestUrl = `${INSANE_MANIFEST_ROOT}/${actualRevision}/${INSANE_MANIFEST_PATH}`;
+    const manifest = await deps.fetchJson(manifestUrl);
+    const actualVersion = requireStableVersion(manifest?.version, 'post-upgrade Insane Search manifest version');
+    if (actualRevision !== expectedRevision) {
+      throw new Error(
+        `Insane Search source changed between check and upgrade: checked ${expectedRevision}, observed ${actualRevision}; rerun the read-only check before retrying`
+      );
+    }
+    if (actualVersion !== check.latest_version) {
+      throw new Error(
+        `post-upgrade Insane Search manifest version ${actualVersion} does not match checked ${check.latest_version}`
+      );
+    }
+    if (localVersion !== actualVersion) {
+      throw new Error(
+        `local Insane Search manifest version ${localVersion} does not match pinned source version ${actualVersion}`
+      );
+    }
+    return {
+      ok: true,
+      error: '',
+      check: {
+        id,
+        status: 'passed' as const,
+        note: `clean tracked marketplace remained pinned to ${actualRevision} with local and remote manifest version ${actualVersion}`
+      }
+    };
+  } catch (error) {
+    const note = boundedNote(errorMessage(error));
+    return {
+      ok: false,
+      error: note,
+      check: { id, status: 'failed' as const, note }
+    };
+  }
 }
 
 async function installedInsaneVersion(
@@ -1069,6 +1287,7 @@ function baseReceipt(
     installed_version: check.installed_version,
     source: check.source,
     source_revision: receiptSourceRevision(check),
+    source_receipt: check.source_receipt || null,
     checks,
     rollback_hint: rollbackHint,
     side_effects: [],
@@ -1406,6 +1625,45 @@ function requireStableVersion(value: unknown, label: string) {
     throw new Error(`${label} is not an allowed stable numeric version`);
   }
   return version;
+}
+
+function requireIntegrityValue(value: unknown, label: string) {
+  const integrity = String(value || '').trim();
+  if (!/^sha(?:256|384|512)-[A-Za-z0-9+/=]+$/.test(integrity)) {
+    throw new Error(`${label} is missing or malformed`);
+  }
+  return integrity;
+}
+
+function requireGitRevision(value: unknown, label: string) {
+  const revision = String(value || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error(`${label} is not a 40-character Git revision`);
+  return revision;
+}
+
+function pypiReleaseIntegrity(value: unknown, version: string) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`Scrapling PyPI ${version} has no SHA-256 release artifact inventory`);
+  }
+  if (value.length > 64) {
+    throw new Error(`Scrapling PyPI ${version} release artifact inventory exceeds the 64-item provenance limit`);
+  }
+  const artifacts = value.map((item, index) => {
+    const filename = typeof item?.filename === 'string' ? item.filename.trim() : '';
+    const rawSha256 = item?.digests?.sha256;
+    const sha256 = typeof rawSha256 === 'string' ? rawSha256.trim().toLowerCase() : '';
+    if (!filename || filename.length > 512 || /[\r\n\u0000-\u001f\u007f]/.test(filename)) {
+      throw new Error(`Scrapling PyPI ${version} release artifact ${index} has a malformed filename`);
+    }
+    if (!/^[a-f0-9]{64}$/.test(sha256)) {
+      throw new Error(`Scrapling PyPI ${version} release artifact ${index} has a missing or malformed SHA-256 digest`);
+    }
+    return `sha256:${sha256} filename:${filename}`;
+  }).sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  if (new Set(artifacts).size !== artifacts.length) {
+    throw new Error(`Scrapling PyPI ${version} release artifact inventory contains duplicates`);
+  }
+  return artifacts;
 }
 
 function extractVersion(text: string) {

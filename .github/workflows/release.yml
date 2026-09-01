@@ -1,0 +1,186 @@
+name: Publish signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Existing signed version tag to publish (for example, v2.8.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-${{ inputs.release_ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.14.0
+  NPM_VERSION: 11.19.1
+  RELEASE_REF: ${{ inputs.release_ref }}
+  RELEASE_TAG: ${{ inputs.release_ref }}
+
+jobs:
+  package:
+    name: Gate and pack signed release
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      version: ${{ steps.pack.outputs.version }}
+    steps:
+      - name: Check out the requested release ref
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Use npm with OIDC trusted-publishing support
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Verify clean remote-contained signed tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/check-release-ref.mjs
+          --mode release
+          --remote-ref origin/main
+          --tag "${RELEASE_TAG}"
+          --tag-policy signed
+          --signature-source github
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Run release checks
+        run: npm run release:check
+
+      - name: Pack exactly once and record its digest
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p package-artifact
+          npm pack --json --pack-destination package-artifact
+          node scripts/packed-lifecycle-smoke.mjs \
+            --artifact-dir package-artifact \
+            --write-receipt package-artifact/receipt.json \
+            --verify-only
+          echo "sha256=$(node -p 'JSON.parse(require("node:fs").readFileSync("package-artifact/receipt.json", "utf8")).sha256')" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the immutable release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: yam-signed-release
+          path: package-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  lifecycle:
+    name: Release lifecycle (${{ matrix.os }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out matching release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Use the same npm line
+        run: npm install --global npm@${{ env.NPM_VERSION }}
+
+      - name: Download the exact release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: yam-signed-release
+          path: package-artifact
+
+      - name: Verify digest and exercise install lifecycle
+        run: >-
+          node scripts/packed-lifecycle-smoke.mjs
+          --artifact-dir package-artifact
+          --receipt package-artifact/receipt.json
+          --expected-sha256 "${{ needs.package.outputs.sha256 }}"
+
+  publish:
+    name: Publish with npm OIDC provenance
+    needs:
+      - package
+      - lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Use npm with OIDC trusted-publishing support
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Download the cross-verified release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: yam-signed-release
+          path: package-artifact
+
+      - name: Verify artifact bytes without executing repository code
+        env:
+          EXPECTED_SHA256: ${{ needs.package.outputs.sha256 }}
+          PACKAGE_VERSION: ${{ needs.package.outputs.version }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync, statSync } from "node:fs";
+          import { basename, join } from "node:path";
+          const directory = "package-artifact";
+          const tarballs = readdirSync(directory).filter((name) => name.endsWith(".tgz"));
+          if (tarballs.length !== 1) throw new Error(`expected one tarball, found ${tarballs.length}`);
+          const expectedName = `yam-flow-${process.env.PACKAGE_VERSION}.tgz`;
+          if (tarballs[0] !== expectedName) throw new Error(`unexpected tarball: ${tarballs[0]}`);
+          const tarball = join(directory, tarballs[0]);
+          const digest = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+          if (digest !== process.env.EXPECTED_SHA256) throw new Error(`sha256 mismatch: ${digest}`);
+          const receipt = JSON.parse(readFileSync(join(directory, "receipt.json"), "utf8"));
+          if (receipt.artifact !== basename(tarball) || receipt.sha256 !== digest || receipt.bytes !== statSync(tarball).size) {
+            throw new Error("artifact receipt mismatch");
+          }
+          console.log(`release artifact verified: ${tarballs[0]} (${digest})`);
+          NODE
+
+      - name: Publish the tested bytes with OIDC and provenance
+        run: >-
+          npm publish
+          "package-artifact/yam-flow-${{ needs.package.outputs.version }}.tgz"
+          --access public
+          --provenance
+          --ignore-scripts
+          --registry https://registry.npmjs.org/

@@ -1,0 +1,117 @@
+name: Supply chain verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.14.0
+  NPM_VERSION: 11.19.1
+
+jobs:
+  package:
+    name: Build one immutable tarball
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Use trusted-publishing-compatible npm
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Verify source and package
+        run: |
+          npm run release:ref:check
+          npm run typecheck
+          npm run forbidden-names:check
+          npm run workflow-pins:check
+          npm run verify:self
+          npm run dist:freshness
+          npm run package-boundary:check
+          npm run cli-smoke
+
+      - name: Pack once and record its digest
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p package-artifact
+          npm pack --json --pack-destination package-artifact
+          node scripts/packed-lifecycle-smoke.mjs \
+            --artifact-dir package-artifact \
+            --write-receipt package-artifact/receipt.json \
+            --verify-only
+          echo "sha256=$(node -p 'JSON.parse(require("node:fs").readFileSync("package-artifact/receipt.json", "utf8")).sha256')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the exact tarball and receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: yam-packed-release-candidate
+          path: package-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  lifecycle:
+    name: Packed lifecycle (${{ matrix.os }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out matching source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Use the same npm line
+        run: npm install --global npm@${{ env.NPM_VERSION }}
+
+      - name: Download the packed candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: yam-packed-release-candidate
+          path: package-artifact
+
+      - name: Verify digest and exercise install lifecycle
+        run: >-
+          node scripts/packed-lifecycle-smoke.mjs
+          --artifact-dir package-artifact
+          --receipt package-artifact/receipt.json
+          --expected-sha256 "${{ needs.package.outputs.sha256 }}"

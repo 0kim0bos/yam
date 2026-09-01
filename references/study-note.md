@@ -1,13 +1,14 @@
-# Study Note v3
+# Study Note v4
 
 Study Note is required whenever code, config, release metadata, documentation, or project artifacts changed, even if no yam skill was explicitly invoked.
 
 The goal is not to write a tutorial for every change. The goal is to help a non-developer or non-specialist learn the meaning of the changed code or artifact a little at a time, without hiding uncertainty or padding the final report.
 
-Study Note v3 adds two expectations:
+Study Note v4 retains the v3 expectations and adds one report-ordering rule:
 
 - Explain where the changed code or artifact sits in the project flow: role, execution point, before/after behavior, and expected result.
 - Add a small architecture hygiene check when implementation touched UI, styles, data shape, or storage boundaries.
+- Put `Next step` immediately after Study Note. Build it from a quick whole-process scan, not only from leftover tasks; use `references/next-step.md` for its ordered, evidence-bound shape.
 
 ## Final Report Shape
 
@@ -59,6 +60,7 @@ For pure Q&A, planning, scouting, or review with no changed artifact, do not for
 - Prefer one practical syntax or structure insight over broad teaching.
 - Tie the note to evidence. If no check ran, say so.
 - Keep remaining tasks separate from Study Note.
+- Do not insert another final-report section between Study Note and Next step when artifacts changed.
 
 ## What To Avoid
 

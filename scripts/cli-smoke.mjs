@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -53,9 +53,54 @@ try {
   const missingStudyNoteGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--json']);
   assert(missingStudyNoteGuard.schema === 'yam.study-note-guard.v1', 'study note guard schema missing');
   assert(missingStudyNoteGuard.truth_status === 'blocked', 'study note guard should block changed files without report text');
-  const completeStudyNote = 'Study Note: Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains.';
+  const completeStudyNote = `## Study Note
+Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains.
+
+## Next step
+1. [planned] Preserve the verified report and stop — no fix-first item remains.
+Current situation: the required changed-artifact report is complete.
+Forward outlook: later work can reuse this evidence without inventing completion.
+Critical opinion: a leftover-only handoff would omit direction and evidence quality.
+Improvement recommendation: rescan the process if repository or release state changes.
+Owner route and scope: $deep, final report validation.
+Evidence level and stamp: L3, cli-smoke.
+Blocker: none.
+Safe retry: rerun the focused guard smoke after report changes.
+Side effects: none; this is read-only validation.
+Truth status: verified.`;
   const passingStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', studyNoteProject, '--text', completeStudyNote, '--json'], { encoding: 'utf8' }));
   assert(passingStudyNoteGuard.truth_status === 'verified', 'study note guard should pass supplied Study Note text');
+  const misplacedNextStepDetails = `## Study Note
+Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains. Current situation, forward outlook, critical opinion, and improvement recommendation are mentioned here, with 1. [planned] work outside the Next step section.
+
+## Next step
+1. [planned] Preserve the report.`;
+  const misplacedNextStepGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', misplacedNextStepDetails, '--json']);
+  assert(misplacedNextStepGuard.checks?.find((item) => item.id === 'next_step_whole_process_scan')?.status === 'fail', 'Next step scan evidence outside its section must not satisfy the guard');
+  assert(misplacedNextStepGuard.checks?.find((item) => item.id === 'next_step_evidence_and_ownership')?.status === 'fail', 'Next step evidence and ownership must be inside its section');
+  assert(misplacedNextStepGuard.checks?.find((item) => item.id === 'next_step_safety_context')?.status === 'fail', 'Next step safety context must be inside its section');
+  const emptyStudyNote = completeStudyNote.replace(/## Study Note[\s\S]*?## Next step/, '## Study Note\n\n## Next step');
+  const emptyStudyNoteGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', emptyStudyNote, '--json']);
+  assert(emptyStudyNoteGuard.checks?.find((item) => item.id === 'role_or_responsibility')?.status === 'fail', 'Next step prose must not satisfy an empty Study Note');
+  const earlierNextStep = `## Next step
+${completeStudyNote.split('## Next step\n')[1]}
+
+${completeStudyNote.split('## Next step\n')[0]}## Next step
+1. [planned] Preserve only.`;
+  const earlierNextStepGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', earlierNextStep, '--json']);
+  assert(earlierNextStepGuard.checks?.find((item) => item.id === 'next_step_whole_process_scan')?.status === 'fail', 'an earlier Next step must not satisfy the section adjacent to Study Note');
+  const unlabeledNextStep = completeStudyNote.replace('1. [planned] Preserve the verified report and stop — no fix-first item remains.', '1. Preserve the verified report and stop.');
+  const unlabeledNextStepGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', unlabeledNextStep, '--json']);
+  assert(unlabeledNextStepGuard.checks?.find((item) => item.id === 'next_step_ordered_actions')?.status === 'fail', 'every numbered Next step action must identify fix-first or planned kind');
+  const outOfOrderNextStep = `${completeStudyNote}\n2. [fix-first] Repair a late blocker.`;
+  const outOfOrderNextStepGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', outOfOrderNextStep, '--json']);
+  assert(outOfOrderNextStepGuard.checks?.find((item) => item.id === 'next_step_ordered_actions')?.status === 'fail', 'fix-first work after planned work must fail the guard');
+  const unnumberedLateFixFirst = `${completeStudyNote}\n- [fix-first] Repair a hidden late blocker.`;
+  const unnumberedLateFixFirstGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', unnumberedLateFixFirst, '--json']);
+  assert(unnumberedLateFixFirstGuard.checks?.find((item) => item.id === 'next_step_ordered_actions')?.status === 'fail', 'an unnumbered fix-first item after planned work must fail the guard');
+  const duplicatePair = `${completeStudyNote}\n\n${completeStudyNote}`;
+  const duplicatePairGuard = spawnFailureJson(bin, ['study-note', 'check', studyNoteProject, '--text', duplicatePair, '--json']);
+  assert(duplicatePairGuard.checks?.find((item) => item.id === 'single_study_note_next_step_pair')?.status === 'fail', 'duplicate Study Note and Next step pairs must fail as ambiguous');
   const nonGitProject = join(prefix, 'study-note-no-git');
   mkdirSync(nonGitProject, { recursive: true });
   writeFileSync(join(nonGitProject, 'artifact.txt'), 'Git scope intentionally unavailable\n');
@@ -125,11 +170,63 @@ try {
   assert(invalidHookStatus.includes('hook config unreadable'), 'invalid hook config should report broken');
   spawnFailureText(bin, ['hook', 'enable', 'study-note', '--project', invalidHookProject]);
   assert(readFileSync(invalidHookConfigFile, 'utf8') === '{ invalid json\n', 'hook enable should not overwrite unreadable config');
+  const nextStepSpecPath = join(prefix, 'next-step-spec.json');
+  const nextStepReceiptPath = join(prefix, 'next-step-receipt.json');
+  const nextStepSpec = {
+    current_situation: 'The focused CLI implementation is complete and local evidence is available.',
+    forward_outlook: 'The same receipt can be attached to a loop report before release verification.',
+    critical_opinion: 'A leftover-only list would hide evidence quality and owner boundaries.',
+    improvement_recommendations: ['Keep fix-first actions before planned expansion.'],
+    steps: [{
+      kind: 'planned',
+      action: 'Run the packaged CLI smoke against the exact tarball.',
+      why: 'The installed bytes should exercise the same Next step contract.',
+      owner_route: '$deep',
+      owner_scope: ['packaged CLI verification'],
+      blocked_by: [],
+      safe_retry: 'retry from a clean temporary prefix if package installation fails',
+      side_effects: ['temporary package files only']
+    }],
+    evidence_level: 'L3',
+    evidence_stamp: 'cli-smoke:next-step',
+    truth_status: 'verified'
+  };
+  writeFileSync(nextStepSpecPath, `${JSON.stringify(nextStepSpec, null, 2)}\n`);
+  const nextStepReceipt = JSON.parse(execFileSync(bin, ['next-step', 'report', '--spec', nextStepSpecPath, '--json'], { encoding: 'utf8' }));
+  assert(nextStepReceipt.schema === 'yam.next-step.v1' && nextStepReceipt.contract_valid, 'Next step CLI should build a valid receipt');
+  const linkedNextStepSpecPath = join(prefix, 'linked-next-step-spec.json');
+  symlinkSync(nextStepSpecPath, linkedNextStepSpecPath);
+  const linkedNextStepFailure = spawnFailureJson(bin, ['next-step', 'report', '--spec', linkedNextStepSpecPath, '--json']);
+  assert(linkedNextStepFailure.error?.includes('regular JSON file'), 'Next step CLI must reject a final-component spec symlink');
+  writeFileSync(nextStepReceiptPath, `${JSON.stringify(nextStepReceipt, null, 2)}\n`);
+  const nextStepVerification = JSON.parse(execFileSync(bin, ['next-step', 'verify', '--receipt', nextStepReceiptPath, '--json'], { encoding: 'utf8' }));
+  assert(nextStepVerification.valid && nextStepVerification.truth_status === 'verified', 'Next step CLI should verify its receipt');
+  const blockedNextStepSpecPath = join(prefix, 'blocked-next-step-spec.json');
+  writeFileSync(blockedNextStepSpecPath, `${JSON.stringify({
+    ...nextStepSpec,
+    current_situation: 'Release readiness is blocked by missing npm authentication evidence.',
+    forward_outlook: 'Publishing can resume only after a new authenticated readiness check.',
+    critical_opinion: 'Retrying publish before auth recovery would repeat a known unsafe failure.',
+    improvement_recommendations: ['Restore auth and record new evidence before retrying.'],
+    steps: [{
+      kind: 'fix_first',
+      action: 'Restore npm authentication evidence.',
+      why: 'Auth is required before a public publish claim.',
+      owner_route: '$deep',
+      owner_scope: ['release readiness only'],
+      blocked_by: ['npm whoami E401'],
+      safe_retry: 'retry only after npm whoami succeeds',
+      side_effects: ['no publish attempted']
+    }],
+    truth_status: 'blocked'
+  }, null, 2)}\n`);
   execFileSync(bin, ['loop', '--help'], { stdio: 'ignore' });
-  const loopReport = spawnFailureJson(bin, ['loop', 'report', '--route', 'quick', '--intent', 'fix release readiness', '--stage', 'inspect:passed:read release report', '--evidence', 'typecheck passed', '--evidence-level', 'local', '--evidence-stamp', 'sha256:smoke-release-report', '--touched-file', 'src/bin/yam.ts', '--read-file', 'README.md', '--verified-file', 'scripts/cli-smoke.mjs', '--skipped-check', 'npm publish skipped by design', '--stop-condition', 'stop after release readiness evidence is recorded', '--resume-hint', 'rerun release report after npm auth refresh', '--readiness-state', 'blocked', '--covered-requirement', 'release report is read-only', '--blocked-kind', 'auth_blocked', '--failure-cause', 'auth_token_invalid', '--safe-retry', 'retry after npm whoami succeeds', '--recovery-hint', 'refresh npm auth, then rerun readiness checks', '--fix-first-item', 'npm auth must be verified before publish', '--remaining-task', 'rerun release report after auth refresh', '--recommended-direction', 'fix npm auth first, then publish manually', '--implementation-note', 'keep loop report read-only', '--why-this-next', 'auth blocks public release claims', '--blocked-by', 'npm whoami E401', '--owner-route', 'deep', '--owner-scope', 'release readiness only', '--scope-owner', '$deep', '--side-effect', 'no publish attempted', '--avoidance-note', 'do not retry publish before npm auth is proven', '--issue-code', 'src/bin/yam.ts release report', '--issue-role', 'summarizes release readiness without publishing', '--issue-symptom', 'npm auth failure needs clearer next action', '--changed-code', 'yam loop report', '--changed-role', 'records loop evidence and learning note', '--change-summary', 'added a read-only loop artifact', '--why-important', 'it helps users learn what changed without overclaiming verification', '--learning-note', 'fix blockers before claiming done', '--json']);
+  const loopReport = spawnFailureJson(bin, ['loop', 'report', '--route', 'quick', '--intent', 'fix release readiness', '--stage', 'inspect:passed:read release report', '--evidence', 'typecheck passed', '--evidence-level', 'local', '--evidence-stamp', 'sha256:smoke-release-report', '--touched-file', 'src/bin/yam.ts', '--read-file', 'README.md', '--verified-file', 'scripts/cli-smoke.mjs', '--skipped-check', 'npm publish skipped by design', '--stop-condition', 'stop after release readiness evidence is recorded', '--resume-hint', 'rerun release report after npm auth refresh', '--readiness-state', 'blocked', '--covered-requirement', 'release report is read-only', '--blocked-kind', 'auth_blocked', '--failure-cause', 'auth_token_invalid', '--safe-retry', 'retry after npm whoami succeeds', '--recovery-hint', 'refresh npm auth, then rerun readiness checks', '--fix-first-item', 'npm auth must be verified before publish', '--remaining-task', 'rerun release report after npm auth refresh', '--recommended-direction', 'fix npm auth first, then publish manually', '--implementation-note', 'keep loop report read-only', '--why-this-next', 'auth blocks public release claims', '--blocked-by', 'npm whoami E401', '--owner-route', 'deep', '--owner-scope', 'release readiness only', '--scope-owner', '$deep', '--side-effect', 'no publish attempted', '--avoidance-note', 'do not retry publish before npm auth is proven', '--next-step-spec', blockedNextStepSpecPath, '--issue-code', 'src/bin/yam.ts release report', '--issue-role', 'summarizes release readiness without publishing', '--issue-symptom', 'npm auth failure needs clearer next action', '--changed-code', 'yam loop report', '--changed-role', 'records loop evidence and learning note', '--change-summary', 'added a read-only loop artifact', '--why-important', 'it helps users learn what changed without overclaiming verification', '--learning-note', 'fix blockers before claiming done', '--json']);
   assert(loopReport.schema === 'yam.loop-report.v1', 'loop report schema missing');
   assert(loopReport.study_note?.schema === 'yam.study-note.v1', 'loop report missing study note');
   assert(loopReport.study_note?.problem?.role, 'loop study note problem role missing');
+  assert(loopReport.next_step?.schema === 'yam.next-step.v1', 'loop report missing Next step receipt');
+  assert(loopReport.next_step?.steps?.[0]?.kind === 'fix_first', 'loop report should preserve fix-first Next step ordering');
   assert(loopReport.fix_first_items?.[0] === 'npm auth must be verified before publish', 'loop report missing fix-first handoff');
   assert(loopReport.recommended_direction === 'fix npm auth first, then publish manually', 'loop report missing recommended direction');
   assert(loopReport.implementation_notes?.[0] === 'keep loop report read-only', 'loop report missing implementation notes');
@@ -294,6 +391,15 @@ function spawnFailureJson(bin, args) {
   throw new Error(`Expected failure for ${args.join(' ')}`);
 }
 
+function spawnFailureJsonWithEnv(bin, args, failureEnv) {
+  try {
+    execFileSync(bin, args, { encoding: 'utf8', env: failureEnv });
+  } catch (error) {
+    return JSON.parse(String(error.stdout || '{}'));
+  }
+  throw new Error(`Expected failure for ${args.join(' ')}`);
+}
+
 function spawnFailureText(bin, args) {
   try {
     execFileSync(bin, args, { encoding: 'utf8' });
@@ -364,7 +470,9 @@ function verifyHelpContract(bin, prefix, baseEnv) {
     'tools',
     'proof',
     'study-note',
+    'next-step',
     'loop',
+    'scout',
     'ueye',
     'media',
     'runtime',
@@ -391,7 +499,11 @@ function verifyHelpContract(bin, prefix, baseEnv) {
     ['tools', 'doctor'],
     ['proof', 'write', '--out', proofOut],
     ['study-note', 'check'],
+    ['next-step', 'report'],
+    ['next-step', 'verify'],
     ['loop', 'report'],
+    ['scout', 'receipt', 'create'],
+    ['scout', 'receipt', 'verify'],
     ['ueye', 'capture'],
     ['ueye', 'compare'],
     ['ueye', 'preflight'],
@@ -445,6 +557,19 @@ function verifyOwnershipCliContract(bin, prefix, baseEnv) {
     YAM_SKILLS_HOME: skillsHome,
     YAM_CODEX_MIRROR: codexMirror
   };
+
+  const blockedPlan = spawnFailureJsonWithEnv(bin, ['install', '--dry-run', '--json'], ownershipEnv);
+  assert(blockedPlan.schema === 'yam.install-plan.v1', 'CLI install dry-run schema missing');
+  assert(blockedPlan.mutation_authorized === false && blockedPlan.truth_status === 'blocked', 'blocked dry-run must remain non-mutating');
+  assert(readFileSync(join(skillsHome, 'quick', 'SKILL.md'), 'utf8') === userQuick, 'blocked CLI dry-run should preserve user-owned bytes');
+  assert(!existsSync(join(skillsHome, '.yam-flow-install-receipt.json')), 'blocked CLI dry-run should not write a receipt');
+
+  const readyPlan = JSON.parse(execFileSync(bin, ['install', '--dry-run', '--replace-user-skill', 'quick', '--json'], {
+    env: ownershipEnv,
+    encoding: 'utf8'
+  }));
+  assert(readyPlan.ready && readyPlan.operations?.some((item) => item.action === 'replace_explicitly_authorized'), 'reviewed CLI dry-run should expose the replacement operation');
+  assert(readFileSync(join(skillsHome, 'quick', 'SKILL.md'), 'utf8') === userQuick, 'ready CLI dry-run should not replace user-owned bytes');
 
   const conflict = spawnFailureTextWithEnv(bin, ['install'], ownershipEnv);
   assert(conflict.includes('active skill ownership conflict'), 'CLI install should fail closed on a user-owned active skill');

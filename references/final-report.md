@@ -19,6 +19,7 @@ Always keep final reports short. Include these when they apply:
 - Publish blocker evidence when npm/release work fails.
 - Structured diagnostic next action, when a check found a concrete next step.
 - Study Note whenever code, config, release metadata, documentation, or project artifacts changed, even if no yam skill was explicitly invoked. This item is required for changed artifacts, not optional.
+- Next step immediately after Study Note for changed-artifact reports. It must come from a quick whole-process scan and include ordered fix-first and planned actions, not only leftovers.
 - Remaining tasks.
 - Fix-first items before planned tasks.
 - Recommended direction and why that next step matters when the handoff would otherwise be ambiguous.
@@ -76,6 +77,19 @@ Keep it short: 4-7 lines for ordinary work, longer only when risk, learning valu
 
 Use `references/study-note.md`.
 
+## Next step
+
+Place this section immediately after Study Note whenever an artifact changed. Before writing it, quickly scan the original goal, completed and uncovered requirements, verification gaps, blockers, downstream effects, cleanup/runtime/release state when relevant, and likely direction drift.
+
+Include:
+
+- Current situation and forward outlook.
+- A concrete critical opinion and bounded improvement recommendations.
+- One ordered sequence with all fix-first items before planned work.
+- Why each action matters, owner route and scope, blockers and safe retry, evidence level and stamp, expected side effects, and truth status.
+
+This is broader than `Remaining Tasks`: it may recommend the next useful work after the current scope is complete. Do not invent filler when nothing meaningful remains. Use `references/next-step.md`; reusable JSON receipts use `yam.next-step.v1`.
+
 ## Handoff Direction
 
 Use this when the next run needs a clear starting point:
@@ -91,7 +105,7 @@ Use this when the next run needs a clear starting point:
 - Avoidance note when a repeated mistake should be easy to spot; durable memory still uses explicit `yam memory add`.
 - Owner route, scope owner, and side effects when more than one person or route may continue the work.
 
-`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, `covered_requirements`, `uncovered_requirements`, `touched_files`, `read_files`, `verified_files`, `skipped_checks`, `stop_condition`, `resume_hint`, `readiness_state`, `blocked_kind`, `failure_cause`, `recovery_hint`, `safe_retry`, `evidence_level`, `evidence_stamp`, `owner_route`, `owner_scope`, `scope_owner`, `side_effects`, and `avoidance_note`.
+`yam loop report` can record this as a handoff artifact with `fix_first_items`, `remaining_tasks`, `recommended_direction`, `implementation_notes`, `why_this_next`, `blocked_by`, `covered_requirements`, `uncovered_requirements`, `touched_files`, `read_files`, `verified_files`, `skipped_checks`, `stop_condition`, `resume_hint`, `readiness_state`, `blocked_kind`, `failure_cause`, `recovery_hint`, `safe_retry`, `evidence_level`, `evidence_stamp`, `owner_route`, `owner_scope`, `scope_owner`, `side_effects`, `avoidance_note`, and an input `next_step` contract supplied by `--next-step-spec`.
 
 ## Route Weight
 

@@ -9,11 +9,15 @@ Implemented:
 - Shared references.
 - Local CLI: list, status, verify, doctor, examples, path, install, uninstall.
 - Transactional skill install with rollback, SHA-256 receipt, install lock, and status drift detection. Done.
+- Pure install dry-run plans with ownership blockers, explicit replacement previews, deterministic digests, and zero mutation authorization. Done.
 - CLI helpers: detect, budget, template, tune-log, version.
 - Optional advisory `yam-lite` hook with status/enable/disable. Done.
 - Optional Study Note prompt reminder plus bounded Codex `Stop` completion gate, hook health, and stale-path migration. Done.
 - Opt-in project memory: init, add, list, summary, resolve.
 - Honest completion guard: no verified/cleanup/visual claims without evidence.
+- Evidence-bound Next step contract and Study Note adjacency guard for changed artifacts. Done.
+- Immutable Scout source/claim receipts and four-clock freshness classification for repeated scans. Done.
+- Exact-tarball cross-platform supply-chain workflows with signed-tag gating and npm OIDC provenance. Done locally; npm trusted-publisher registration remains external.
 - No hooks, automations, or global config mutations unless the user explicitly enables them.
 - Token economy policy.
 
@@ -99,7 +103,9 @@ Tasks:
 - Reconsider symlink-friendly local install only if Node exposes a safe descriptor-relative traversal boundary or an equivalent proven design. Deferred: current package source, `YAM_SKILLS_HOME`, and managed-tree paths intentionally reject symlink aliases and symlinked parent segments.
 - Add version command. Done.
 - Add staged transactional install, rollback, receipt, and drift-aware status. Done.
+- Add a non-mutating install plan before authorization, including conflict and explicit-replacement operations. Done.
 - Add checked component updates for yam, Scrapling, and Insane Search with explicit authorization, receipts, and rollback guidance. Done.
+- Preserve registry artifact provenance in updater checks and component receipts. Done.
 - Consider npm packaging only after route behavior stabilizes.
 
 ### 8. Scout / Research Workflow
@@ -123,6 +129,8 @@ Tasks:
   - realistic view: near-term feasibility and cost
   - future view: second-order effects and durable bets
 - Match source count to the decision: focused scouts use a few high-signal sources, broad scouts may use more. Done.
+- Resolve one canonical entity and compare registry, release/tag, main, and latest-commit clocks before calling an update new or stable. Done.
+- Add an immutable, digest-bound source/claim receipt for repeated delta scans while keeping source truth operator-supplied. Done.
 - Avoid making research a default gate for implementation. Done.
 
 ### 9. Question Workflow
@@ -142,11 +150,14 @@ Goal: prepare yam for a personal GitHub repo under `0kim0bos`.
 
 Tasks:
 
-- Choose repository description.
-- Add a short public README intro.
-- Add install/update instructions for local Codex skills.
-- Add a clear note that yam installs no hooks and no automations by default.
-- Re-run source/install verification before publishing.
+- Choose repository description. Done.
+- Add a short public README intro. Done.
+- Add install/update instructions for local Codex skills. Done.
+- Add a clear note that yam installs no hooks and no automations by default. Done.
+- Pack one tarball once and reuse its exact bytes across Linux, macOS, and Windows lifecycle checks. Done.
+- Require a clean, exact-version, `origin/main`-contained signed tag before public publishing. Done.
+- Publish only through npm OIDC/provenance without a repository npm token. Workflow done; npm package settings still need the exact trusted-publisher workflow registration.
+- Re-run source/install/release verification before publishing. Required for each release.
 
 ### 11. Memory Workflow
 
@@ -278,7 +289,7 @@ Tasks:
 - Add `$ueye`. Done.
 - Retire `$fast`, `$build`, `$ui`, `$eye`, and `$review`. Done.
 - Update CLI budgets, templates, docs, manifest, install cleanup. Done.
-- Re-run source and installed-skill verification. Pending after install.
+- Re-run source and installed-skill verification. Done for the local 2.8.0 install; repeat for each release candidate.
 
 ### 15. Lite Hook / Progressive Tool Trust Layer
 

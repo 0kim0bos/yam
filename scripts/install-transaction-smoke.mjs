@@ -22,6 +22,7 @@ import {
   INSTALL_RECEIPT_NAME,
   inspectSkillInstallation,
   installSkillSetTransactional,
+  planSkillSetInstallation,
   uninstallSkillSetSafely
 } from '../dist/lib/skill-installation.js';
 
@@ -50,6 +51,54 @@ try {
   mkdirSync(join(destination, 'quick'), { recursive: true });
   writeFileSync(join(destination, 'quick', 'SKILL.md'), userQuick);
   seedPreservedEntries(destination, mirror);
+
+  const blockedPlan = await planSkillSetInstallation(baseOptions);
+  assert(blockedPlan.schema === 'yam.install-plan.v1', 'install dry-run plan schema missing');
+  assert(blockedPlan.mutation_authorized === false, 'install dry-run must never authorize mutation');
+  assert(blockedPlan.truth_status === 'blocked' && !blockedPlan.ready, 'user-owned skill should block the dry-run plan');
+  assert(blockedPlan.blockers.some((item) => item.includes('ownership conflict')), 'blocked plan should preserve the ownership cause');
+  assert(blockedPlan.preserved_paths.includes(join(destination, 'yam-quick')), 'dry-run must list an unowned legacy path that actual install preserves');
+  assert(blockedPlan.preserved_paths.includes(join(destination, 'fast')), 'dry-run must list an unowned retired path that actual install preserves');
+  assert(blockedPlan.preserved_paths.includes(mirror), 'dry-run must list the unowned Codex mirror');
+  assert(!existsSync(join(destination, INSTALL_LOCK_NAME)), 'dry-run plan must not create an install lock');
+  assertTransactionClean(destination, 'blocked dry-run plan');
+
+  const readyPlan = await planSkillSetInstallation({ ...baseOptions, replaceSkills: ['quick'] });
+  const repeatedPlan = await planSkillSetInstallation({
+    ...baseOptions,
+    replaceSkills: ['quick'],
+    now: () => new Date('2099-01-01T00:00:00.000Z')
+  });
+  assert(readyPlan.ready && readyPlan.truth_status === 'verified', 'reviewed replacement should produce a ready plan');
+  assert(
+    readyPlan.operations.some((item) => item.skill === 'quick' && item.action === 'replace_explicitly_authorized'),
+    'ready plan should distinguish an explicit user-skill replacement'
+  );
+  assert(readyPlan.plan_digest === repeatedPlan.plan_digest, 'plan digest should ignore generation time');
+  assert(readFileSync(join(destination, 'quick', 'SKILL.md'), 'utf8') === userQuick, 'dry-run plan must not replace active bytes');
+  assert(!existsSync(join(destination, INSTALL_RECEIPT_NAME)), 'dry-run plan must not create a receipt');
+
+  const lockedPlanDestination = join(root, 'dry-run-locked');
+  mkdirSync(lockedPlanDestination, { recursive: true });
+  writeFileSync(join(lockedPlanDestination, INSTALL_LOCK_NAME), '{"pid":999999}\n');
+  const lockedPlan = await planSkillSetInstallation({ ...baseOptions, destination: lockedPlanDestination });
+  assert(!lockedPlan.ready && lockedPlan.blockers.some((item) => item.includes('lock exists')), 'dry-run must expose an existing install lock');
+  assert(lockedPlan.operations.length === 0, 'a lock-blocked dry-run must not propose mutation operations');
+  assert(readFileSync(join(lockedPlanDestination, INSTALL_LOCK_NAME), 'utf8') === '{"pid":999999}\n', 'dry-run must preserve an existing lock');
+
+  const recoveryPlanDestination = join(root, 'dry-run-recovery');
+  mkdirSync(join(recoveryPlanDestination, '.yam-flow-install-stale', 'backup'), { recursive: true });
+  const recoveryPlan = await planSkillSetInstallation({ ...baseOptions, destination: recoveryPlanDestination });
+  assert(!recoveryPlan.ready && recoveryPlan.blockers.some((item) => item.includes('unfinished yam install transaction')), 'dry-run must expose recovery artifacts');
+  assert(recoveryPlan.operations.length === 0, 'a recovery-blocked dry-run must not propose mutation operations');
+  assert(existsSync(join(recoveryPlanDestination, '.yam-flow-install-stale', 'backup')), 'dry-run must preserve recovery artifacts');
+
+  const externalPlanDestination = join(root, 'dry-run-symlink-target');
+  const symlinkPlanDestination = join(root, 'dry-run-symlink');
+  mkdirSync(externalPlanDestination, { recursive: true });
+  symlinkSync(externalPlanDestination, symlinkPlanDestination);
+  const symlinkPlan = await planSkillSetInstallation({ ...baseOptions, destination: symlinkPlanDestination });
+  assert(!symlinkPlan.ready && symlinkPlan.blockers.some((item) => item.includes('regular physical directory')), 'dry-run must reject a symlinked destination');
 
   let reachedStage = false;
   const userConflict = await failureOf(() => installSkillSetTransactional({

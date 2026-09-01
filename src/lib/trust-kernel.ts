@@ -1,4 +1,6 @@
 import { verifyStrictGateResult } from './gate-result.js';
+import { buildNextStep } from './next-step.js';
+import type { NextStepInput, NextStepReceipt } from './next-step.js';
 
 export const TRUTH_STATUSES = Object.freeze([
   'verified',
@@ -273,6 +275,7 @@ export interface LoopReport {
   side_effects: string[];
   avoidance_note: string;
   study_note: StudyNote;
+  next_step: NextStepReceipt | null;
 }
 
 export interface UeyeRunReport {
@@ -784,13 +787,32 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
   const uncoveredRequirements = asList(input.uncovered_requirements || input.uncovered_requirement);
   const blockers = asList(input.blockers || input.blocked);
   const blockedBy = asList(input.blocked_by);
-  const blockedKind = shortText(input.blocked_kind || (readinessState === 'blocked' ? 'readiness_blocked' : uncoveredRequirements.length ? 'requirement_uncovered' : blockers.length || blockedBy.length ? 'evidence_missing' : ''));
+  const requestedBlockedKind = shortText(input.blocked_kind);
   const failureCause = shortText(input.failure_cause);
   const recoveryHint = shortText(input.recovery_hint);
   const avoidanceNote = shortText(input.avoidance_note);
   const evidenceStamp = shortText(input.evidence_stamp || input.source_digest, 320);
   const sourceDigest = shortText(input.source_digest || input.evidence_stamp, 320);
   const hasBlockedStage = stages.some((stage) => stage.status === 'blocked' || stage.status === 'failed');
+  const nextStepSupplied = input.next_step !== undefined && input.next_step !== null;
+  const nextStep = nextStepSupplied ? buildNextStep(input.next_step as unknown as NextStepInput) : null;
+  const nextStepRequired = touchedFiles.length > 0;
+  const nextStepBlocked = (nextStepRequired && !nextStep)
+    || Boolean(nextStep && (!nextStep.contract_valid || nextStep.truth_status === 'blocked'));
+  if (nextStepBlocked) {
+    blockers.push(!nextStep
+      ? 'next_step_missing_for_changed_artifacts'
+      : `next_step_contract_blocked: ${nextStep.contract_errors[0] || nextStep.truth_status}`);
+  }
+  const blockedKind = shortText(requestedBlockedKind || (
+    readinessState === 'blocked'
+      ? 'readiness_blocked'
+      : uncoveredRequirements.length
+        ? 'requirement_uncovered'
+        : blockers.length || blockedBy.length
+          ? 'evidence_missing'
+          : ''
+  ));
   const hasBlockerSignal = Boolean(blockers.length || blockedBy.length || blockedKind || uncoveredRequirements.length || readinessState === 'blocked');
   const requestedTruth = isTruthStatus(input.truth_status) ? input.truth_status : '';
   const derivedTruth: TruthStatus = hasBlockerSignal || hasBlockedStage ? 'blocked'
@@ -844,7 +866,8 @@ export function buildLoopReport(input: Partial<LoopReport> & Record<string, unkn
     scope_owner: normalizeOwnerRoute(input.scope_owner || input.owner),
     side_effects: asList(input.side_effects || input.side_effect),
     avoidance_note: avoidanceNote,
-    study_note: studyNote
+    study_note: studyNote,
+    next_step: nextStep
   };
 }
 

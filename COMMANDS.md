@@ -114,6 +114,24 @@ Next.js에서 이 기능을 구현하는 가장 안전한 방식을 찾아줘.
 코드는 아직 수정하지 마.
 ```
 
+For a repeated scan, resolve the canonical entity first and store a non-overwriting source/claim baseline:
+
+```bash
+yam scout receipt create --root /path/to/project --receipt-path .yam/scout/run.json --spec ./scout-spec.json --json
+yam scout receipt verify --root /path/to/project --receipt-path .yam/scout/run.json --json
+```
+
+The spec records aliases, registry/release/main/latest-commit clocks, source receipts, claim links, acquisition failures, opposition, recommendation, and stop reason. All four clocks are required for a stability other than `unknown`. Verification proves the local structure and digest, not the truth of operator-supplied source interpretation. A failed opened write is preserved for manual inspection because Node cannot prove a race-free pathname cleanup without descriptor-relative unlink support.
+
+## Install Planning
+
+```bash
+yam install --dry-run --json
+yam install --dry-run --replace-user-skill quick --json
+```
+
+Dry-run is a pure plan: it writes no lock, receipt, active skill, replacement, or retired-skill removal. Review `operations`, `preserved_paths`, `blockers`, and `plan_digest`; run ordinary `yam install` separately to authorize mutation.
+
 ## Project Pack
 
 Use the CLI to create and inspect the small project direction file.
@@ -154,7 +172,17 @@ yam update apply --component yam --json
 yam update apply --all --json
 ```
 
-`yam update check` is read-only. Every `apply` needs explicit authorization, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search is never remove-first and `.codex/plugins/cache` is never edited directly.
+`yam update check` is read-only. Its component result preserves the registry artifact source receipt: npm integrity/`gitHead` for yam, PyPI release-file SHA-256 values for Scrapling, and the Git-pinned manifest commit for Insane Search. Every `apply` needs explicit authorization, pins the official npm registry or isolated PyPI index, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search requires a clean tracked local manifest whose bytes match Git and matching pre/post-add commits, is never remove-first, and never edits `.codex/plugins/cache` directly.
+
+## Release Supply Chain
+
+```bash
+npm run release:ref:smoke
+npm run release:packed-lifecycle:smoke
+npm run release:supply-chain:smoke
+```
+
+Ordinary CI uses clean-source verification. Publishing is manual-dispatch only and additionally requires an exact signed annotated version tag contained in `origin/main`, reuses one SHA-256-bound tarball across the OS matrix, and publishes those tested bytes with npm OIDC provenance. Before the first release, register the exact `.github/workflows/release.yml` workflow in npm Trusted Publishing; do not add a long-lived npm token as a fallback.
 
 ## Demand-Gated Design Production
 
@@ -222,8 +250,10 @@ yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
 yam detect /path/to/project --json
-yam study-note check /path/to/project --text "Study Note: The hook handler's role is final-report validation. It runs at Codex Stop. Before it only reminded; after it requests one correction pass. Expected behavior is a complete note. Structure insight: decision=block creates a continuation prompt. Verification checked the packaged CLI. Limits: a restarted real task remains to be observed." --json
-yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
+yam study-note check /path/to/project --report ./completion-report.md --json
+yam next-step report --spec ./next-step-spec.json --json
+yam next-step verify --receipt ./next-step-receipt.json --json
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --next-step-spec ./next-step-spec.json --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam proof /path/to/project
 yam proof --route deep --truth verified --command "npm run build: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -246,6 +276,8 @@ yam proof write /path/to/project --route deep --truth partial --command "npm run
 yam proof write /path/to/project --format md --truth assumed --assumption "No runtime was started"
 yam safety "supabase db reset --linked"
 ```
+
+`completion-report.md` places a complete Study Note immediately before Next step. Next step must record the current situation, outlook, critical opinion, recommendations, then order `[fix-first]` before `[planned]` actions with owner, blocker/safe retry, evidence, side effects, and truth status.
 
 Release reporting intentionally runs the release checks and returns a machine-readable summary.
 
@@ -274,8 +306,9 @@ Supported report shapes:
 - Runtime evidence mini: command/process, observation, cleanup, truth status, next action.
 - Patch queue lite: mission lane status, changed files, verification hint, rollback hint, truth status.
 - Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, L5 bounded deep with stop condition and skipped/remaining work.
-- Loop report: intent, guided stage outcomes, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, and study note.
+- Loop report: intent, guided stage outcomes, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, evidence level/stamp, blockers, blocker kind, safe retry, next action, fix-first items, remaining tasks, recommended direction, blocked-by notes, owner route/scope, side effects, Study Note, and a Next step receipt when artifacts changed.
 - Study note: non-specialist explanation of the changed code/artifact, its role, execution point, before/after behavior, expected behavior, one syntax/structure insight, verification, uncertainty, and architecture hygiene around `page.tsx`, `global.css`, and DB `jsonb`.
+- Next step: whole-process situation/outlook scan, critical opinion, improvement recommendations, ordered fix-first then planned actions, ownership, blockers, safe retry, side effects, evidence level/stamp, truth status, and deterministic digest.
 - Study Note guard: read-only check for changed files and supplied final-report text; the opt-in `study-note` hook adds a prompt reminder and one bounded Codex `Stop` correction pass.
 - Benchmark optimization loop lite: baseline, one change, rerun, keep/revert decision.
 - Structured diagnostic next action: severity, evidence, owner route, next action, truth status.

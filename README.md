@@ -45,6 +45,7 @@ See `ROADMAP.md` for remaining implementation stages.
 - Small work stays small, but serious work is allowed to become serious.
 - Security-sensitive work is never treated as ordinary polish.
 - When code, config, release metadata, documentation, or project artifacts changed, final reports include a Study Note even if no yam skill was invoked.
+- A changed-artifact report puts `Next step` immediately after Study Note. It rescans the whole process, states the situation and outlook, adds a critical opinion and improvement recommendations, then orders fix-first work before planned work.
 - Useful Study Notes explain what the changed code or artifact does, what role it has, what was wrong or missing, what changed, what behavior is expected, one small syntax/structure insight, what was verified, and what remains uncertain.
 - Research and reference scans should keep source boundaries clear, then rework good ideas into yam style.
 - Token economy is part of quality.
@@ -112,6 +113,15 @@ cd ~/Documents/Codex/tools/yam
 yam install
 ```
 
+Preview the ownership and mutation plan without writing a lock, receipt, skill, or replacement:
+
+```bash
+yam install --dry-run --json
+yam install --dry-run --replace-user-skill quick --json
+```
+
+The `yam.install-plan.v1` result always reports `mutation_authorized: false` and includes a deterministic digest over the source manifest, destination, operations, preserved paths, and blockers. A replacement flag changes only the previewed ownership decision; mutation still requires a later `yam install` command.
+
 `yam install` first checks ownership of every existing active skill. A skill is replaced automatically only when the previous yam receipt names it and its complete regular-file inventory and content hashes still match the receipt. The installer then stages every managed skill plus the shared `references/` directory, verifies the complete staged file manifest with SHA-256, and replaces the verified active set in `~/.agents/skills/`. If any commit or post-install verification step fails, yam restores the previous managed skill set and receipt. Rollback and cleanup remove newly installed skills, receipts, locks, and transaction roots only while their recorded type and device/inode identity still match; an identity-swapped path is preserved and reported instead of being treated as yam-owned.
 
 Install source, destination, receipt, and managed-tree paths must use canonical physical directories. A symlink alias used as the package source or `YAM_SKILLS_HOME`, or a symlinked parent segment inside either boundary, fails closed; resolve the alias to its real path before retrying. Regular-file reads use descriptor identity checks and `O_NOFOLLOW` where the platform exposes it, while mutation boundaries revalidate parent directory identities. This narrows symlink-swap risk but is not `openat`-grade proof because Node does not expose descriptor-relative traversal here. Arbitrary Windows reparse-point handling is also unverified, so Windows receives the portable identity checks without a claim of complete reparse coverage.
@@ -154,13 +164,24 @@ yam update apply --all --json
 
 `--all` processes Scrapling, then Insane Search, then yam so the running updater replaces itself last. It stops at the first failed or manual-only component. After the global npm install, yam resolves `npm root -g`, the installed package manifest and bin mapping, the first `yam` on `PATH`, canonical realpaths, and the observed version before any `yam install` mutation. A same-version PATH shadow, malformed package, or identity mismatch fails closed; legitimate multi-hop symlinks remain valid. Rollback repeats the same identity check before rollback-side yam commands.
 
-A yam update is successful only after the installed version and status checks plus a final read-only `yam doctor --json` return the expected healthy contract. Doctor failure triggers the existing rollback path, and rollback is considered automatic only when its own identity, version, status, and Doctor checks pass. The deepest actionable rollback or Doctor cause remains primary even if receipt persistence also fails. Each attempt writes a bounded, redacted component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, executable identity, checks, side effects, outcome, and rollback guidance. The aggregate apply response emits and verifies the strict `yam.gate-result.v1`; an already-held lock also returns a blocked gate without mutating components. A lock prevents concurrent apply runs.
+A yam update is successful only after the installed version and status checks plus a final read-only `yam doctor --json` return the expected healthy contract. Doctor failure triggers the existing rollback path, and rollback is considered automatic only when its own identity, version, status, and Doctor checks pass. The deepest actionable rollback or Doctor cause remains primary even if receipt persistence also fails. Each attempt writes a bounded, redacted component receipt under `~/.local/state/yam/update-receipts/` with the old/new version, source revision, registry artifact provenance, executable identity, checks, side effects, outcome, and rollback guidance. Read-only checks retain npm integrity plus `gitHead` for yam, PyPI release-file SHA-256 values for Scrapling, and the Git-pinned manifest commit for Insane Search. Apply pins the official npm registry and an isolated official PyPI index even when user config names an alternate source; npm and pip retain their native registry artifact-integrity enforcement, while the post-install identity/version checks bind the result. Insane Search requires a clean marketplace tree and tracked local manifest whose bytes match the checked Git object, then re-observes the Git commit and manifest before and after plugin add; a dirty or moved source blocks the receipt. The aggregate apply response emits and verifies the strict `yam.gate-result.v1`; an already-held lock also returns a blocked gate without mutating components. A lock prevents concurrent apply runs.
 
 Effective yam identity currently verifies POSIX-style executable/symlink layouts through `which` and canonical realpaths. Windows npm `.cmd` shim identity is intentionally unverified and fails closed until a dedicated shim parser and fixture exist.
 
 Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
 
 There is no unattended updater. The exact project trigger in `AGENTS.md` grants one-time authorization for a checked `--all` run, and Codex is never restarted automatically.
+
+## Scout Receipts
+
+Repeated research can preserve an immutable delta-scan baseline without turning Scout into a default database:
+
+```bash
+yam scout receipt create --root . --receipt-path .yam/scout/run.json --spec scout-spec.json --json
+yam scout receipt verify --root . --receipt-path .yam/scout/run.json --json
+```
+
+The `yam.scout-receipt.v1` artifact binds the canonical entity and aliases, registry/release/main/latest-commit clocks, source URLs and digests, claim-to-source links, acquisition failures, opposition, recommendation, and stop reason. A non-`unknown` stability requires all four clocks; incomplete clock evidence must stay `unknown`. It rejects path escapes, symlinks, overwrites, oversized receipts, non-canonical ordering, and digest drift. Descriptor identity plus parent-directory revalidation narrows path-swap races, but Node does not expose `openat`-grade traversal and a receipt is not a signature against another process running as the same OS user. If an opened receipt write fails, yam preserves the possibly partial path for manual identity inspection instead of risking a path-based cleanup outside the root. The receipt proves local structure and integrity only: source interpretation remains operator-supplied and external content is never trusted as an instruction.
 
 ### Scrapling Usage
 
@@ -209,7 +230,11 @@ yam tools doctor /path/to/project --json
 yam context pressure /path/to/project --json
 yam cleanup scan /path/to/project --json
 yam detect /path/to/project --json
-yam study-note check /path/to/project --text "Study Note: ..." --json
+yam study-note check /path/to/project --report ./completion-report.md --json
+yam next-step report --spec ./next-step-spec.json --json
+yam next-step verify --receipt ./next-step-receipt.json --json
+yam scout receipt create --root /path/to/project --receipt-path .yam/scout/run.json --spec ./scout-spec.json --json
+yam scout receipt verify --root /path/to/project --receipt-path .yam/scout/run.json --json
 yam proof /path/to/project
 yam proof write /path/to/project --route quick --truth verified --command "npm run verify:self: pass"
 yam proof --route ueye --truth verified --visual "reference image only"
@@ -234,7 +259,7 @@ yam media proof --requested --attempted --output ./generated.png --wait-loop --j
 yam proof --route mission --mission-envelope '{"agent_id":"implementer","assigned_scope":"target component","changed_files":["src/file.ts"],"verification_hint":"npm run typecheck","truth_status":"partial"}'
 yam mission receipt --thread-id reviewer-1 --role reviewer --lifecycle stopped --outcome passed --scope "read-only review" --evidence "review completed without edits" --out .yam/mission/reviewer-1.json --json
 yam mission gate --expected-thread reviewer-1 --receipt .yam/mission/reviewer-1.json --out .yam/mission/completion.json --json
-yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
+yam loop report --route quick --intent "fix release readiness" --stage "inspect:passed:read release report" --evidence "typecheck passed" --evidence-level local --evidence-stamp "sha256:release-report" --touched-file src/bin/yam.ts --read-file README.md --verified-file scripts/cli-smoke.mjs --skipped-check "npm publish skipped by design" --stop-condition "stop after readiness evidence is recorded" --resume-hint "rerun release report after npm auth refresh" --readiness-state blocked --covered-requirement "release report is read-only" --uncovered-requirement "npm auth verified" --blocked-kind auth_blocked --failure-cause auth_token_invalid --safe-retry "retry after npm whoami succeeds" --recovery-hint "refresh npm auth, then rerun readiness checks" --fix-first-item "npm auth must be verified before publish" --remaining-task "rerun release report after auth refresh" --recommended-direction "fix npm auth first, then publish manually" --implementation-note "keep loop report read-only" --why-this-next "auth blocks public release claims" --blocked-by "npm whoami E401" --owner-route deep --owner-scope "release readiness only" --scope-owner deep --side-effect "no publish attempted" --avoidance-note "do not retry publish before npm auth is proven" --next-step-spec ./next-step-spec.json --issue-code "src/bin/yam.ts release report" --issue-role "summarizes release readiness without publishing" --issue-symptom "npm auth failure needs clearer next action" --changed-code "yam loop report" --changed-role "records loop evidence and learning note" --change-summary "added a read-only loop artifact" --why-important "it helps users learn what changed without overclaiming verification" --learning-note "fix blockers before claiming done" --json
 yam release report --json
 yam safety "supabase db reset"
 yam pack /path/to/project
@@ -257,6 +282,8 @@ yam version
 yam init-project /path/to/project
 ```
 
+`completion-report.md` must contain a complete `Study Note` followed immediately by `Next step`; the latter records situation, outlook, critical opinion, recommendations, then every `[fix-first]` action before `[planned]` work with owner, blocker/safe retry, evidence, side effects, and truth status.
+
 ## npm / npx Prep
 
 The package exposes the `yam` binary. It does not mutate your home directory during package installation.
@@ -272,7 +299,9 @@ After `yam status` reports all skills and the install receipt as `ok`, restart C
 
 Before packaging or publishing, `verify:self` inspects the exact file list returned by `npm pack --dry-run --json --ignore-scripts`. The release gate scans regular UTF-8 text files up to 2 MiB for high-signal private-key, npm, GitHub, OpenAI, Anthropic, and AWS credential patterns. Findings expose only the pattern id, package-relative path, and line number; matched text is never printed. Binary, symlink, non-regular, unreadable, outside-root, and oversized entries are reported as skipped rather than silently represented as scanned.
 
-Publishing still requires confirming the final npm package name and account access.
+Public release workflows pack one tarball once, record its SHA-256/size/source receipt, reuse those bytes for Linux, macOS, and Windows install/status/Doctor/reinstall/uninstall checks, and publish the same artifact through npm Trusted Publishing with provenance. All referenced GitHub actions are pinned to reviewed commit SHAs. Release mode requires an exact `v<package.version>` annotated signed tag contained in `origin/main`.
+
+Publishing remains blocked until the npm package settings register the exact `.github/workflows/release.yml` filename as the trusted publisher. The workflow does not accept a long-lived npm token, does not run from branch or tag pushes, and publishes only after an explicit manual dispatch names the reviewed signed version tag.
 
 ## Trust Kernel
 
@@ -295,6 +324,8 @@ Publishing still requires confirming the final npm package name and account acce
 - release report JSON
 - loop report JSON
 - study note JSON
+- evidence-bound Next step JSON and verification
+- immutable Scout source/claim receipt verification
 - structured diagnostic next actions
 - context pressure summaries
 - advisory cleanup scans
@@ -316,8 +347,9 @@ These shapes keep reports machine-readable without turning normal work into a he
 - Mission completion receipt: every expected thread records lifecycle and outcome separately; reviewer/doctor write access, missing evidence, ambiguous stops, and receipt inventory gaps block the aggregate gate.
 - Verification Ladder: L0 stated, L1 inspected, L2 local check, L3 integrated, L4 release/runtime/visual proof, and L5 bounded deep. Heavier claims require heavier evidence, but stop conditions prevent endless proof loops.
 - Release report JSON: `yam release report --json` summarizes typecheck, forbidden-name scan, package boundary, registry status, CLI smoke, dist freshness, diagnostics, readiness receipt, and final truth status.
-- Loop report JSON: `yam loop report --json` records a read-only handoff artifact: guided stages, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, requirement coverage, evidence level/stamp, blocker kind, failure cause, safe retry, recovery hint, owner route/scope, side effects, next action, fix-first items, remaining tasks, recommended direction, implementation notes, blocked-by notes, avoidance note, tool intent, truth status, and study note.
-- Study note: `yam.study-note.v1` and `references/study-note.md` keep non-specialist explanations for what code/artifact changed, what role it plays, where it runs, what changed from before to after, what behavior is expected, one syntax/structure insight, what was verified, and what remains uncertain. Missing details stay in `limits` instead of being guessed. Study Note v3 also asks whether work was dumped into `page.tsx`, `global.css`, or broad DB `jsonb` when a smaller component, style module/token, typed column, relation, or validation schema would teach and scale better.
+- Loop report JSON: `yam loop report --json` records a read-only handoff artifact: guided stages, touched/read/verified files, skipped checks, stop condition, resume hint, readiness state, requirement coverage, evidence level/stamp, blocker kind, failure cause, safe retry, recovery hint, owner route/scope, side effects, next action, fix-first items, remaining tasks, recommended direction, implementation notes, blocked-by notes, avoidance note, tool intent, truth status, Study Note, and an optional `--next-step-spec` receipt. Changed artifacts without a valid Next step are blocked.
+- Study note: `yam.study-note.v1` and `references/study-note.md` keep non-specialist explanations for what code/artifact changed, what role it plays, where it runs, what changed from before to after, what behavior is expected, one syntax/structure insight, what was verified, and what remains uncertain. Missing details stay in `limits` instead of being guessed. Study Note v4 keeps the architecture-hygiene check for `page.tsx`, `global.css`, and broad DB `jsonb`, then requires an evidence-bound Next step immediately afterward.
+- Next step: `yam.next-step.v1` records the whole-process scan, outlook, critical opinion, recommendations, ordered fix-first/planned actions, owner scope, blockers, safe retry, side effects, L0-L5 evidence, and a deterministic digest. Unknown fields, contradictory truth, weak evidence for strong claims, and tampering fail closed.
 - Study Note guard: `yam study-note check` is a read-only missing-note guard. The opt-in `yam hook enable study-note --global` profile reuses it for a prompt reminder and one bounded Codex `Stop` correction pass; it still does not generate or edit a report.
 - Avoidance note: loop reports may include one short mistake-to-avoid note, but durable memory stays explicit through `yam memory add`; `yam loop report` does not write `.yam/memory`.
 - Publish blocker evidence: release reports classify common npm auth, permission, OTP, immutable-version, cache, registry, and tarball failures into safe next actions.

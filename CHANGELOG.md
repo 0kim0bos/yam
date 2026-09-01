@@ -2,6 +2,34 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.0 - 2026-09-01
+
+### Added
+
+- Added `yam.next-step.v1` plus CLI create/verify commands and Loop integration. Changed-artifact reports now require an evidence-bound whole-process scan, critical opinion, recommendations, and ordered fix-first/planned work immediately after Study Note.
+- Added pure `yam install --dry-run --json` plans with ownership-aware operations, explicit replacement previews, deterministic plan digests, and no mutation authorization.
+- Added immutable `yam.scout-receipt.v1` source/claim baselines with canonical entity aliases, four freshness clocks, acquisition-failure taxonomy, claim links, local integrity verification, and explicit operator-supplied truth boundaries.
+- Added clean-source and strict signed-release ref gates plus exact-tarball Linux/macOS/Windows lifecycle workflows and explicit manual-dispatch npm OIDC/provenance publishing.
+
+### Improved
+
+- Strengthened Scout guidance with canonical entity resolution, registry/release/main/latest-commit comparison, stable/RC/unreleased classification, opposition, stop reasons, and delta-scan receipts.
+- Updater checks and component receipts now retain npm integrity/`gitHead`, PyPI release-file SHA-256 values, or the Git-pinned Insane Search manifest commit as applicable. Apply commands pin the official npm registry or isolated PyPI index, and Insane Search requires a clean tracked local manifest whose bytes match Git plus matching pre/post-add marketplace commits and pinned manifest versions.
+- Registry readiness now probes the exact immutable package version, accepts only an explicit E404 as unpublished, fails closed on auth or network errors, and binds downstream release-report parsing to the same package/version identity.
+- Install dry-run plans list unowned legacy, retired, and mirror paths that the real transaction preserves.
+- README, commands, roadmap, project pack, route skills, manifest, package exports, and self-verification now describe and exercise the new contracts.
+
+### Security
+
+- Next step receipts reject unknown fields, contradictory blocker/truth combinations, weak evidence for strong claims, invalid ordering, limit overruns, and digest tampering.
+- Scout receipts reject path escapes, symlinked paths, overwrite attempts, credential-bearing URLs, oversized or non-canonical content, incomplete clocks paired with a known stability, unknown claim sources, and digest drift while never trusting fetched content as instructions. Failed opened writes are preserved for manual inspection instead of using an unsafe pathname cleanup.
+- Release workflows pin third-party actions to reviewed commit SHAs, grant OIDC only to the final no-checkout publish job, and require the publish artifact to match the independently carried SHA-256 receipt.
+
+### Verification
+
+- Focused typecheck/build, Next step, Scout receipt, install-transaction, external-update, packaged CLI, release-ref, and same-tarball lifecycle smokes.
+- Full self-verification, package boundary/secrets, dependency audit/signatures, update/status/Doctor, Mission receipt gate, and bounded Deep false-completion audit are release criteria.
+
 ## v2.7.0 - 2026-08-24
 
 ### Added

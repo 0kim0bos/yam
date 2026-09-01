@@ -34,9 +34,47 @@ try {
     ]
   );
   assert.equal(check.components[2].source_revision.drift, true);
+  assert.equal(check.components[0].source_receipt.revision, 'cccccccccccccccccccccccccccccccccccccccc');
+  assert.match(check.components[0].source_receipt.integrity[0], /^sha512-/);
+  assert.match(check.components[1].source_receipt.integrity[0], /^sha256:/);
+  assert.equal(check.components[2].source_receipt.revision, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   assert.match(check.components[2].source_revision.note, /plugin manifest version/);
   assert.equal(fixture.fetches.some((url) => url.includes('/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/')), true);
   assert.equal(fixture.fetches.some((url) => url.includes('/HEAD/')), false);
+
+  const malformedProvenanceFixture = createFixture();
+  const malformedProvenanceDependencies = malformedProvenanceFixture.dependencies();
+  const validMalformedFetch = malformedProvenanceDependencies.fetchJson;
+  malformedProvenanceDependencies.fetchJson = async (url) => url.includes('pypi.org')
+    ? {
+        info: { version: malformedProvenanceFixture.scraplingLatest },
+        urls: [
+          { filename: 'valid.tar.gz', digests: { sha256: 'd'.repeat(64) } },
+          { filename: 'missing-digest.whl', digests: {} }
+        ]
+      }
+    : validMalformedFetch(url);
+  const malformedProvenance = await checkExternalUpdates('2.4.0', malformedProvenanceDependencies);
+  const malformedScrapling = malformedProvenance.components.find((item) => item.component === 'scrapling');
+  assert.equal(malformedScrapling?.status, 'check_failed', 'one malformed PyPI artifact must fail the complete provenance inventory');
+  assert.match(malformedScrapling?.error || '', /missing or malformed SHA-256/);
+
+  const oversizedProvenanceFixture = createFixture();
+  const oversizedProvenanceDependencies = oversizedProvenanceFixture.dependencies();
+  const validOversizedFetch = oversizedProvenanceDependencies.fetchJson;
+  oversizedProvenanceDependencies.fetchJson = async (url) => url.includes('pypi.org')
+    ? {
+        info: { version: oversizedProvenanceFixture.scraplingLatest },
+        urls: Array.from({ length: 65 }, (_, index) => ({
+          filename: `artifact-${index}.whl`,
+          digests: { sha256: index.toString(16).padStart(64, '0') }
+        }))
+      }
+    : validOversizedFetch(url);
+  const oversizedProvenance = await checkExternalUpdates('2.4.0', oversizedProvenanceDependencies);
+  const oversizedScrapling = oversizedProvenance.components.find((item) => item.component === 'scrapling');
+  assert.equal(oversizedScrapling?.status, 'check_failed', 'PyPI provenance truncation must fail closed');
+  assert.match(oversizedScrapling?.error || '', /exceeds the 64-item provenance limit/);
 
   const scraplingApply = await applyExternalUpdates('2.4.0', {
     component: 'scrapling'
@@ -51,6 +89,21 @@ try {
   const newTarget = resolve(dirname(fixture.scraplingBin), readlinkSync(fixture.scraplingBin));
   assert.match(newTarget, /0\.4\.12-yam-/);
   assert.equal(existsSync(join(dirname(dirname(newTarget)), '.yam-scrapling-install.json')), true);
+  const scraplingInstallCommand = fixture.commands.find((item) => (
+    item.command.endsWith('/bin/python')
+    && item.args[0] === '-m'
+    && item.args[1] === 'pip'
+    && item.args[2] === 'install'
+  ));
+  assert.ok(scraplingInstallCommand, 'Scrapling must be installed through the candidate interpreter');
+  assert.equal(scraplingInstallCommand.args.includes('--isolated'), true, 'pip must ignore user config and environment indexes');
+  assert.deepEqual(
+    scraplingInstallCommand.args.slice(
+      scraplingInstallCommand.args.indexOf('--index-url'),
+      scraplingInstallCommand.args.indexOf('--index-url') + 2
+    ),
+    ['--index-url', 'https://pypi.org/simple']
+  );
 
   const rollbackFixture = createFixture();
   const invalidReceiptDir = join(rollbackFixture.root, 'receipt-path-is-a-file');
@@ -106,6 +159,60 @@ try {
   assert.equal(wrongSourceApply.success, false);
   assert.match(wrongSourceApply.receipts[0].error, /unexpected gptaku-codex marketplace source/);
   assert.equal(wrongSourceFixture.commands.some((item) => item.args.includes('upgrade')), false);
+
+  const movedRevisionFixture = createFixture();
+  movedRevisionFixture.marketplaceRevisionAfterUpgrade = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const movedRevisionApply = await applyExternalUpdates('2.4.0', {
+    component: 'insane-search'
+  }, movedRevisionFixture.dependencies());
+  assert.equal(movedRevisionApply.success, false);
+  assert.equal(movedRevisionApply.receipts[0].outcome, 'failed');
+  assert.match(movedRevisionApply.receipts[0].error, /source changed between check and upgrade/);
+  assert.equal(
+    movedRevisionFixture.commands.some((item) => item.args.join(' ') === 'plugin add insane-search-codex@gptaku-codex --json'),
+    false,
+    'a moved marketplace revision must block plugin add'
+  );
+
+  const dirtyMarketplaceFixture = createFixture();
+  dirtyMarketplaceFixture.dirtyMarketplace = true;
+  const dirtyMarketplaceApply = await applyExternalUpdates('2.4.0', {
+    component: 'insane-search'
+  }, dirtyMarketplaceFixture.dependencies());
+  assert.equal(dirtyMarketplaceApply.success, false);
+  assert.match(dirtyMarketplaceApply.receipts[0].error, /working tree is dirty/);
+  assert.equal(
+    dirtyMarketplaceFixture.commands.some((item) => item.args.join(' ') === 'plugin add insane-search-codex@gptaku-codex --json'),
+    false,
+    'a dirty marketplace must block plugin add'
+  );
+
+  const postAddMoveFixture = createFixture();
+  postAddMoveFixture.marketplaceRevisionAfterAdd = 'ffffffffffffffffffffffffffffffffffffffff';
+  const postAddMoveApply = await applyExternalUpdates('2.4.0', {
+    component: 'insane-search'
+  }, postAddMoveFixture.dependencies());
+  assert.equal(postAddMoveApply.success, false);
+  assert.equal(postAddMoveApply.receipts[0].installed_version, postAddMoveFixture.insaneLatest);
+  assert.match(postAddMoveApply.receipts[0].error, /source changed between check and upgrade/);
+  assert.equal(
+    postAddMoveApply.receipts[0].checks.find((item) => item.id === 'final_source_revision')?.status,
+    'failed',
+    'a source move after plugin add must block the final receipt'
+  );
+
+  const manifestBytesFixture = createFixture();
+  writeFileSync(manifestBytesFixture.marketplaceManifest, '{"version":"0.9.0","injected":true}\n');
+  const manifestBytesApply = await applyExternalUpdates('2.4.0', {
+    component: 'insane-search'
+  }, manifestBytesFixture.dependencies());
+  assert.equal(manifestBytesApply.success, false);
+  assert.match(manifestBytesApply.receipts[0].error, /manifest bytes do not match the checked Git commit/);
+  assert.equal(
+    manifestBytesFixture.commands.some((item) => item.args.join(' ') === 'plugin add insane-search-codex@gptaku-codex --json'),
+    false,
+    'locally changed manifest bytes must block plugin add even when status output is forged clean'
+  );
 
   const failedVenvFixture = createFixture();
   failedVenvFixture.venvFails = true;
@@ -201,7 +308,13 @@ try {
   assert.deepEqual(allApply.applied_components, ['scrapling', 'insane-search', 'yam']);
   assert.deepEqual(allApply.receipts.map((item) => item.outcome), ['up_to_date', 'up_to_date', 'updated']);
   assert.equal(allApply.receipts[2].source_revision.kind, 'npm_registry_release');
-  assert.equal(allFixture.commands.some((item) => item.command === 'npm' && item.args.join(' ') === 'install -g yam-flow@2.5.0'), true);
+  assert.equal(
+    allFixture.commands.some((item) => (
+      item.command === 'npm'
+      && item.args.join(' ') === 'install -g yam-flow@2.5.0 --registry https://registry.npmjs.org/'
+    )),
+    true
+  );
   assert.match(allApply.receipts[2].rollback_hint.guidance, /`yam doctor --json`/);
   assert.deepEqual(
     allApply.receipts[2].checks.map((item) => item.id),
@@ -414,11 +527,15 @@ function createFixture(options = {}) {
   const yamIntermediateLink = join(npmPrefix, 'libexec', 'yam-current');
   const shadowYam = options.shadowYam ? join(root, 'shadow-bin', 'yam') : '';
   const scraplingVersion = options.scraplingVersion || '0.4.11';
+  const insaneLatest = options.insaneLatest || '0.9.0';
   const oldEnvironment = join(scraplingRoot, scraplingVersion);
   const oldExecutable = join(oldEnvironment, 'bin', 'scrapling');
   mkdirSync(dirname(oldExecutable), { recursive: true });
   mkdirSync(dirname(scraplingBin), { recursive: true });
   mkdirSync(marketplaceRoot, { recursive: true });
+  const marketplaceManifest = join(marketplaceRoot, 'plugins', 'insane-search-codex', '.codex-plugin', 'plugin.json');
+  mkdirSync(dirname(marketplaceManifest), { recursive: true });
+  writeFileSync(marketplaceManifest, `${JSON.stringify({ version: insaneLatest })}\n`);
   writeFileSync(oldExecutable, '#!/bin/sh\n');
   writeFileSync(join(oldEnvironment, '.yam-scrapling-install.json'), `${JSON.stringify({
     schema: 'yam.scrapling-install.v1',
@@ -470,6 +587,7 @@ function createFixture(options = {}) {
     stateDir,
     receiptDir,
     marketplaceRoot,
+    marketplaceManifest,
     npmGlobalRoot,
     yamPackageRoot,
     yamEntrypoint,
@@ -483,10 +601,14 @@ function createFixture(options = {}) {
     addFails: false,
     venvFails: false,
     marketplaceUpgraded: false,
+    marketplaceRevisionAfterUpgrade: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    marketplaceRevisionAfterAdd: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    dirtyMarketplace: false,
+    pluginAdded: false,
     pluginListFailsAfterUpgrade: false,
     marketplaceSource: 'https://github.com/fivetaku/gptaku-plugins-codex.git',
     scraplingLatest: options.scraplingLatest || '0.4.12',
-    insaneLatest: options.insaneLatest || '0.9.0',
+    insaneLatest,
     yamLatest: options.yamLatest || '2.5.0',
     installedYam: options.installedYam || '2.4.0',
     doctorMode: 'ok',
@@ -497,7 +619,10 @@ function createFixture(options = {}) {
         now: () => new Date('2026-07-27T02:00:00.000Z'),
         env: {
           PATH: `${shadowYam ? dirname(shadowYam) : dirname(yamBin)}:${process.env.PATH || ''}`,
-          YAM_SCRAPLING_PYTHON: 'python3'
+          YAM_SCRAPLING_PYTHON: 'python3',
+          NPM_CONFIG_REGISTRY: 'https://registry.example.invalid/',
+          PIP_INDEX_URL: 'https://pypi.example.invalid/simple',
+          PIP_EXTRA_INDEX_URL: 'https://extra.example.invalid/simple'
         },
         paths: {
           stateDir,
@@ -509,8 +634,19 @@ function createFixture(options = {}) {
         },
         fetchJson: async (url) => {
           fixture.fetches.push(url);
-          if (url.includes('registry.npmjs.org')) return { version: fixture.yamLatest };
-          if (url.includes('pypi.org')) return { info: { version: fixture.scraplingLatest } };
+          if (url.includes('registry.npmjs.org')) return {
+            version: fixture.yamLatest,
+            gitHead: 'cccccccccccccccccccccccccccccccccccccccc',
+            dist: { integrity: 'sha512-Zml4dHVyZS1pbnRlZ3JpdHk=' }
+          };
+          if (url.includes('pypi.org')) return {
+            info: { version: fixture.scraplingLatest },
+            urls: [{
+              filename: `scrapling-${fixture.scraplingLatest}.tar.gz`,
+              packagetype: 'sdist',
+              digests: { sha256: 'd'.repeat(64) }
+            }]
+          };
           if (url.includes('raw.githubusercontent.com')) return { version: fixture.insaneLatest };
           throw new Error(`unexpected fixture URL: ${url}`);
         },
@@ -523,7 +659,19 @@ function createFixture(options = {}) {
         return ok('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tHEAD\n');
       }
       if (command === 'git' && args[0] === '-C') {
-        return ok('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n');
+        if (args[2] === 'rev-parse') {
+          return ok(`${fixture.pluginAdded
+            ? fixture.marketplaceRevisionAfterAdd
+            : fixture.marketplaceUpgraded
+              ? fixture.marketplaceRevisionAfterUpgrade
+              : 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}\n`);
+        }
+        if (args[2] === 'status') {
+          return ok(fixture.dirtyMarketplace ? ' M plugins/insane-search-codex/.codex-plugin/plugin.json\n' : '');
+        }
+        if (args[2] === 'ls-files') return ok('plugins/insane-search-codex/.codex-plugin/plugin.json\n');
+        if (args[2] === 'show') return ok(`${JSON.stringify({ version: fixture.insaneLatest })}\n`);
+        return fail(`unexpected fixture git command: ${args.join(' ')}\n`);
       }
       if (command === 'codex' && args.join(' ') === 'plugin marketplace list --json') {
         return ok(JSON.stringify({
@@ -554,6 +702,7 @@ function createFixture(options = {}) {
       }
       if (command === 'codex' && args.join(' ') === 'plugin add insane-search-codex@gptaku-codex --json') {
         if (fixture.addFails) return fail('already installed; token=fixture-secret; no safe in-place update\n');
+        fixture.pluginAdded = true;
         fixture.installedInsane = fixture.insaneLatest;
         return ok('{"installed":true}\n');
       }

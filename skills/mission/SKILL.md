@@ -95,6 +95,7 @@ Use `references/current-docs.md` when any lane depends on current SDK/API/cloud-
 Use `references/verification-levels.md` for L4-L5 mission proof boundaries.
 Use `references/honest-completion.md`; do not overclaim.
 Use `references/study-note.md` for every lane that changes code, config, docs, release metadata, or project artifacts; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
+Use `references/next-step.md` immediately after Study Note for changed artifacts; derive the order from the aggregate Mission gate, Doctor scan, remaining risk, critical opinion, and likely downstream work.
 Use `references/final-report.md` to close with remaining tasks and fix-first items.
 Use `references/token-budget-reporter.md` when budget drift matters.
 
@@ -126,6 +127,7 @@ Report:
 - What the mission changed.
 - Role/cross-verification summary.
 - Study Note for any lane that changed code, config, docs, release metadata, or project artifacts: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Next step immediately after Study Note, with current situation, outlook, critical opinion, recommendations, ordered actions, evidence, ownership, blockers, safe retry, and side effects.
 - Architecture hygiene when relevant: flag if the change risks dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Evidence gathered.
 - Truth status.

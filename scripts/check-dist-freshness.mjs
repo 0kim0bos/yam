@@ -13,6 +13,9 @@ const pairs = [
   ['src/lib/verification-closure.ts', 'dist/lib/verification-closure.js'],
   ['src/lib/media-provider-receipt.ts', 'dist/lib/media-provider-receipt.js'],
   ['src/lib/trust-kernel.ts', 'dist/lib/trust-kernel.js'],
+  ['src/lib/next-step.ts', 'dist/lib/next-step.js'],
+  ['src/lib/scout-receipt.ts', 'dist/lib/scout-receipt.js'],
+  ['src/lib/release-registry-status.ts', 'dist/lib/release-registry-status.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
 ];
 

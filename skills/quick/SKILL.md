@@ -80,6 +80,7 @@ Keep it compact:
 
 - What changed or what the scan found.
 - Study Note when code, config, docs, or project artifacts changed: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Next step immediately after Study Note when artifacts changed; use `references/next-step.md` to record the whole-process scan, critical opinion, recommendations, and ordered fix-first then planned actions.
 - Architecture hygiene when relevant: flag if the change risks dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - What was checked.
 - What was skipped, blocked, or still risky.

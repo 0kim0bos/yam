@@ -194,6 +194,7 @@ Report:
 - P0-P3 issues or confirmation that no blockers were found.
 - States/viewports checked.
 - Study Note when UI code, design docs, config, or project artifacts changed: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Next step immediately after Study Note when artifacts changed; use `references/next-step.md` and keep fix-first visual blockers before planned polish.
 - Architecture hygiene when relevant: flag if the change risks dumping unrelated UI logic into `page.tsx`, one-off component styling into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Truth status and visual verification cap.
 - Handoff when useful: fix-first visual issues, remaining tasks, recommended direction, why that next step matters, blocker kind, safe retry, evidence level/stamp, and owner scope when another route or person may continue.

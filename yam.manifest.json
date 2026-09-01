@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "principles": [
     "Direction before execution.",
     "Start fast.",
@@ -17,7 +17,8 @@
     "Explain what changed, what role it has, where it runs or is read, what was wrong or missing when relevant, before/after behavior, expected behavior, and one useful syntax or structure insight in short non-specialist language.",
     "When relevant, include architecture hygiene: avoid dumping unrelated logic into page.tsx, one-off component CSS into global.css, or structured product data into broad DB jsonb blobs when better project boundaries exist.",
     "Use handoff notes for fix-first items, remaining tasks, recommended next direction, requirement coverage, blocker kind, failure cause, recovery hint, safe retry, evidence level, and owner scope when useful.",
-    "Use bounded heavy verification for serious claims, with explicit stop conditions instead of endless proof loops."
+    "Use bounded heavy verification for serious claims, with explicit stop conditions instead of endless proof loops.",
+    "After changed artifacts, put an evidence-bound Next step immediately after Study Note with a whole-process scan, critical opinion, recommendations, and fix-first-before-planned ordering."
   ],
   "defaultHooks": false,
   "routes": [
@@ -39,7 +40,7 @@
     {
       "id": "scout",
       "stage": "v0.2",
-      "purpose": "Investigation, wide search, evidence-led source mapping, blocked-source fallback, opposition pass, and recommendation without code changes by default."
+      "purpose": "Investigation, canonical-entity resolution, four-clock freshness checks, evidence-led source mapping, blocked-source fallback, immutable source/claim receipts for repeated scans, opposition pass, and recommendation without code changes by default."
     },
     {
       "id": "deep",

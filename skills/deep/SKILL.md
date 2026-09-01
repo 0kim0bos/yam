@@ -53,6 +53,7 @@ Use `references/current-docs.md` when SDK/API/cloud-service behavior may be curr
 Use `references/trust-kernel.md` when the task asks how yam prevents false completion or fake real proof claims.
 Use `references/honest-completion.md`; do not overclaim verification, runtime, cleanup, or visual proof.
 Use `references/study-note.md` when any code, config, docs, release metadata, or project artifact changed; include role, execution point, before/after, expected behavior, one syntax/structure insight, verification, limits, and architecture hygiene when relevant.
+Use `references/next-step.md` immediately after Study Note for changed artifacts; base it on the whole verified process, residual risk, critical opinion, and ordered fix-first then planned work.
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.
 
@@ -78,6 +79,7 @@ Include:
 
 - What was changed or reviewed.
 - Study Note for changed artifacts: what changed, what role it has, where it runs or is read, what was wrong or missing, before/after behavior, what behavior is expected, one useful syntax/structure insight, what was verified, and what remains uncertain.
+- Next step immediately after Study Note, with current situation, outlook, critical opinion, recommendations, ordered actions, evidence, owner scope, blockers, safe retry, and side effects.
 - Architecture hygiene when relevant: flag if the change risks dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs.
 - Evidence gathered.
 - Truth status.
