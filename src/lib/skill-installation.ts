@@ -1244,14 +1244,12 @@ async function captureRecordedEntryFromHandle(
 
 async function captureLockIdentity(target: string, created: BigIntStats): Promise<InstalledEntry> {
   const current = await fsp.lstat(target, { bigint: true });
-  const birthtimeAvailable = created.birthtimeNs > 0n && current.birthtimeNs > 0n;
   if (
     !created.isFile()
     || current.isSymbolicLink()
     || !current.isFile()
     || created.dev !== current.dev
     || created.ino !== current.ino
-    || (birthtimeAvailable && created.birthtimeNs !== current.birthtimeNs)
   ) {
     throw new Error(`install lock changed identity after exclusive creation: ${target}`);
   }
@@ -1266,11 +1264,10 @@ async function captureLockIdentity(target: string, created: BigIntStats): Promis
         !pinned.isFile()
         || pinned.dev !== created.dev
         || pinned.ino !== created.ino
-        || (birthtimeAvailable && pinned.birthtimeNs !== created.birthtimeNs)
       ) {
         throw new Error(`install lock pin descriptor does not match exclusive creation: ${target}`);
       }
-    } else if (!birthtimeAvailable) {
+    } else if (current.birthtimeNs <= 0n) {
       throw new Error(`install lock requires a positive birthtime when descriptor pinning is unavailable: ${target}`);
     }
     return {
@@ -1278,7 +1275,7 @@ async function captureLockIdentity(target: string, created: BigIntStats): Promis
       dev: created.dev,
       ino: created.ino,
       kind: 'file',
-      birthtimeNs: birthtimeAvailable ? created.birthtimeNs : undefined,
+      birthtimeNs: process.platform === 'win32' ? current.birthtimeNs : undefined,
       handle: pinHandle
     };
   } catch (error) {
