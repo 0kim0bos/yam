@@ -72,6 +72,8 @@
 
 ## Recent Decisions
 
+- Security checks use nine explained SEC areas, stage-bound evidence and append-only private notes. Gate policy and supplied evidence need independent trust; local hooks cannot replace protected CI/deployment enforcement.
+
 - Add an immutable Scout source/claim receipt only for repeated research; do not create a default research database.
 - Add a pure install dry-run plan before mutation while keeping actual install authorization explicit.
 - Build and reuse one exact tarball across operating-system lifecycle checks.

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { runSecurityCommand } from '../lib/security-integration.js';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -224,6 +225,7 @@ Usage:
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam study-note check [dir] [--report file|--text text] [--json]
+  yam security <init|check|hooks|status> [--stage commit|push|ci|deploy] [--json]
   yam next-step <report|verify> [--spec file|--receipt file] [--json]
   yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
   yam scout receipt <create|verify> [options]
@@ -249,7 +251,7 @@ Usage:
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
   yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
-  yam template <project|ueye|mission|proof|tuning>
+  yam template <project|ueye|mission|proof|tuning|security|security-ci>
   yam tune-log [dir]
   yam install [--dry-run] [--json] [--replace-user-skill name]
   yam uninstall
@@ -570,6 +572,7 @@ async function verify({ quiet = false } = {}) {
     'context-reuse.md',
     'markdown-management.md',
     'study-note.md',
+    'security-check.md',
     'final-report.md',
     'token-budget-reporter.md',
     'memory.md'
@@ -585,7 +588,7 @@ async function verify({ quiet = false } = {}) {
       if (!hasHeading(projectTemplate, section)) issues.push(`project template missing section: ${section}`);
     }
   }
-  for (const template of ['ueye-review.md', 'ueye-comparison.md', 'mission-plan.md', 'runtime-proof.md', 'tuning-log.md']) {
+  for (const template of ['ueye-review.md', 'ueye-comparison.md', 'mission-plan.md', 'runtime-proof.md', 'tuning-log.md', 'security-check-note.md', 'security-gate.yml']) {
     if (!await exists(path.join(ROOT, 'templates', template))) issues.push(`missing template: ${template}`);
   }
   for (const module of ['trust-kernel.js', 'ueye-artifacts.js']) {
@@ -6069,11 +6072,13 @@ async function printTemplate(name = '') {
     mission: 'mission-plan.md',
     proof: 'runtime-proof.md',
     runtime: 'runtime-proof.md',
-    tuning: 'tuning-log.md'
+    tuning: 'tuning-log.md',
+    security: 'security-check-note.md',
+    'security-ci': 'security-gate.yml'
   };
   const file = map[key];
   if (!file) {
-    console.error('usage: yam template <project|ueye|ueye-comparison|mission|proof|tuning>');
+    console.error('usage: yam template <project|ueye|ueye-comparison|mission|proof|tuning|security|security-ci>');
     process.exitCode = 1;
     return;
   }
@@ -6349,6 +6354,7 @@ function showRequestedHelp(args: string[]) {
   }
 
   const commandUsage: Record<string, () => void> = {
+    security: () => console.log('yam security <init|check|hooks enable|status> [--stage commit|push|ci|deploy] [--policy file --policy-digest sha256 --evidence file --note file]\nSee references/security-check.md for exact bindings and CI/deploy trust configuration.'),
     context: contextUsage,
     cleanup: cleanupUsage,
     'study-note': studyNoteUsage,
@@ -6375,6 +6381,16 @@ async function main() {
   const command = args[0] || 'help';
   if (showRequestedHelp(args)) return;
   if (command === 'help') return usage();
+  if (command === 'security') {
+    if (args.length === 1 || ['help', '--help', '-h'].includes(args[1])) {
+      console.log('yam security <init|check|hooks enable|status> [--stage commit|push|ci|deploy] [--policy file --policy-digest sha256 --evidence file --note file]\nSee references/security-check.md for exact bindings and CI/deploy trust configuration.');
+      return;
+    }
+    const result = await runSecurityCommand(args.slice(1), { cwd: process.cwd(), cliPath: fileURLToPath(import.meta.url) });
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
   if (command === 'install') return install(args.slice(1));
   if (command === 'uninstall') return uninstall(args.slice(1));
   if (command === 'version') return console.log(VERSION);

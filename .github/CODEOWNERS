@@ -1,0 +1,9 @@
+# Changes to enforcement require independent code-owner review.
+/.github/CODEOWNERS @0kim0bos
+/.github/workflows/ @0kim0bos
+/security/ @0kim0bos
+/scripts/ @0kim0bos
+/src/ @0kim0bos
+/package.json @0kim0bos
+/package-lock.json @0kim0bos
+/tsconfig.json @0kim0bos

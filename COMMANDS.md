@@ -336,3 +336,13 @@ yam hook disable study-note --global
 ```
 
 `yam hook status` exits nonzero for unreadable configs, stale paths, missing targets, duplicate handlers, or incomplete event coverage. Re-enable the affected profile to back up the file, preserve unrelated hooks, and migrate its command and events.
+
+## Security check
+
+- `yam security init`: create a private all-unverified draft and pin a reviewed policy; preserve existing files.
+- `yam security check --stage commit|push|ci|deploy`: validate exact-target evidence and append Security check to Yam note; nonzero exit blocks.
+- `yam security hooks enable`: explicitly install local pre-commit/pre-push hooks, preserving existing hooks.
+- `yam security status`: show local configuration; remote protections remain not measured.
+- `yam template security` / `yam template security-ci`: explained note and CI setup templates.
+
+See `references/security-check.md` for stage arguments, trusted policy requirements and limitations. This validates supplied evidence; it does not automatically scan application vulnerabilities.

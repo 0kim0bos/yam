@@ -48,6 +48,12 @@ Study Note:
 - Limits: this does not infer requirements from prose; the agent or user still has to provide them.
 ```
 
+## Security check in Yam note
+
+When documenting commit, push, or deployment security checks, include a separate `-- Security check --` block using `references/security-check.md` and `templates/security-check-note.md`. Every SEC ID must have a concrete Korean security explanation, its status, and supporting evidence or an explicit limitation. Keep this block outside the Study Note / Next step pair so their required adjacency is preserved.
+
+The security CLI appends this block to the configured note without adding a `yam note` command or changing `yam.study-note.v1`. Git hooks require explicit setup; remote CI/deployment enforcement requires project configuration.
+
 ## When Nothing Changed
 
 For pure Q&A, planning, scouting, or review with no changed artifact, do not force a Study Note. Say `No code or project artifact changed` when that prevents ambiguity.

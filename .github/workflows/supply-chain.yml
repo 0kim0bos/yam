@@ -19,7 +19,13 @@ env:
   NPM_VERSION: 11.19.1
 
 jobs:
+  security:
+    uses: ./.github/workflows/security-check.yml
+    with:
+      source: ${{ github.event.pull_request.head.sha || github.sha }}
+
   package:
+    needs: security
     name: Build one immutable tarball
     runs-on: ubuntu-latest
     timeout-minutes: 30

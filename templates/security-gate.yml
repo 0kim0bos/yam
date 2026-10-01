@@ -1,0 +1,43 @@
+# Copy to the target project after configuring trusted repository variables.
+# Require this job in branch protection and make deployment jobs depend on it.
+name: Security check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.14.0
+      # The caller provisions reviewed yam code, policy and evidence before this step.
+      # Do not execute PR-supplied code with deployment credentials.
+      - name: Validate security evidence for exact revisions
+        env:
+          SECURITY_POLICY_DIGEST: ${{ vars.SECURITY_POLICY_DIGEST }}
+          SECURITY_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          SECURITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: >-
+          node /opt/trusted-yam/dist/bin/yam.js security check
+          --stage ci --source "$SECURITY_SOURCE" --base "$SECURITY_BASE"
+          --policy security/policy.json --policy-digest "$SECURITY_POLICY_DIGEST"
+          --evidence security/check.json --json
+      - name: Preserve sanitized security notes on success and failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: security-check-note
+          path: |
+            .yam/security/notes.md
+            .yam/security/runs/
+          retention-days: 14
+          if-no-files-found: error

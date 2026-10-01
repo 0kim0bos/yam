@@ -74,6 +74,10 @@ Use `references/study-note.md` when any code, config, docs, or project artifact 
 Use `references/final-report.md` to close with remaining tasks and fix-first items when useful.
 Use `references/token-budget-reporter.md` when a run needs measured budget feedback.
 
+## Commit, push and deployment security gate
+
+Before performing a requested commit, push or deployment, follow `references/security-check.md`: validate stage-bound evidence with `yam security check`, require a successful persisted Security check note, and stop the operation when the gate blocks. If the project is not configured, report that blocker rather than claim security approval. Do not overwrite existing hooks or treat supplied evidence as an automatic vulnerability scan.
+
 ## Final Response
 
 Keep it compact:

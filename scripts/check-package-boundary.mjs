@@ -31,6 +31,11 @@ const blocked = [
 ];
 const required = [
   'dist/bin/yam.js',
+  'dist/lib/security-check.js',
+  'dist/lib/security-integration.js',
+  'references/security-check.md',
+  'templates/security-check-note.md',
+  'templates/security-gate.yml',
   'dist/lib/skill-installation.js',
   'dist/lib/skill-installation.d.ts',
   'dist/lib/external-updates.js',

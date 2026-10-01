@@ -4,6 +4,8 @@ Every `yam` route should end with a compact handoff that helps the next run avoi
 
 ## Required Closing Check
 
+For commit, push, or deployment security reports, use the separate Security check block defined in `references/security-check.md` and `templates/security-check-note.md`. An SEC ID alone is insufficient: include its concrete security explanation, evidence, limitations, and the stage decision. Keep this block before Study Note or after Next step. The CLI validates supplied evidence and writes notes; local hooks and remote CI/deployment enforcement require explicit project setup.
+
 Always keep final reports short. Include these when they apply:
 
 - What changed or what was found.

@@ -22,7 +22,13 @@ env:
   RELEASE_TAG: ${{ inputs.release_ref }}
 
 jobs:
+  security:
+    uses: ./.github/workflows/security-check.yml
+    with:
+      source: ${{ inputs.release_ref }}
+
   package:
+    needs: security
     name: Gate and pack signed release
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -132,11 +138,19 @@ jobs:
           --receipt package-artifact/receipt.json
           --expected-sha256 "${{ needs.package.outputs.sha256 }}"
 
+  deployment-security:
+    needs: [package, lifecycle]
+    uses: ./.github/workflows/security-check.yml
+    with:
+      source: ${{ inputs.release_ref }}
+      stage: deploy
+
   publish:
     name: Publish with npm OIDC provenance
     needs:
       - package
       - lifecycle
+      - deployment-security
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

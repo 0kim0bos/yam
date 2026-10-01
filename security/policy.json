@@ -1,0 +1,14 @@
+{
+  "version": "yam-project-security-v1",
+  "required_at": {
+    "SEC-01": ["commit", "push", "deploy"],
+    "SEC-02": ["commit", "push", "deploy"],
+    "SEC-03": ["commit", "push", "deploy"],
+    "SEC-04": ["commit", "push", "deploy"],
+    "SEC-05": ["deploy"],
+    "SEC-06": ["commit", "push", "deploy"],
+    "SEC-07": ["commit", "push", "deploy"],
+    "SEC-08": ["commit", "push", "deploy"],
+    "SEC-09": ["commit", "push", "deploy"]
+  }
+}

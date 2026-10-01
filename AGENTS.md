@@ -23,6 +23,10 @@
 21. When relevant, include architecture hygiene in the Study Note: avoid dumping unrelated logic into `page.tsx`, one-off component CSS into `global.css`, or structured product data into broad DB `jsonb` blobs when existing project boundaries, scoped styles, typed tables, constraints, or indexes fit better.
 22. When an artifact changed, put `Next step` immediately after Study Note. Build it from a quick whole-process scan with current situation, forward outlook, a concrete critical opinion, improvement recommendations, and ordered fix-first then planned actions with evidence and ownership; do not merely rename remaining tasks.
 
+## Security check gate
+
+Before commit, push, CI approval, or deployment, run the configured `yam security check` gate for the exact stage and record its Security check block. Use `references/security-check.md`; preserve every SEC explanation, evidence reference, and unresolved status. Missing required evidence or a note-write failure blocks the stage. Local hooks are bypassable; enforce protected merge/deployment with a trusted CI policy and required checks. Never present a validated supplied report as an independent vulnerability scan.
+
 ## Latest Update Trigger
 
 When the user says exactly `yam 최신 업데이트 사항 반영해줘` in a chat for this project, treat that phrase as explicit authorization to check and apply reviewed updates for yam, Scrapling, and Insane Search.

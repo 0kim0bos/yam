@@ -2,6 +2,8 @@
 import { existsSync, statSync } from 'node:fs';
 
 const pairs = [
+  ['src/lib/security-check.ts', 'dist/lib/security-check.js'],
+  ['src/lib/security-integration.ts', 'dist/lib/security-integration.js'],
   ['src/bin/yam.ts', 'dist/bin/yam.js'],
   ['src/lib/bounded-input.ts', 'dist/lib/bounded-input.js'],
   ['src/lib/skill-installation.ts', 'dist/lib/skill-installation.js'],
