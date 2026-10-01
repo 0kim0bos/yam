@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
   "reviewer": "yam engineering source review / project-security-setup mission lane",
-  "reviewed_at": "2026-10-01T06:15:29.419102+00:00",
+  "reviewed_at": "2026-10-01T06:52:22.603875+00:00",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -60,8 +60,8 @@
     ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
     ".github/workflows/security-check.yml": "sha256:74f32d982802758287825c6f0d71eae34d558fa9b0411da4797c776c5bd78d35",
     ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
-    "package-lock.json": "sha256:34b9bf332691ded42a79fa29965b767e8db03b7334220d3a186bcfae081b1600",
-    "package.json": "sha256:2ec74512ff0747378d38eca5731fe0cb3ad303fc83d9621ac308bc3468f905ba",
+    "package-lock.json": "sha256:69012d7193fa39996e2313c330c04de77a7beac6b7d661b8df797dd363a8c000",
+    "package.json": "sha256:21e105c31df6fb4027838c4c0ae4ef8e11bc8667ad11c1a7b5c1c0529eb6eaf8",
     "scripts/check-dist-freshness.mjs": "sha256:5ad1d385ac412221bb10b9c085be4a0e2a72ddc86e2ccc5dfae17069bff2d8f3",
     "scripts/check-forbidden-names.mjs": "sha256:2d64dd5fab2f7b928c3d0cc223a710ee28e4ae7e7fdef4da293481965d2013ef",
     "scripts/check-package-boundary.mjs": "sha256:925791089946452b5ca8269af2b1858d3446b525d10744c3d171d0e0ebf3cbef",

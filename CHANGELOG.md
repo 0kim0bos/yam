@@ -2,6 +2,18 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.1 - 2026-10-01
+
+### Security
+
+- Add nine explained SEC areas, exact-stage evidence validation and safe append-only Security check notes. Missing, stale or unresolved evidence blocks the operation.
+- Add project snapshot checks, reviewed source/policy pins, commit/push hooks and required CI security checks. Package lifecycle verification uses the same reviewed revision on Linux, macOS and Windows.
+- Retain sanitized security notes in CI artifacts and require actual environment inspection for deployment. Document operator-run npm publication and its enforcement limits.
+
+### Verification
+
+- Independent security audit, actual commit/push hooks, hosted security evidence and three-platform packaged lifecycle checks passed for the security implementation.
+
 ## v2.8.0 - 2026-09-01
 
 ### Added
