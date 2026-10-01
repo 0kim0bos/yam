@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
   "reviewer": "yam engineering source review / project-security-setup mission lane",
-  "reviewed_at": "2026-10-01T06:04:10.098228+00:00",
+  "reviewed_at": "2026-10-01T06:15:29.419102+00:00",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -58,8 +58,8 @@
   ],
   "files": {
     ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
-    ".github/workflows/security-check.yml": "sha256:358b9e9f276a306ff82b7f80f1f6bb26722e879190390ab1e158f2bc0b8438b1",
-    ".github/workflows/supply-chain.yml": "sha256:530fdf380ecf1b1f843c27ea458bc81ef21b281c7562fdc61866fcc23d222023",
+    ".github/workflows/security-check.yml": "sha256:74f32d982802758287825c6f0d71eae34d558fa9b0411da4797c776c5bd78d35",
+    ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
     "package-lock.json": "sha256:34b9bf332691ded42a79fa29965b767e8db03b7334220d3a186bcfae081b1600",
     "package.json": "sha256:2ec74512ff0747378d38eca5731fe0cb3ad303fc83d9621ac308bc3468f905ba",
     "scripts/check-dist-freshness.mjs": "sha256:5ad1d385ac412221bb10b9c085be4a0e2a72ddc86e2ccc5dfae17069bff2d8f3",
