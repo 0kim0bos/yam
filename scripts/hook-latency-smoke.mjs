@@ -280,7 +280,7 @@ function readConfiguredHookTimeoutMs() {
   });
   const config = JSON.parse(readFileSync(join(hookConfigProject, '.codex', 'hooks.json'), 'utf8'));
   const handlers = ['UserPromptSubmit', 'Stop'].flatMap((event) => (
-    (config[event] || []).flatMap((entry) => (
+    (config.hooks?.[event] || []).flatMap((entry) => (
       (entry.hooks || []).filter((handler) => String(handler.command || '').includes('hook run study-note'))
     ))
   ));

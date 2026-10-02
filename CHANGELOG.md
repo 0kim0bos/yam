@@ -2,6 +2,16 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.2 - 2026-10-02
+
+### Improved
+
+- Hook configuration now uses Codex's required top-level `hooks` wrapper. `yam hook migrate` backs up legacy files and preserves commands and unrelated handlers without automatically approving Codex trust.
+- Hook status can now separate configured health, Codex `hooks/list` discovery, and opt-in local entrypoint observations; Node launcher selection is bound to the running executable identity.
+- External yam update checks distinguish exact-version npm distribution propagation (`pending_distribution`) from network, authorization, or metadata failures.
+- Memory listing and summary preserve the difference between missing, empty, invalid, unreadable, and incomplete record storage; incomplete reads cannot overwrite an existing summary.
+- Added bounded Markdown skill-content checks for frontmatter identity, symlinks, personal absolute paths, download-to-shell patterns, and high-signal secrets.
+
 ## v2.8.1 - 2026-10-01
 
 ### Security
