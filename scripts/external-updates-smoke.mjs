@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import {
   applyExternalUpdates,
-  checkExternalUpdates
+  checkExternalUpdates,
+  RegistryHttpError
 } from '../dist/lib/external-updates.js';
 
 const roots = [];
@@ -41,6 +42,74 @@ try {
   assert.match(check.components[2].source_revision.note, /plugin manifest version/);
   assert.equal(fixture.fetches.some((url) => url.includes('/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/')), true);
   assert.equal(fixture.fetches.some((url) => url.includes('/HEAD/')), false);
+
+  for (const scenario of ['metadata404', 'artifact404', 'network', 'auth', 'mismatch', 'untrusted']) {
+    const pendingFixture = createFixture();
+    const deps = pendingFixture.dependencies();
+    const originalFetch = deps.fetchJson;
+    deps.fetchJson = async (url) => {
+      if (url === 'https://registry.npmjs.org/yam-flow/2.5.0') {
+        if (scenario === 'metadata404') throw new RegistryHttpError(404, url);
+        if (scenario === 'network') throw new Error('network_failed: fixture timeout');
+        if (scenario === 'auth') throw new RegistryHttpError(403, url);
+      }
+      const data = await originalFetch(url);
+      if (url === 'https://registry.npmjs.org/yam-flow/2.5.0' && scenario === 'mismatch') data.dist.integrity = 'sha512-bWlzbWF0Y2g=';
+      if (url.endsWith('/latest') && scenario === 'untrusted') data.dist.tarball = 'https://example.invalid/evil.tgz';
+      return data;
+    };
+    deps.probeArtifact = async () => scenario === 'artifact404' ? 404 : 200;
+    const result = await checkExternalUpdates('2.4.0', deps);
+    const yam = result.components.find((item) => item.component === 'yam');
+    const pending = scenario.endsWith('404');
+    assert.equal(yam.status, pending ? 'pending_distribution' : 'check_failed', scenario);
+    assert.equal(result.success, false, scenario);
+    if (pending) assert.equal(yam.update_available, true);
+    const applied = await applyExternalUpdates('2.4.0', { component: 'yam' }, deps);
+    assert.equal(applied.success, false, scenario);
+    assert.equal(applied.lock.released, true, scenario);
+    assert.equal(pendingFixture.commands.some((item) => item.command === 'npm' || item.args[0] === 'install'), false, 'readiness failures must not run install commands');
+  }
+
+  const boundedProbeFixture = createFixture();
+  const boundedProbeDeps = boundedProbeFixture.dependencies();
+  delete boundedProbeDeps.probeArtifact;
+  const savedFetch = globalThis.fetch;
+  let probeCount = 0;
+  let responseCancelled = false;
+  try {
+    globalThis.fetch = async (url, options) => {
+      probeCount += 1;
+      assert.equal(url, 'https://registry.npmjs.org/yam-flow/-/yam-flow-2.5.0.tgz');
+      assert.equal(options.method, 'HEAD', 'availability check must never download the tarball');
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.credentials, 'omit');
+      assert.ok(options.signal instanceof AbortSignal, 'probe must have a timeout signal');
+      assert.equal(options.headers.authorization, undefined);
+      return { status: 200, body: { cancel: async () => { responseCancelled = true; } } };
+    };
+    const boundedProbeResult = await checkExternalUpdates('2.4.0', boundedProbeDeps);
+    assert.equal(boundedProbeResult.success, true);
+    assert.equal(probeCount, 1, 'no implicit retry loops');
+    assert.equal(responseCancelled, true);
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+
+  const oversizedMetadataFixture = createFixture();
+  const oversizedMetadataDeps = oversizedMetadataFixture.dependencies();
+  delete oversizedMetadataDeps.fetchJson;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url.includes('registry.npmjs.org')) return new Response(new Uint8Array(1024 * 1024 + 1));
+      throw new Error('fixture secondary source unavailable');
+    };
+    const oversizedMetadataResult = await checkExternalUpdates('2.4.0', oversizedMetadataDeps);
+    assert.equal(oversizedMetadataResult.components[0].status, 'check_failed');
+    assert.match(oversizedMetadataResult.components[0].error, /1 MiB limit/);
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
 
   const malformedProvenanceFixture = createFixture();
   const malformedProvenanceDependencies = malformedProvenanceFixture.dependencies();
@@ -635,9 +704,10 @@ function createFixture(options = {}) {
         fetchJson: async (url) => {
           fixture.fetches.push(url);
           if (url.includes('registry.npmjs.org')) return {
+            name: 'yam-flow',
             version: fixture.yamLatest,
             gitHead: 'cccccccccccccccccccccccccccccccccccccccc',
-            dist: { integrity: 'sha512-Zml4dHVyZS1pbnRlZ3JpdHk=' }
+            dist: { integrity: 'sha512-Zml4dHVyZS1pbnRlZ3JpdHk=', tarball: `https://registry.npmjs.org/yam-flow/-/yam-flow-${fixture.yamLatest}.tgz` }
           };
           if (url.includes('pypi.org')) return {
             info: { version: fixture.scraplingLatest },
@@ -649,6 +719,10 @@ function createFixture(options = {}) {
           };
           if (url.includes('raw.githubusercontent.com')) return { version: fixture.insaneLatest };
           throw new Error(`unexpected fixture URL: ${url}`);
+        },
+        probeArtifact: async (url) => {
+          assert.equal(url, `https://registry.npmjs.org/yam-flow/-/yam-flow-${fixture.yamLatest}.tgz`);
+          return 200;
         },
         run: async (command, args) => fixture.run(command, args)
       };

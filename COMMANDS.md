@@ -153,6 +153,8 @@ yam memory add /path/to/project --kind repeat_mistake --summary "UI work was dec
 yam memory summary /path/to/project
 ```
 
+`yam memory list --json` keeps the normal complete result as an array and returns a bounded `yam.memory-read.v1` envelope for missing, invalid, unreadable, or incomplete storage. `yam memory summary --json` refuses to overwrite the existing summary unless the record directory was read completely.
+
 ## Token Budget
 
 ```bash
@@ -172,7 +174,7 @@ yam update apply --component yam --json
 yam update apply --all --json
 ```
 
-`yam update check` is read-only. Its component result preserves the registry artifact source receipt: npm integrity/`gitHead` for yam, PyPI release-file SHA-256 values for Scrapling, and the Git-pinned manifest commit for Insane Search. Every `apply` needs explicit authorization, pins the official npm registry or isolated PyPI index, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search requires a clean tracked local manifest whose bytes match Git and matching pre/post-add commits, is never remove-first, and never edits `.codex/plugins/cache` directly.
+`yam update check` is read-only. Its component result preserves the registry artifact source receipt: npm integrity/`gitHead` for yam, PyPI release-file SHA-256 values for Scrapling, and the Git-pinned manifest commit for Insane Search. Yam also compares `latest` with exact-version metadata and probes the official exact tarball URL; a 404 is `pending_distribution`, while network/auth/metadata mismatch is `check_failed`. The bounded HEAD probe confirms availability only and does not hash tarball bytes. Every `apply` needs explicit authorization, pins the official npm registry or isolated PyPI index, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search requires a clean tracked local manifest whose bytes match Git and matching pre/post-add commits, is never remove-first, and never edits `.codex/plugins/cache` directly.
 
 ## Release Supply Chain
 
@@ -327,15 +329,18 @@ Supported report shapes:
 
 `lite` is advisory-only. `study-note` runs the read-only Study Note Guard against the final assistant message and can request one correction pass; neither profile runs verification or forces routes.
 
+`yam hook migrate [--global|--project dir]` wraps legacy top-level events in Codex's `hooks` object without changing commands. It backs up the original, refuses unsafe files, and is a no-op for canonical configs. Review changed definitions in Codex `/hooks` before execution; yam does not approve trust.
+
 ```bash
 yam hook status --global
+yam hook migrate --global
 yam hook enable lite --global
 yam hook enable study-note --global
 yam hook disable lite --global
 yam hook disable study-note --global
 ```
 
-`yam hook status` exits nonzero for unreadable configs, stale paths, missing targets, duplicate handlers, or incomplete event coverage. Re-enable the affected profile to back up the file, preserve unrelated hooks, and migrate its command and events.
+`yam hook status` exits nonzero for unreadable configs, stale paths, missing targets, duplicate handlers, or incomplete event coverage. Add `--json` for `yam.hook-readiness.v1`, or `--probe` to query `hooks/list` in a separate bounded Codex app-server. The probe separates host discovery from local configuration and never claims that the active Desktop session loaded the hook. Add `--observe` to `yam hook enable` to record a bounded local entrypoint observation; it contains only hashes and event metadata and remains partial same-user evidence. Re-enable the affected profile to back up the file, preserve unrelated hooks, and migrate its command and events.
 
 ## Security check
 

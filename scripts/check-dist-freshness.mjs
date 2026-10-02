@@ -20,6 +20,8 @@ const pairs = [
   ['src/lib/release-registry-status.ts', 'dist/lib/release-registry-status.js'],
   ['src/lib/release-auth-readiness.ts', 'dist/lib/release-auth-readiness.js'],
   ['src/lib/ueye-artifacts.ts', 'dist/lib/ueye-artifacts.js'],
+  ['src/lib/hook-readiness.ts', 'dist/lib/hook-readiness.js'],
+  ['src/lib/memory-records.ts', 'dist/lib/memory-records.js'],
 ];
 
 const stale = [];

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { selectHookNode, probeHookDiscovery, inspectHookObservation, recordHookObservation } from '../lib/hook-readiness.js';
+import { readMemoryDirectory } from '../lib/memory-records.js';
 import { runSecurityCommand } from '../lib/security-integration.js';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -149,8 +151,8 @@ const INSTRUCTION_DUPLICATION_LIMITS = {
   minDirectiveChars: 40
 };
 const YAM_HOOK_ENTRYPOINT = path.join(ROOT, 'dist', 'bin', 'yam.js');
-const YAM_LITE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run lite`;
-const YAM_STUDY_NOTE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run study-note`;
+let YAM_LITE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run lite`;
+let YAM_STUDY_NOTE_HOOK_COMMAND = `${JSON.stringify(process.execPath)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run study-note`;
 const REQUIRED_PACK_SECTIONS = [
   'Product Direction',
   'UI Direction',
@@ -2014,6 +2016,7 @@ async function hook(args = []) {
   const subcommand = args[0] || 'status';
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return hookUsage();
   if (subcommand === 'status') return hookStatus(args.slice(1));
+  if (subcommand === 'migrate') return hookMigrate(args.slice(1));
   if (subcommand === 'enable') return hookEnable(args.slice(1));
   if (subcommand === 'disable') return hookDisable(args.slice(1));
   if (subcommand === 'run') return hookRun(args.slice(1));
@@ -2025,14 +2028,17 @@ function hookUsage() {
   console.log(`yam hook
 
 Usage:
-  yam hook status [--global|--project dir]
-  yam hook enable <lite|study-note> [--global|--project dir]
+  yam hook status [--global|--project dir] [--probe] [--json]
+  yam hook migrate [--global|--project dir]
+  yam hook enable <lite|study-note> [--global|--project dir] [--observe]
   yam hook disable [lite|study-note] [--global|--project dir]
   yam hook run <lite|study-note>
 
 Notes:
   hooks are opt-in. lite is advisory-only; study-note adds a prompt reminder and a one-pass Stop completion gate.
   Hooks do not generate reports, run tmux, start subagents, or execute verification automatically.
+  --probe queries hooks/list in a separate bounded Codex app-server; active session loading stays unknown.
+  --observe opts into private local entrypoint observations without storing prompt content; not host attestation.
 `);
 }
 
@@ -2057,7 +2063,7 @@ function parseHookArgs(args = []) {
 }
 
 function hookPathFor(parsed) {
-  if (parsed.mode === 'global') return path.join(os.homedir(), '.codex', 'hooks.json');
+  if (parsed.mode === 'global') return path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'hooks.json');
   return path.join(path.resolve(parsed.projectDir || process.cwd()), '.codex', 'hooks.json');
 }
 
@@ -2073,19 +2079,42 @@ function isYamHookProfile(handler: AnyRecord = {}, profile = 'lite') {
   return profile === 'study-note' ? isYamStudyNoteHook(handler) : isYamLiteHook(handler);
 }
 
+const CODEX_HOOK_EVENTS = new Set(['SessionStart', 'SessionEnd', 'PreToolUse', 'PermissionRequest', 'PostToolUse', 'PreCompact', 'PostCompact', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop', 'Interrupt']);
+
+function hookEventMap(config: AnyRecord = {}) {
+  const nested = config.hooks && typeof config.hooks === 'object' && !Array.isArray(config.hooks) ? config.hooks : {};
+  const events = { ...nested };
+  for (const [event, entries] of Object.entries(config)) {
+    if (CODEX_HOOK_EVENTS.has(event) && Array.isArray(entries)) {
+      events[event] = [...(Array.isArray(events[event]) ? events[event] : []), ...entries];
+    }
+  }
+  return events;
+}
+
+function canonicalHookConfig(config: AnyRecord = {}) {
+  if (config.hooks != null && (typeof config.hooks !== 'object' || Array.isArray(config.hooks))) throw new Error('hooks must be an event object; existing file preserved');
+  const next = { ...config, hooks: hookEventMap(config) };
+  for (const event of CODEX_HOOK_EVENTS) {
+    if (event in config && !Array.isArray(config[event])) throw new Error('legacy hook event must be an array; existing file preserved');
+    delete next[event];
+  }
+  return next;
+}
+
 function stripYamHooks(config: AnyRecord = {}, profile = 'lite') {
-  const next = { ...config };
-  for (const event of Object.keys(next)) {
-    if (!Array.isArray(next[event])) continue;
-    const entries = next[event];
+  const next = canonicalHookConfig(config);
+  for (const event of Object.keys(next.hooks)) {
+    if (!Array.isArray(next.hooks[event])) continue;
+    const entries = next.hooks[event];
     const keptEntries = [];
     for (const entry of entries) {
       const hooks = Array.isArray(entry?.hooks) ? entry.hooks.filter((handler) => !isYamHookProfile(handler, profile)) : [];
       const rest = { ...entry, hooks };
       if (hooks.length > 0) keptEntries.push(rest);
     }
-    if (keptEntries.length > 0) next[event] = keptEntries;
-    else delete next[event];
+    if (keptEntries.length > 0) next.hooks[event] = keptEntries;
+    else delete next.hooks[event];
   }
   return next;
 }
@@ -2103,7 +2132,7 @@ function withYamHook(config: AnyRecord = {}, profile = 'lite') {
         }
       ]
     };
-    next[event] = [...(Array.isArray(next[event]) ? next[event] : []), entry];
+    next.hooks[event] = [...(Array.isArray(next.hooks[event]) ? next.hooks[event] : []), entry];
   }
   return next;
 }
@@ -2113,6 +2142,11 @@ async function hookStatus(args = []) {
   const target = hookPathFor(parsed);
   const loaded = await readHookConfig(target);
   if (loaded.error) {
+    if (args.includes('--json')) {
+      console.log(JSON.stringify({ schema: 'yam.hook-readiness.v1', scope: parsed.mode, configuration: 'unreadable', loaded: 'unknown', execution_observed: false, truth_status: 'partial' }, null, 2));
+      process.exitCode = 1;
+      return;
+    }
     console.log('yam-lite hook: broken');
     console.log('yam-study-note hook: broken');
     console.log(`  - hook config unreadable: ${loaded.error}`);
@@ -2123,10 +2157,28 @@ async function hookStatus(args = []) {
   }
   const lite = await inspectHookProfile(loaded.config, 'lite');
   const studyNote = await inspectHookProfile(loaded.config, 'study-note');
+  const cwd = path.resolve(parsed.projectDir || process.cwd());
+  const commands = { lite: lite.entries.map((entry) => String(entry.handler.command)), 'study-note': studyNote.entries.map((entry) => String(entry.handler.command)) };
+  const host = args.includes('--probe')
+    ? await probeHookDiscovery({ executable: await findExecutable('codex') || 'codex', cwd, commands, configPath: target })
+    : { state: 'not_measured', active_session_loaded: 'not_measured', execution_observed: false, truth_status: 'partial' };
+  const profiles = {};
+  for (const [profile, health] of [['lite', lite], ['study-note', studyNote]] as const) {
+    profiles[profile] = { configured: health.state, issues: health.issues, loaded: 'unknown',
+      execution: await inspectHookObservation(cwd, profile, YAM_HOOK_ENTRYPOINT) };
+  }
+  if (args.includes('--json')) {
+    console.log(JSON.stringify({ schema: 'yam.hook-readiness.v1', scope: parsed.mode, profiles, host, truth_status: 'partial' }, null, 2));
+    if (lite.state === 'broken' || studyNote.state === 'broken') process.exitCode = 1;
+    return;
+  }
   printHookProfileStatus('lite', lite);
   printHookProfileStatus('study-note', studyNote);
   console.log(`scope: ${parsed.mode}`);
   console.log(`file: ${target}`);
+  console.log('active Codex session loaded: unknown (configuration is not runtime evidence)');
+  console.log(`host discovery: ${host.state}`);
+  for (const profile of ['lite', 'study-note']) console.log(`yam-${profile} execution: ${profiles[profile].execution.state} (local entrypoint evidence, not host attestation)`);
   if (lite.state === 'broken' || studyNote.state === 'broken') process.exitCode = 1;
 }
 
@@ -2135,7 +2187,7 @@ function hookConfigHasYamLite(config = {}) {
 }
 
 function hookConfigHasProfile(config = {}, profile = 'lite') {
-  return Object.values(config).some((entries) => Array.isArray(entries) && entries.some((entry) => {
+  return Object.values(hookEventMap(config)).some((entries) => Array.isArray(entries) && entries.some((entry) => {
     return Array.isArray(entry?.hooks) && entry.hooks.some((handler) => isYamHookProfile(handler, profile));
   }));
 }
@@ -2150,7 +2202,7 @@ function hookEventsForProfile(profile = 'lite') {
 
 function hookProfileEntries(config: AnyRecord = {}, profile = 'lite') {
   const matches = [];
-  for (const [event, entries] of Object.entries(config)) {
+  for (const [event, entries] of Object.entries(hookEventMap(config))) {
     if (!Array.isArray(entries)) continue;
     for (const entry of entries) {
       if (!Array.isArray(entry?.hooks)) continue;
@@ -2209,6 +2261,7 @@ function splitHookCommand(command = '') {
 
 function parseYamHookCommand(command = '', profile = 'lite') {
   const words = splitHookCommand(command);
+  if (words.at(-1) === '--observe') words.pop();
   if (words.length === 5 && words[2] === 'hook' && words[3] === 'run' && words[4] === profile) {
     const nodeName = path.basename(words[0]).toLowerCase();
     if (/^node(?:\.exe)?$/.test(nodeName) && path.basename(words[1]).toLowerCase() === 'yam.js') {
@@ -2249,6 +2302,7 @@ async function inspectHookProfile(config: AnyRecord = {}, profile = 'lite') {
   const entries = hookProfileEntries(config, profile);
   if (!entries.length) return { state: 'disabled', issues: [], entries };
   const issues = [];
+  if (Object.keys(config).some((event) => CODEX_HOOK_EVENTS.has(event))) issues.push('legacy hook config requires the top-level hooks wrapper; rerun yam hook enable to migrate with backup');
   for (const event of hookEventsForProfile(profile)) {
     const count = entries.filter((entry) => entry.event === event).length;
     if (count === 0) issues.push(`${event} handler is missing; rerun yam hook enable ${profile}`);
@@ -2275,6 +2329,9 @@ async function readHookConfig(target) {
     if (!value || Array.isArray(value) || typeof value !== 'object') {
       return { config: {}, exists: true, error: 'top-level value must be a JSON object' };
     }
+    if (value.hooks != null && (typeof value.hooks !== 'object' || Array.isArray(value.hooks))) {
+      return { config: {}, exists: true, error: 'hooks must be an event object' };
+    }
     return { config: value, exists: true, error: '' };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { config: {}, exists: false, error: '' };
@@ -2294,8 +2351,34 @@ async function writeHookConfig(target, config) {
   }
 }
 
+async function hookMigrate(args = []) {
+  const parsed = parseHookArgs(args);
+  const target = hookPathFor(parsed);
+  const loaded = await readHookConfig(target);
+  if (loaded.error) { console.error('hook migration blocked: unreadable configuration'); process.exitCode = 1; return; }
+  if (!loaded.exists || !Object.keys(loaded.config).some((key) => CODEX_HOOK_EVENTS.has(key))) {
+    console.log('hook migration: no legacy event layout found'); return;
+  }
+  const before = await fsp.lstat(target);
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) throw new Error('hook migration blocked: unsafe config file');
+  const original = await fsp.readFile(target, 'utf8');
+  if (JSON.stringify(JSON.parse(original)) !== JSON.stringify(loaded.config)) throw new Error('hook configuration changed; retry migration');
+  const next = canonicalHookConfig(loaded.config);
+  const backup = `${target}.yam-backup-${timestampId()}`;
+  await fsp.copyFile(target, backup, fs.constants.COPYFILE_EXCL);
+  const after = await fsp.lstat(target);
+  if (after.dev !== before.dev || after.ino !== before.ino || after.mtimeMs !== before.mtimeMs
+    || await fsp.readFile(target, 'utf8') !== original) throw new Error('hook configuration changed; backup preserved, retry migration');
+  await writeHookConfig(target, next);
+  console.log(`hook migration: wrapped event groups; handlers and metadata preserved\nbackup: ${backup}\nReview changed definitions in Codex /hooks before enabling execution.`);
+}
+
 async function hookEnable(args = []) {
   const parsed = parseHookArgs(args);
+  const node = await selectHookNode();
+  const observe = args.includes('--observe') ? ' --observe' : '';
+  YAM_LITE_HOOK_COMMAND = `${JSON.stringify(node.executable)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run lite${observe}`;
+  YAM_STUDY_NOTE_HOOK_COMMAND = `${JSON.stringify(node.executable)} ${JSON.stringify(YAM_HOOK_ENTRYPOINT)} hook run study-note${observe}`;
   if (!['lite', 'study-note'].includes(parsed.profile)) {
     console.error('Only lite and study-note hooks are supported: yam hook enable <lite|study-note>');
     process.exitCode = 1;
@@ -2326,6 +2409,7 @@ async function hookEnable(args = []) {
   }
   await writeHookConfig(target, next);
   console.log(`yam-${parsed.profile} hook enabled (${parsed.mode}): ${target}`);
+  console.log(`node launcher: ${node.selection}; alias identity matched the current runtime (no PATH candidate executed)`);
   if (needsMigration) console.log(`migrated: ${existing.length} existing yam-${parsed.profile} handler(s) to the current command and event coverage`);
   console.log('Restart Codex or start a new thread if the app does not pick up hook changes immediately.');
 }
@@ -2346,7 +2430,7 @@ async function hookDisable(args = []) {
     return;
   }
   const next = stripYamHooks(current, parsed.profile);
-  if (Object.keys(next).length === 0) {
+  if (Object.keys(next).length === 1 && Object.keys(next.hooks).length === 0) {
     await rmrf(target);
   } else {
     await writeHookConfig(target, next);
@@ -2374,6 +2458,7 @@ async function hookRun(args = []) {
   }
   const event = input?.hook_event_name || input?.hookEventName || input?.event || 'UserPromptSubmit';
   const cwd = String(input?.cwd || process.cwd());
+  if (args.includes('--observe')) await recordHookObservation(cwd, profile, String(event), YAM_HOOK_ENTRYPOINT).catch(() => {});
   if (profile === 'study-note' && event === 'Stop') {
     console.log(JSON.stringify(await buildStudyNoteStopOutput(input, cwd)));
     return;
@@ -6109,7 +6194,7 @@ async function memory(args = []) {
   }
   if (subcommand === 'summary' || subcommand === 'summarize') {
     const parsed = parseMemoryArgs(args.slice(1));
-    return memorySummary(parsed.dir);
+    return memorySummary(parsed.dir, { json: args.includes('--json') });
   }
   if (subcommand === 'resolve') return memoryResolve(args.slice(1));
   console.error(`unknown memory command: ${subcommand}`);
@@ -6123,7 +6208,7 @@ Usage:
   yam memory init [dir]
   yam memory add [dir] --kind <kind> --summary <text> [--evidence <text>] [--action <text>] [--source <text>]
   yam memory list [dir] [--json]
-  yam memory summary [dir]
+  yam memory summary [dir] [--json]
   yam memory resolve [dir] <id> [--note <text>]
 
 Kinds:
@@ -6198,7 +6283,14 @@ async function memoryAdd(args = []) {
 }
 
 async function memoryList(targetDir = process.cwd(), { json = false } = {}) {
-  const records = await readMemoryRecords(targetDir);
+  const report = await readMemoryRecords(targetDir);
+  const records = report.records;
+  if (!report.complete) {
+    if (report.state !== 'missing') process.exitCode = 1;
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else console.error(`memory read ${report.state}: ${JSON.stringify(report.diagnostics)}${report.diagnostics_truncated ? ' (diagnostics truncated)' : ''}`);
+    return;
+  }
   if (json) {
     console.log(JSON.stringify(records, null, 2));
     return;
@@ -6213,9 +6305,16 @@ async function memoryList(targetDir = process.cwd(), { json = false } = {}) {
   }
 }
 
-async function memorySummary(targetDir = process.cwd()) {
+async function memorySummary(targetDir = process.cwd(), { json = false } = {}) {
   const dir = memoryDir(targetDir);
-  const records = await readMemoryRecords(targetDir);
+  const report = await readMemoryRecords(targetDir);
+  if (!report.complete) {
+    process.exitCode = 1;
+    if (json) console.log(JSON.stringify({ ...report, summary_written: false }, null, 2));
+    else console.error(`memory summary blocked (${report.state}); existing summary preserved: ${JSON.stringify(report.diagnostics)}${report.diagnostics_truncated ? ' (diagnostics truncated)' : ''}`);
+    return;
+  }
+  const records = report.records;
   await fsp.mkdir(dir, { recursive: true });
   const active = records.filter((record) => record.status !== 'resolved');
   const resolved = records.filter((record) => record.status === 'resolved');
@@ -6246,7 +6345,8 @@ async function memorySummary(targetDir = process.cwd()) {
 
   const target = path.join(dir, 'summary.md');
   await fsp.writeFile(target, `${lines.join('\n').trim()}\n`);
-  console.log(`memory summary written: ${target}`);
+  if (json) console.log(JSON.stringify({ ...report, summary_written: true, path: target }, null, 2));
+  else console.log(`memory summary written: ${target}`);
 }
 
 async function memoryResolve(args = []) {
@@ -6305,20 +6405,7 @@ function memoryDir(targetDir = process.cwd()) {
 
 async function readMemoryRecords(targetDir = process.cwd()) {
   const recordsDir = path.join(memoryDir(targetDir), 'records');
-  if (!await exists(recordsDir)) return [];
-  const entries = await fsp.readdir(recordsDir, { withFileTypes: true });
-  const records = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-    const file = path.join(recordsDir, entry.name);
-    try {
-      const record = await readJson(file);
-      records.push(record);
-    } catch (error) {
-      records.push({ id: entry.name.replace(/\.json$/, ''), kind: 'invalid', status: 'invalid', summary: `invalid JSON: ${errorMessage(error)}` });
-    }
-  }
-  return records.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  return readMemoryDirectory(recordsDir);
 }
 
 function timestampId() {

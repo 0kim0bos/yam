@@ -74,6 +74,8 @@ yam memory add . --kind lesson --summary "Keep UI checks visual before declaring
 yam memory summary .
 ```
 
+`yam memory list --json` distinguishes missing, empty, invalid, unreadable, and incomplete record directories. A blocked `yam memory summary --json` exits nonzero and preserves the previous summary instead of treating an access failure as an empty memory set.
+
 Memory writes to `.yam/memory/` only when you run the command. Routes should prefer `.yam/memory/summary.md` and should not read every record by default.
 
 ## Lite Hook
@@ -91,6 +93,8 @@ It only adds short advisory context. It does not run verification, tmux, browser
 
 ## Study Note Hook
 
+Codex hook files use a top-level `hooks` object containing event groups (`{"hooks":{"Stop":[...]}}`). For older yam files with events at the top level, run `yam hook migrate --global`: this creates a backup and changes only the layout, preserving existing commands and unrelated handlers. Review the changed definitions in Codex `/hooks`; discovery alone does not authorize execution, and yam never approves hook trust automatically.
+
 Enable this profile when you want Codex to check changed work at final-response time as well as remind the agent at prompt time.
 
 ```bash
@@ -102,7 +106,7 @@ The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam chec
 
 Hook stdin is limited to 1 MiB. Malformed JSON or an oversized payload produces a valid fail-open response without echoing the rejected content, deriving hook context from it, or mutating the workspace. Other CLI commands that read piped text use a 4 MiB limit and fail closed when it is exceeded.
 
-`yam hook status` reports stale or missing command targets as `broken` and exits nonzero. Run `yam hook enable <profile> --global` again to create a timestamped backup, preserve unrelated hooks, and migrate that profile to the current installed path and event coverage. Restart Codex or open a new task after changing hooks.
+`yam hook status` reports stale or missing command targets as `broken` and exits nonzero. Run `yam hook enable <profile> --global` again to create a timestamped backup, preserve unrelated hooks, and migrate that profile to the current installed path and event coverage. For runtime-oriented diagnosis, use `yam hook status --global --json --probe`; this separates configured hooks, discovery from a new bounded Codex app-server, and local entrypoint observations. The active Desktop session remains `not_measured` unless the host provides independent evidence. `yam hook enable <profile> --global --observe` records only a local hash-bound event observation; it is partial evidence and not host attestation. Restart Codex or open a new task after changing hooks.
 
 ## Install
 

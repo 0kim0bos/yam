@@ -34,6 +34,7 @@ export interface ExternalUpdatePaths {
 export interface ExternalUpdateDependencies {
   run?: (command: string, args: string[], options?: ExternalCommandOptions) => Promise<ExternalCommandResult> | ExternalCommandResult;
   fetchJson?: (url: string) => Promise<any>;
+  probeArtifact?: (url: string) => Promise<number>;
   now?: () => Date;
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
@@ -46,7 +47,7 @@ export interface ExternalComponentCheck {
   installed_version: string;
   latest_version: string;
   update_available: boolean;
-  status: 'up_to_date' | 'update_available' | 'not_installed' | 'check_failed';
+  status: 'up_to_date' | 'update_available' | 'not_installed' | 'pending_distribution' | 'check_failed';
   source: string;
   source_revision?: {
     local: string;
@@ -113,6 +114,7 @@ export interface YamInstallIdentity {
 interface ResolvedDependencies {
   run: NonNullable<ExternalUpdateDependencies['run']>;
   fetchJson: NonNullable<ExternalUpdateDependencies['fetchJson']>;
+  probeArtifact: NonNullable<ExternalUpdateDependencies['probeArtifact']>;
   now: NonNullable<ExternalUpdateDependencies['now']>;
   homeDir: string;
   env: NodeJS.ProcessEnv;
@@ -158,7 +160,7 @@ export async function checkExternalUpdates(
     checkScrapling(deps),
     checkInsaneSearch(deps)
   ]);
-  const failed = checks.filter((item) => item.status === 'check_failed');
+  const failed = checks.filter((item) => item.status === 'check_failed' || item.status === 'pending_distribution');
   return {
     schema: 'yam.external-update-check.v1',
     generated_at: deps.now().toISOString(),
@@ -351,6 +353,7 @@ async function resolveDependencies(input: ExternalUpdateDependencies): Promise<R
   return {
     run,
     fetchJson: input.fetchJson || defaultFetchJson,
+    probeArtifact: input.probeArtifact || defaultProbeArtifact,
     now: input.now || (() => new Date()),
     homeDir,
     env,
@@ -409,18 +412,52 @@ async function acquireApplyLock(deps: ResolvedDependencies) {
 }
 
 async function checkYam(currentYamVersion: string, deps: ResolvedDependencies): Promise<ExternalComponentCheck> {
+  let pending: ExternalComponentCheck | undefined;
   try {
     const data = await deps.fetchJson(YAM_REGISTRY_URL);
     const latest = requireStableVersion(data?.version, 'yam registry version');
     const installed = requireStableVersion(currentYamVersion, 'installed yam version');
     const integrity = requireIntegrityValue(data?.dist?.integrity, 'yam registry integrity');
     const revision = requireGitRevision(data?.gitHead, 'yam registry gitHead');
+    if (data?.name !== 'yam-flow') throw new Error('yam registry package name mismatch');
+    const tarball = requireYamTarball(data?.dist?.tarball, latest);
+    const exactUrl = `${NPM_REGISTRY}yam-flow/${latest}`;
+    pending = {
+      ...componentCheck('yam', installed, latest, 'npm:yam-flow'),
+      status: 'pending_distribution',
+      error: 'pending_distribution: exact-version metadata or tarball returned HTTP 404; retry the explicit update later',
+      source_receipt: {
+        canonical_url: YAM_REGISTRY_URL,
+        retrieved_at: deps.now().toISOString(),
+        access_path: 'npm latest observed; exact-version distribution readiness incomplete',
+        version: latest,
+        revision,
+        integrity: [integrity]
+      }
+    };
+    let exact: any;
+    try {
+      exact = await deps.fetchJson(exactUrl);
+    } catch (error) {
+      if (error instanceof RegistryHttpError && error.status === 404) return pending;
+      throw error;
+    }
+    if (exact?.name !== 'yam-flow' || data?.name !== 'yam-flow'
+      || requireStableVersion(exact?.version, 'yam exact registry version') !== latest
+      || requireIntegrityValue(exact?.dist?.integrity, 'yam exact registry integrity') !== integrity
+      || requireGitRevision(exact?.gitHead, 'yam exact registry gitHead') !== revision
+      || requireYamTarball(exact?.dist?.tarball, latest) !== tarball) {
+      throw new Error('yam latest and exact-version registry metadata disagree');
+    }
+    const artifactStatus = await deps.probeArtifact(tarball);
+    if (artifactStatus === 404) return pending;
+    if (artifactStatus !== 200) throw new Error(`yam tarball availability check failed: HTTP ${artifactStatus}`);
     return {
       ...componentCheck('yam', installed, latest, 'npm:yam-flow'),
       source_receipt: {
         canonical_url: YAM_REGISTRY_URL,
         retrieved_at: deps.now().toISOString(),
-        access_path: 'npm registry latest endpoint',
+        access_path: 'npm latest + exact-version metadata + bounded no-redirect tarball HEAD (availability only)',
         version: latest,
         revision,
         integrity: [integrity]
@@ -601,7 +638,7 @@ function failedCheck(
 
 async function applyYam(currentYamVersion: string, deps: ResolvedDependencies) {
   const check = await checkYam(currentYamVersion, deps);
-  if (check.status === 'check_failed') return persistFailureFromCheck(check, deps);
+  if (check.status === 'check_failed' || check.status === 'pending_distribution') return persistFailureFromCheck(check, deps);
   if (!check.update_available) {
     return persistReceipt(baseReceipt(check, 'up_to_date', [], {
       automatic: true,
@@ -1609,14 +1646,58 @@ async function defaultRun(command: string, args: string[], options: ExternalComm
 
 async function defaultFetchJson(url: string) {
   const response = await fetch(url, {
+    redirect: 'error',
+    credentials: 'omit',
     headers: {
       accept: 'application/json',
       'user-agent': 'yam-flow external-update-check'
     },
     signal: AbortSignal.timeout(30000)
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-  return response.json();
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new RegistryHttpError(response.status, url);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error(`empty registry response for ${url}`);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > 1024 * 1024) throw new Error('registry metadata exceeds 1 MiB limit');
+      chunks.push(chunk.value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+export class RegistryHttpError extends Error {
+  constructor(readonly status: number, url: string) {
+    super(`HTTP ${status} for ${url}`);
+  }
+}
+
+function requireYamTarball(value: unknown, version: string) {
+  const expected = `${NPM_REGISTRY}yam-flow/-/yam-flow-${version}.tgz`;
+  if (value !== expected) throw new Error('yam tarball must be the exact-version artifact on the official npm registry');
+  return expected;
+}
+
+async function defaultProbeArtifact(url: string) {
+  const response = await fetch(url, {
+    method: 'HEAD',
+    redirect: 'error',
+    credentials: 'omit',
+    headers: { 'user-agent': 'yam-flow external-update-check' },
+    signal: AbortSignal.timeout(10000)
+  });
+  await response.body?.cancel();
+  return response.status;
 }
 
 function requireStableVersion(value: unknown, label: string) {
