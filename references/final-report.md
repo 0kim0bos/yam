@@ -21,7 +21,7 @@ Always keep final reports short. Include these when they apply:
 - Publish blocker evidence when npm/release work fails.
 - Structured diagnostic next action, when a check found a concrete next step.
 - Study Note whenever code, config, release metadata, documentation, or project artifacts changed, even if no yam skill was explicitly invoked. This item is required for changed artifacts, not optional.
-- Next step immediately after Study Note for changed-artifact reports. It must come from a quick whole-process scan and include ordered fix-first and planned actions, not only leftovers.
+- Next step immediately after Study Note for changed-artifact reports. Ordinary advisory work may use one concrete action or no remaining work; strict reports use the whole-process scan and ordered fix-first/planned contract.
 - Remaining tasks.
 - Fix-first items before planned tasks.
 - Recommended direction and why that next step matters when the handoff would otherwise be ambiguous.
@@ -89,6 +89,8 @@ Include:
 - A concrete critical opinion and bounded improvement recommendations.
 - One ordered sequence with all fix-first items before planned work.
 - Why each action matters, owner route and scope, blockers and safe retry, evidence level and stamp, expected side effects, and truth status.
+
+These detailed fields are for strict reports and structured receipts. Ordinary advisory work can summarize the next action (or none) without mandatory labels or numbered steps.
 
 This is broader than `Remaining Tasks`: it may recommend the next useful work after the current scope is complete. Do not invent filler when nothing meaningful remains. Use `references/next-step.md`; reusable JSON receipts use `yam.next-step.v1`.
 

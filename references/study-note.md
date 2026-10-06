@@ -16,6 +16,10 @@ This is final-report writing guidance, not a new CLI JSON schema. The current CL
 
 Keep the default note short: 4-7 lines for ordinary work, longer only for `$deep`, `$mission`, release, DB, runtime, or learning-heavy work.
 
+Automatic hook scope is turn-based, not the existing dirty tree. Ordinary work is advisory: summarize the touched artifact/role and change, verification/limits, then a short Next step (or no remaining work). The hook checks only the compact minimum; the fuller guidance below remains useful when relevant. Deep/Mission names alone do not activate strict. Risk intent or explicit/project strict policy requires the detailed contract only if selected artifacts changed. Explicit `yam study-note check` retains strict whole-tree validation.
+
+Known generated mission/security receipts, logs and screenshots are not product changes by default; `.yam/study-note.json` includes override excludes. Security evidence is still required by the independent stage security gate. Unavailable or expired baseline means partial/manual inspection, not no changes. Plain, Markdown heading and standalone bold Study Note / Next step titles are accepted.
+
 Include:
 
 - Touched code/artifact: the file, function, component, config, or artifact that changed.

@@ -2,6 +2,20 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.3 - 2026-10-06
+
+### Improved
+
+- Study Note hooks compare bounded hash-only turn baselines instead of repeatedly treating pre-existing dirty files as new work; already-dirty edits, staging, commits, renames and deletions remain visible.
+- Ordinary work uses advisory completion with concise notes; risky intent or explicit strict policy uses one bounded correction pass only when selected artifacts changed. Missing session or stale scope stays partial and requests manual inspection.
+- Known generated outputs are excluded before content reads, with project include rules taking precedence over excludes; independent commit/push/deploy security gates remain unchanged.
+- Standalone bold report headings are accepted, correction messages list missing fields, and migration documentation no longer triggers database hygiene based only on its name.
+- Report guidance and Quick route now distinguish ordinary advisory handoffs from detailed strict reports.
+
+### Verification
+
+- Turn-scope, generated/include precedence, advisory/strict, stale/corrupt baseline and symlink safety fixtures; hook latency and packaged CLI regressions.
+
 ## v2.8.2 - 2026-10-02
 
 ### Improved

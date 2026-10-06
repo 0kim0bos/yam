@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { studyNoteTurnScope } from '../lib/study-note-scope.js';
 import { selectHookNode, probeHookDiscovery, inspectHookObservation, recordHookObservation } from '../lib/hook-readiness.js';
 import { readMemoryDirectory } from '../lib/memory-records.js';
 import { runSecurityCommand } from '../lib/security-integration.js';
@@ -988,8 +989,8 @@ async function studyNoteCheck(args = []) {
   if (result.blockers.length) process.exitCode = 1;
 }
 
-async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'not_provided') {
-  const changedFileDetection = gitChangedFileSnapshot(dir);
+async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'not_provided', scope: any = null) {
+  const changedFileDetection = scope || gitChangedFileSnapshot(dir);
   const changedFiles = changedFileDetection.files;
   const changeScopeAvailable = changedFileDetection.available;
   const needsStudyNote = changeScopeAvailable && changedFiles.length > 0;
@@ -1023,6 +1024,13 @@ async function buildStudyNoteGuardResult(dir, reportText = '', reportSource = 'n
   ];
   for (const requirement of hygieneRequirements) {
     checks.push(studyNoteGuardCheck(requirement.id, requirementSatisfied(studyNoteText, requirement), requirement.note));
+  }
+  if (scope?.mode === 'advisory') {
+    const ordinary = new Set(['changed_files', 'study_note_present', 'role_or_responsibility', 'verification', 'limits_or_uncertainty', 'next_step_present', 'single_study_note_next_step_pair', 'study_note_then_next_step']);
+    for (const check of checks) if (!ordinary.has(check.id)) {
+      check.status = 'skipped';
+      check.truth_status = 'skipped';
+    }
   }
   const blockers = checks.filter((check) => check.status === 'fail').map((check) => `${check.id}: ${check.next_action}`);
   const result = {
@@ -1110,7 +1118,7 @@ function hasNextStepMarker(text = '') {
 
 function reportSectionMarkers(text = '') {
   return String(text || '').split(/\r?\n/).map((line, index) => {
-    const trimmed = line.trim();
+    const trimmed = line.trim().replace(/^\*\*(.*?)\*\*\s*:?[ \t]*$/, '$1');
     const heading = trimmed.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
     const named = trimmed.match(/^(study note|study-note|학습\s*노트|스터디\s*노트|next step|next-step|다음\s*(?:단계|할\s*일|작업))\s*:?[ \t]*$/i);
     const rawLabel = heading?.[1] || named?.[1] || '';
@@ -1236,7 +1244,7 @@ function studyNoteHygieneRequirements(files = []) {
   if (files.some((file) => /(^|\/)global\.css$/i.test(file))) {
     requirements.push({ id: 'global_css_hygiene', terms: ['global.css', 'token', 'component', 'scoped', 'module', 'utility'], note: 'Study Note should say whether CSS belongs globally or should move to tokens/scoped/component styles' });
   }
-  if (files.some((file) => /(migration|schema|db|database|sql|prisma|drizzle|supabase)/i.test(file))) {
+  if (files.some((file) => /\.(sql|prisma)$/i.test(file) || /(^|\/)(migrations?|schema|database|drizzle|supabase)\//i.test(file) && /\.(ts|js)$/i.test(file))) {
     requirements.push({ id: 'jsonb_hygiene', terms: ['jsonb', 'column', 'table', 'constraint', 'index', 'schema', 'relation'], note: 'Study Note should say whether structured product data belongs in typed columns/tables/constraints/indexes instead of broad DB jsonb' });
   }
   return requirements;
@@ -2465,7 +2473,7 @@ async function hookRun(args = []) {
   }
   const prompt = extractPrompt(input);
   const additionalContext = profile === 'study-note'
-    ? await buildStudyNoteHookContext({ cwd })
+    ? await buildStudyNoteTurnContext(input, cwd)
     : await buildYamLiteContext({ cwd, prompt });
   const output = {
     continue: true,
@@ -2512,38 +2520,10 @@ async function buildYamLiteContext({ cwd, prompt }) {
   return lines.join('\n');
 }
 
-async function buildStudyNoteHookContext({ cwd }) {
-  const dir = path.resolve(cwd || process.cwd());
-  const changedFileDetection = gitChangedFileSnapshot(dir);
-  const changedFiles = changedFileDetection.files;
-  const lines = [
-    'yam Study Note guard active: if this turn changes code, config, release metadata, docs, or project artifacts, include a Study Note followed immediately by Next step in the final response.'
-  ];
-  if (!changedFileDetection.available) {
-    lines.push('Git changed-file scope is unavailable at prompt time; do not treat this as a clean project.');
-    lines.push('Determine manually whether artifacts changed and include Study Note followed by Next step when they did; the Stop hook will keep this uncertainty visible.');
-    return lines.join('\n');
-  }
-  if (!changedFiles.length) {
-    lines.push('No changed files were detected at prompt time; if you change artifacts during this turn, add Study Note followed immediately by Next step before final.');
-    lines.push('The Study Note Stop hook will check the final response if artifacts are changed later in the turn.');
-    return lines.join('\n');
-  }
-  lines.push(`Changed files detected (${Math.min(changedFiles.length, 8)} shown): ${changedFiles.slice(0, 8).join(', ')}`);
-  lines.push('Study Note minimum: touched code/artifact, role, execution point, before/after change, expected behavior, one syntax/structure insight, verification, and limits.');
-  lines.push('Next step minimum: quick whole-process scan, current situation, forward outlook, critical opinion, improvement recommendation, ordered fix-first then planned actions, evidence, ownership, blocker status, safe retry, side effects, and truth status.');
-  const hygiene = studyNoteHygieneRequirements(changedFiles);
-  if (hygiene.length) {
-    lines.push(`Architecture hygiene required: ${hygiene.map((item) => item.id).join(', ')}.`);
-    lines.push('Report whether the change avoided dumping unrelated logic into page.tsx, one-off CSS into global.css, or structured product data into broad DB jsonb.');
-  }
-  lines.push('This prompt reminder does not generate or edit either section; the paired Stop hook requests one correction pass if the final response is incomplete or ordered incorrectly.');
-  return lines.join('\n');
-}
-
 async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd()) {
   const lastAssistantMessage = String(input?.last_assistant_message || input?.lastAssistantMessage || '');
-  const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message');
+  const scope = studyNoteTurnScope(input, cwd);
+  const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message', scope);
   if (result.truth_status === 'partial' && !result.changed_file_detection.available) {
     return {
       continue: true,
@@ -2551,7 +2531,11 @@ async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd
     };
   }
   if (!result.blockers.length) return { continue: true };
-  const summary = result.blockers.slice(0, 4).join('; ');
+  const failed = result.checks.filter(check => check.status === 'fail').map(check => check.id);
+  const summary = failed.includes('study_note_present') ? 'study_note_present' : failed.join(', ');
+  if (scope.mode !== 'strict') {
+    return { continue: true, systemMessage: `yam Study Note advisory — missing fields: ${summary}. Keep ordinary work concise; no correction gate applied.` };
+  }
   if (Boolean(input?.stop_hook_active || input?.stopHookActive)) {
     return {
       continue: true,
@@ -2561,11 +2545,16 @@ async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd
   return {
     decision: 'block',
     reason: [
-      'yam Study Note completion gate blocked this response because changed project artifacts require a complete Study Note.',
-      summary,
-      'Revise the final response to include: touched artifact, role, execution point, before/after change, expected behavior, one syntax/structure insight, verification, limits, and any relevant architecture hygiene.'
+      `yam Study Note strict — missing fields: ${summary}.`,
+      'Revise only the missing fields in Study Note / Next step; this is report validation, not a security scan.'
     ].join(' ')
   };
+}
+
+async function buildStudyNoteTurnContext(input: AnyRecord, cwd: string) {
+  const scope = studyNoteTurnScope(input, cwd, true);
+  if (!scope.available) return 'yam Study Note: turn scope is unavailable; do not treat this as a clean project. Inspect changed artifacts manually; no strict block will be applied without a baseline.';
+  return `yam Study Note turn baseline saved (hash-only). Mode: ${scope.mode}. Only changes since this prompt count; known generated logs, mission/security receipts and screenshots are excluded unless explicitly included. Include a concise Study Note followed by Next step when product artifacts change. ${scope.mode === 'strict' ? 'Risk work uses the detailed report contract and one correction pass.' : 'Ordinary work is advisory: a short explanation, verification/limits and remaining work (or none) suffice.'}`;
 }
 
 function yamLiteRouteHint(prompt = '') {

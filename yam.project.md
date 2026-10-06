@@ -60,8 +60,9 @@
 ## Report Policy
 
 - Changed code, config, release metadata, docs, or artifacts require a Study Note explaining role, execution point, before/after behavior, expected result, one structure insight, verification, and limits.
-- Put Next step immediately after Study Note. It must rescan the whole process, state the current situation and outlook, give a concrete critical opinion and recommendations, then order fix-first work before planned work with evidence and ownership.
+- Put Next step immediately after Study Note. Ordinary advisory work keeps this brief (one action or none). Strict reports rescan the whole process, state situation/outlook, give a critical opinion and recommendations, then order fix-first before planned work with evidence and ownership.
 - Keep final reports compact and distinguish verified, partial, blocked, skipped, and assumed claims.
+- Automatic Study Note hooks use a per-session/turn hash baseline and exclude known generated outputs; ordinary work is advisory, while selected risky changes use strict. Explicit CLI checks and structured receipts keep their strict contract. Never conflate this report check with security approval.
 
 ## Known Risks
 

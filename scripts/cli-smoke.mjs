@@ -13,6 +13,11 @@ const tarball = JSON.parse(packJson)[0]?.filename;
 if (!tarball) throw new Error('npm pack did not return a tarball filename');
 
 const prefix = mkdtempSync(join(tmpdir(), 'yam-cli-smoke-'));
+// Keep hook baselines owned by the existing fixture lifecycle.
+env.TMPDIR = prefix;
+env.TMP = prefix;
+env.TEMP = prefix;
+Object.assign(process.env, { TMPDIR: prefix, TMP: prefix, TEMP: prefix });
 try {
   execFileSync('npm', ['install', '--prefix', prefix, join(root, tarball)], { stdio: 'ignore', env });
   const binCandidates = [
@@ -70,6 +75,13 @@ Side effects: none; this is read-only validation.
 Truth status: verified.`;
   const passingStudyNoteGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', studyNoteProject, '--text', completeStudyNote, '--json'], { encoding: 'utf8' }));
   assert(passingStudyNoteGuard.truth_status === 'verified', 'study note guard should pass supplied Study Note text');
+  const boldReport = completeStudyNote.replace('## Study Note', '**Study Note**').replace('## Next step', '**Next step**');
+  const boldGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', studyNoteProject, '--text', boldReport, '--json'], { encoding: 'utf8' }));
+  assert(boldGuard.truth_status === 'verified', 'standalone bold report titles should pass the same contract');
+  mkdirSync(join(studyNoteProject, 'docs'), { recursive: true });
+  writeFileSync(join(studyNoteProject, 'docs/migration-guide.md'), 'documentation only');
+  const docsGuard = JSON.parse(execFileSync(bin, ['study-note', 'check', studyNoteProject, '--text', completeStudyNote, '--json'], { encoding: 'utf8' }));
+  assert(!docsGuard.checks.some(item => item.id === 'jsonb_hygiene'), 'migration documentation must not activate database hygiene');
   const misplacedNextStepDetails = `## Study Note
 Touched code role explains what the function does. It runs during CLI validation. Before/after behavior changed. Expected behavior should pass. Structure insight: a condition selects the result. Verification checked the CLI. Limits: no meaningful uncertainty remains. Current situation, forward outlook, critical opinion, and improvement recommendation are mentioned here, with 1. [planned] work outside the Next step section.
 
@@ -127,7 +139,7 @@ ${completeStudyNote.split('## Next step\n')[0]}## Next step
   assert(toolsDoctor.contextPressure?.schema === 'yam.context-pressure.v1', 'tools doctor missing contextPressure');
   assert(toolsDoctor.realProbe?.schema === 'yam.real-probe.v1', 'tools doctor missing realProbe');
   const hookRunStudyNote = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit' }), encoding: 'utf8' }));
-  assert(hookRunStudyNote.hookSpecificOutput?.additionalContext?.includes('Study Note guard active'), 'study note hook should inject advisory context');
+  assert(hookRunStudyNote.hookSpecificOutput?.additionalContext?.includes('scope is unavailable'), 'without a session the hook should request manual scope inspection');
   const hookProject = join(prefix, 'hook-project');
   const hookConfigDir = join(hookProject, '.codex');
   const hookConfigFile = join(hookConfigDir, 'hooks.json');
@@ -163,13 +175,14 @@ ${completeStudyNote.split('## Next step\n')[0]}## Next step
   writeFileSync(join(hookProject, 'tracked.txt'), 'baseline\n');
   execFileSync('git', ['add', 'tracked.txt'], { cwd: hookProject });
   execFileSync('git', ['-c', 'user.name=yam-smoke', '-c', 'user.email=yam-smoke@example.com', 'commit', '-qm', 'baseline'], { cwd: hookProject });
+  execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, session_id: 'cli-smoke', hook_event_name: 'UserPromptSubmit', prompt: 'study-note strict' }), encoding: 'utf8' });
   writeFileSync(join(hookProject, 'tracked.txt'), 'changed\n');
-  const blockedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Done.' }), encoding: 'utf8' }));
+  const blockedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, session_id: 'cli-smoke', hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Done.' }), encoding: 'utf8' }));
   assert(blockedStop.decision === 'block', 'Study Note Stop hook should request one correction pass');
-  assert(blockedStop.reason?.includes('completion gate blocked'), 'Study Note Stop hook should explain the completion block');
-  const passingStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: completeStudyNote }), encoding: 'utf8' }));
+  assert(blockedStop.reason?.includes('missing fields'), 'Study Note Stop hook should list missing fields concisely');
+  const passingStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, session_id: 'cli-smoke', hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: completeStudyNote }), encoding: 'utf8' }));
   assert(passingStop.continue === true && !passingStop.decision, 'complete Study Note should pass the Stop hook');
-  const boundedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, hook_event_name: 'Stop', stop_hook_active: true, last_assistant_message: 'Still missing.' }), encoding: 'utf8' }));
+  const boundedStop = JSON.parse(execFileSync(bin, ['hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: hookProject, session_id: 'cli-smoke', hook_event_name: 'Stop', stop_hook_active: true, last_assistant_message: 'Still missing.' }), encoding: 'utf8' }));
   assert(boundedStop.continue === true && boundedStop.systemMessage?.includes('remains blocked'), 'Stop hook should avoid an infinite correction loop and retain a warning');
   const invalidHookProject = join(prefix, 'invalid-hook-project');
   const invalidHookConfigDir = join(invalidHookProject, '.codex');

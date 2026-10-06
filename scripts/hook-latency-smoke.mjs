@@ -39,6 +39,9 @@ const env = {
   XDG_CONFIG_HOME: join(isolatedHome, '.config'),
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_OPTIONAL_LOCKS: '0',
+  TMPDIR: sandbox,
+  TMP: sandbox,
+  TEMP: sandbox,
 };
 
 const cases = [
@@ -126,6 +129,7 @@ function runFixture({ name, changed }) {
 
   const studyNotePrompt = invokeHook(project, name, 'study-note-prompt', 'study-note', {
     cwd: project,
+    session_id: project,
     hook_event_name: 'UserPromptSubmit',
     prompt: 'verify Study Note hook context',
   });
@@ -134,28 +138,18 @@ function runFixture({ name, changed }) {
     studyNotePrompt.output.hookSpecificOutput?.hookEventName === 'UserPromptSubmit',
     `${name} Study Note prompt event missing`,
   );
-  assertStudyNoteScope(
-    String(studyNotePrompt.output.hookSpecificOutput?.additionalContext || ''),
-    name,
-    expectedChanged,
-  );
+  assert(String(studyNotePrompt.output.hookSpecificOutput?.additionalContext || '').includes('baseline saved'), 'turn baseline context missing');
 
   const studyNoteStop = invokeHook(project, name, 'study-note-stop', 'study-note', {
     cwd: project,
+    session_id: project,
     hook_event_name: 'Stop',
     stop_hook_active: true,
     last_assistant_message: 'Done.',
   });
   assert(studyNoteStop.output.continue === true, `${name} re-entered Stop hook should continue`);
   assert(!studyNoteStop.output.decision, `${name} re-entered Stop hook should not request another correction`);
-  if (changed === 0) {
-    assert(!studyNoteStop.output.systemMessage, 'scope-empty Stop hook should pass without a warning');
-  } else {
-    assert(
-      String(studyNoteStop.output.systemMessage || '').includes('remains blocked after one correction pass'),
-      `${name} re-entered Stop hook should retain a bounded warning`,
-    );
-  }
+  assert(!studyNoteStop.output.systemMessage, 'unchanged pre-existing dirty files should not trigger Stop warning');
 
   assertGitScope(project, expectedChanged);
   return {

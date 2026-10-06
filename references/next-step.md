@@ -8,6 +8,8 @@ When code, config, documentation, release metadata, or another project artifact 
 
 ## Whole-process scan
 
+For ordinary advisory hook work, keep Next step to a concrete remaining action or “no remaining work”; numbered ownership/safety/truth fields are not mandatory. The detailed contract below applies to strict report validation and structured receipts. Do not manufacture a task just to satisfy a report shape.
+
 Before writing the sequence, quickly re-check:
 
 - the original goal and acceptance criteria;

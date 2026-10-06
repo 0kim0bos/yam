@@ -45,7 +45,7 @@ See `ROADMAP.md` for remaining implementation stages.
 - Small work stays small, but serious work is allowed to become serious.
 - Security-sensitive work is never treated as ordinary polish.
 - When code, config, release metadata, documentation, or project artifacts changed, final reports include a Study Note even if no yam skill was invoked.
-- A changed-artifact report puts `Next step` immediately after Study Note. It rescans the whole process, states the situation and outlook, adds a critical opinion and improvement recommendations, then orders fix-first work before planned work.
+- A changed-artifact report puts `Next step` immediately after Study Note. Ordinary advisory work may state the next concrete action or no remaining work. Strict reports rescan the whole process, state situation/outlook, add critical opinion and recommendations, then order fix-first work before planned work.
 - Useful Study Notes explain what the changed code or artifact does, what role it has, what was wrong or missing, what changed, what behavior is expected, one small syntax/structure insight, what was verified, and what remains uncertain.
 - Research and reference scans should keep source boundaries clear, then rework good ideas into yam style.
 - Token economy is part of quality.
@@ -102,7 +102,11 @@ yam hook enable study-note --global
 yam hook status --global
 ```
 
-The profile installs `UserPromptSubmit` and `Stop` handlers. At `Stop`, yam checks the latest assistant message with the same read-only Study Note Guard used by `yam study-note check`. If changed artifacts lack the required role, execution point, before/after, expected behavior, syntax/structure, verification, limits, or relevant architecture hygiene, Codex receives one correction prompt. A second failed check warns but does not loop forever. If Git change scope is unavailable, the guard reports partial truth and keeps a manual-inspection warning visible instead of claiming the project is clean. The hook never writes the Study Note or runs verification for the agent.
+The profile installs `UserPromptSubmit` and `Stop` handlers. The prompt saves a bounded, hash-only baseline of index and dirty-file content in a private OS temporary directory, keyed by canonical repository and session (and checked against a turn ID when supplied). Stop inspects only subsequent changes, including edits to already-dirty files, staging, commits, renames and deletions. Missing/stale scope stays partial with manual-inspection guidance; it never means a clean project.
+
+Ordinary hook work is advisory: a short Study Note (role, verification and limits) followed by Next step, including “no remaining work”, is sufficient. An explicit `study-note strict` request, project strict policy, or commit/push/deploy/DB/security intent enables the detailed contract **only when selected artifacts changed**. Deep/Mission names alone do not enable strict. Strict requests at most one correction; messages list missing fields. `yam study-note check` remains an explicit strict whole-tree check for compatibility. Neither mode performs security verification; commit/push/deploy security gates remain separate and unchanged.
+
+Known generated `.yam/mission/`, `.yam/security/`, `.yam/logs/`, `.yam/screenshots/`, `dist/` and `.tgz` outputs are excluded from automatic turn reporting. This is not a blanket `.yam` exclusion. Optional `.yam/study-note.json` accepts `mode: "advisory" | "strict"`, `include` and `exclude` arrays of repository-relative exact paths or `directory/**` prefixes; include wins. Example: `{"include":[".yam/security/review.json"],"exclude":["fixtures/generated/**"]}`. Baselines expire after 24 hours and contain paths/digests, not source text or prompts. Without a turn ID the latest baseline for the session is used; overlapping turns cannot be independently attributed. Bounded snapshots (4,000 files, 2 MiB dirty content) fall back to manual inspection. The hook never writes the report, changes global configuration or bypasses a security gate.
 
 Hook stdin is limited to 1 MiB. Malformed JSON or an oversized payload produces a valid fail-open response without echoing the rejected content, deriving hook context from it, or mutating the workspace. Other CLI commands that read piped text use a 4 MiB limit and fail closed when it is exceeded.
 
