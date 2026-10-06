@@ -18,6 +18,7 @@ Use for:
 
 ## Principles
 
+- Keep the current branch. Create/switch branches, create worktrees or create PRs only on explicit user request or an applicable project rule; commit/push, version bumps, route selection and protection alone do not authorize them. If blocked, report and ask instead of silently changing workflow, protections or bypassing checks.
 - Direction before execution.
 - Token economy still matters, even in deep mode.
 - Reuse `yam.project.md` before broad context reading when present.

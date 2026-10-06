@@ -24,6 +24,7 @@ Do not use for:
 
 ## Principles
 
+- Keep the current branch. Create/switch branches, create worktrees or create PRs only on explicit user request or an applicable project rule; commit/push, version bumps, route selection and protection alone do not authorize them. If blocked, report and ask instead of silently changing workflow, protections or bypassing checks.
 - Direction before execution.
 - Mission is explicit-only; never auto-escalate small tasks into mission.
 - Start from the user's approved plan or ask for one if the plan is missing.

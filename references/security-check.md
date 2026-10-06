@@ -13,6 +13,8 @@ Assess security applicability during new development and changes. Before commit,
 
 Commit, push, and deployment are distinct actions. A remote CI failure generally blocks protected-branch merge or deployment; it does not mean the preceding Git push was rejected. Local hooks can be bypassed or absent. Do not claim that `--no-verify` is automatically observable; future CI must independently check incoming revisions. Direct deployments must use the same required gate or access restrictions, otherwise enforcement remains incomplete.
 
+Branch protection is an acceptance boundary, not authorization to create a branch, worktree or PR. Keep the current branch unless the user or an explicit applicable project rule requests a different workflow. If direct push or merge is blocked, preserve work, report the exact blocker and ask for direction. Do not silently create a PR, change protection settings or bypass the security gate.
+
 ## Fixed areas and concrete summaries
 
 Every run includes each ID exactly once with a concrete explanation, a status, and the applicable evidence or reason. An ID or short heading alone does not satisfy the explanation requirement. These summaries are the canonical minimum; add project-specific targets without removing their security meaning.

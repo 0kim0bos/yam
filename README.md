@@ -39,6 +39,7 @@ See `ROADMAP.md` for remaining implementation stages.
 - No automatic Team routing.
 - No automatic proof loops.
 - No automatic tmux.
+- Keep the current branch by default. New/switched branches, worktrees and PRs require explicit user direction or an applicable project rule; commit/push, release bumps and protection rules alone do not authorize them. Report protection blockers before changing workflow or settings.
 - No false completion claims: verification, cleanup, and visual checks must match actual evidence.
 - `yam` is not lightweight-only; it is progressive: fast direction, broader judgment when useful, stronger proof as scope/risk grows.
 - Every route should check project direction and use the L0-L5 Verification Ladder honestly.

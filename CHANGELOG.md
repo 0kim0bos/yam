@@ -11,6 +11,7 @@ All notable changes to yam-flow are documented here.
 - Known generated outputs are excluded before content reads, with project include rules taking precedence over excludes; independent commit/push/deploy security gates remain unchanged.
 - Standalone bold report headings are accepted, correction messages list missing fields, and migration documentation no longer triggers database hygiene based only on its name.
 - Report guidance and Quick route now distinguish ordinary advisory handoffs from detailed strict reports.
+- All routes and lite hook guidance keep the current branch by default; new/switched branches, worktrees and PRs require explicit user direction or applicable project rules. Protection blockers are reported without silently changing workflow or settings.
 
 ### Verification
 

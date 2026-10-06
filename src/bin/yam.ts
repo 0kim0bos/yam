@@ -2505,6 +2505,7 @@ function extractPrompt(input: AnyRecord = {}) {
 async function buildYamLiteContext({ cwd, prompt }) {
   const lines = [
     'yam-lite guide active: keep project direction visible, preserve momentum, and deepen when scope, risk, or user intent calls for it.',
+    'Git workflow: keep the current branch; create/switch branches, worktrees or PRs only on explicit user request or applicable project rule. Commit/push, release bumps, branch-name prefixes and protection alone do not authorize them. If blocked, report and ask; do not silently change workflow or protections.',
     'Default: do a basic direction-fit and honest-verification check; avoid broad reading for small work and never claim proof without evidence.'
   ];
   const pack = await findProjectPack(cwd).catch(() => null);

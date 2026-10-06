@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "Codex / Deep single-agent engineering review; user-authorized 2.8.3 renewal",
-  "reviewed_at": "2026-10-06T01:24:25.383Z",
+  "reviewer": "Codex / Deep single-agent engineering review; user-authorized 2.8.3 Git workflow amendment",
+  "reviewed_at": "2026-10-06T02:23:37.285Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -81,7 +81,7 @@
     "scripts/cli-smoke.mjs": "sha256:52e7219635595fc8742bd8114f4b653f283cb45688edc6871586d560f31e4ce7",
     "scripts/design-production-smoke.mjs": "sha256:292b332394658e695f6833068b084e7c29ac7452581f65bffd0737212a21c664",
     "scripts/external-updates-smoke.mjs": "sha256:289a9b67167528158c2903c9f95d34e2b2887bc478ae5a0b446891f55912c4d1",
-    "scripts/hook-latency-smoke.mjs": "sha256:c7612674ebfcec85915918222f7326e6b44b13ff7df206d888725cfb62700db3",
+    "scripts/hook-latency-smoke.mjs": "sha256:deced88307ed3e003e13de183c5ac4e1ba023164385bbd1e47cfa6bf6bdf5362",
     "scripts/hook-readiness-smoke.mjs": "sha256:7c701fb9a4ed8e4ff05187066c0d281f79289a71eaba53cdc805864ce32458c8",
     "scripts/install-transaction-smoke.mjs": "sha256:c8e83e34adcb7fe0b2e2fa1d43315bfbc4f6f7789e2e3c81c2dffb3e05dadb22",
     "scripts/install.sh": "sha256:e3c59667774105c2c6a31082cbe095a4b2879f3b6ad00bea41ecd748610985fa",
@@ -103,7 +103,7 @@
     "scripts/study-note-turn-smoke.mjs": "sha256:e6b62eee608ffe551d5ad8622cf67d154994763175e1beefda5bf99229170d5b",
     "scripts/trust-adoptions-smoke.mjs": "sha256:4b943b4bf23a8a39ddc35949d42376741a7dda99d0a6df859db95e9f4bd98612",
     "scripts/uninstall.sh": "sha256:c2764a7de990573c913b217198efe73425b4d9ff0db8beddd4c822e763c4213c",
-    "src/bin/yam.ts": "sha256:4a96df9fadd216c47c1cb5a116920c6c02232888b280fc179dc3b0811eb64e23",
+    "src/bin/yam.ts": "sha256:3be0ed9dc19eb05aec93fb2b481f6a8e3b4cb4b5b5da13ad2881a9cf58bb7f9f",
     "src/lib/benchmark-promotion.ts": "sha256:5be7d5eb5e8dfa3654f8176ceb8098565ee6fdf534e87c5cd8e9b028931a7d3d",
     "src/lib/bounded-input.ts": "sha256:65d207a8f5503c10a1cc8b4007a297fdfdd1a51243bbffe584b53eeb64c2931c",
     "src/lib/design-production.ts": "sha256:46314fbb041e4e10f151f84556fb3b5510a00a0d82b4ef173c574e8e835cd79a",
@@ -153,6 +153,7 @@
     "Reviewed 2.8.3 turn scope: canonical repository/session keys, bounded index and dirty-content fingerprints, generated filtering before reads, include precedence, private hash-only baseline, stale/corrupt/missing state downgraded to manual inspection; no authentication or security attestation claim.",
     "Reviewed advisory/strict split: Deep/Mission alone do not promote read-only work, risky selected changes receive one correction pass, explicit CLI and commit/push/deploy security contracts remain unchanged.",
     "Reviewed report-title parsing and narrower database file classification, focused fixtures and package scripts; no dependency graph change, no automatic publication or global install.",
-    "Remaining limits: without host turn IDs overlapping work cannot be attributed independently; same-OS-user filesystem races and arbitrary Windows reparse points remain outside the baseline threat guarantee."
+    "Remaining limits: without host turn IDs overlapping work cannot be attributed independently; same-OS-user filesystem races and arbitrary Windows reparse points remain outside the baseline threat guarantee.",
+    "Reviewed current-branch and explicit branch/worktree/PR authority across route guidance and lite prompt output. Change is advisory instruction text, not a Git mutation or enforcement bypass. Hook regression asserts the common authority reminder; security policy and required checks remain unchanged."
   ]
 }

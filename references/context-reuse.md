@@ -40,6 +40,7 @@ Use it only for known wrong decisions, repeated mistakes, direction changes, and
 
 Rules:
 
+- Work on the current branch by default. Creating/switching branches, creating worktrees and creating PRs each need an explicit user request or applicable project rule. Commit/push, release bumps and a `codex/` naming convention do not authorize these actions. Branch protection specifies acceptance conditions, not a mandate to create a branch; when blocked, report and ask instead of changing workflow or protections. Preserve existing work; if detached HEAD prevents a requested commit, clarify the target before changing it.
 - Do not regenerate a broad plan when `yam.project.md` already answers the direction question.
 - Do not reread architecture docs unless the task touches architecture.
 - Do not reread full design docs for tiny UI work when the pack has the relevant style direction.

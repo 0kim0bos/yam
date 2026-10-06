@@ -83,6 +83,7 @@
 
 ## No-Go Rules
 
+- Keep the current branch. Do not create/switch branches, create worktrees or create PRs without an explicit user request or applicable project rule; report protection blockers instead of silently changing workflow or protections.
 - No always-on orchestration, mandatory subagents, background daemon, automatic publish, automatic stale-lock deletion, or silent destructive cleanup.
 - No broad binary context graph or global bridge/config mutation in the core package.
 - Do not leave third-party comparison or attribution language in public product guidance, package metadata, release notes, or source comments.

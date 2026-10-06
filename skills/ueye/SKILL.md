@@ -22,6 +22,7 @@ Do not use for:
 
 ## Principles
 
+- Keep the current branch. Create/switch branches, create worktrees or create PRs only on explicit user request or an applicable project rule; commit/push, version bumps, route selection and protection alone do not authorize them. If blocked, report and ask instead of silently changing workflow, protections or bypassing checks.
 - Direction before execution.
 - Visual evidence before visual claims.
 - Ueye is the tight UX/UI/design route, not Quick with screenshots.

@@ -121,6 +121,7 @@ function runFixture({ name, changed }) {
     prompt: 'explain this local change',
   });
   assert(lite.output.continue === true, `${name} lite hook should continue`);
+  assert(String(lite.output.hookSpecificOutput?.additionalContext || '').includes('Git workflow: keep the current branch'), `${name} lite hook should preserve explicit Git workflow authority`);
   assert(lite.output.hookSpecificOutput?.hookEventName === 'UserPromptSubmit', `${name} lite hook event missing`);
   assert(
     String(lite.output.hookSpecificOutput?.additionalContext || '').includes('yam-lite guide active'),
