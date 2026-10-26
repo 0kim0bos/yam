@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "Codex single-agent engineering re-review; user-authorized 2.8.4 release and trust-pin refresh",
-  "reviewed_at": "2026-10-26T01:23:00.167Z",
+  "reviewer": "Codex single-agent engineering re-review; user-authorized 2.8.4 push-event CI amendment",
+  "reviewed_at": "2026-10-26T01:38:22.230Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -66,7 +66,7 @@
   ],
   "files": {
     ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
-    ".github/workflows/security-check.yml": "sha256:74f32d982802758287825c6f0d71eae34d558fa9b0411da4797c776c5bd78d35",
+    ".github/workflows/security-check.yml": "sha256:2598fac9a866279ed5daef97c4196aa39eac5aeb7eda38f1985362eb44d30385",
     ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
     "package-lock.json": "sha256:407b59337bd048f92fc182d06b27f73963e81dd1e34f7d7972a12cf226dc92a5",
     "package.json": "sha256:45ea45cedd8a8c0f6d5cf19a481ef38ea41d96872ba6a04cba2e68f94f08eaad",
@@ -158,6 +158,7 @@
     "Reviewed 2.8.4 Scrapling compatibility: exact candidate version and version-selected browser help must pass before browser dependency installation; 0.4 uses stealthy-fetch and 0.5+ uses fetch without fallback aliases. Existing official-index, ownership, candidate cleanup, atomic-link, linked-version and receipt-failure rollback boundaries remain intact.",
     "Reviewed HTTP/browser smoke content checks: expected title content is required in addition to command success, and zero-exit missing content is recorded as failed. Focused fixtures cover 0.5 version variants, help refusal before browser install, browser/content failures and rollback; earlier isolated macOS/Python 3.14 runtime evidence does not establish cross-platform coverage.",
     "Reviewed Scout and updater guidance: inspected claim locators, source/test/inference separation, version-conflict and falsification guidance add no mandatory receipt schema or automatic reviewer. External content grants no egress or credential authority; sensitive session/network data stays out of research receipts. These are instruction boundaries, not a new network sandbox.",
-    "Reviewed 2.8.4 metadata: version-only manifest/lock changes, no dependency graph or CI workflow/policy change. Full dependency hash enforcement remains deferred and documented; recorded PyPI hashes are not a hash-locked installation. Local CA-path repair is environment-only and is not part of the shipped product."
+    "Reviewed 2.8.4 metadata: version-only manifest/lock changes, no dependency graph or CI workflow/policy change. Full dependency hash enforcement remains deferred and documented; recorded PyPI hashes are not a hash-locked installation. Local CA-path repair is environment-only and is not part of the shipped product.",
+    "Reviewed follow-up push-event CI amendment: add only the existing codex/release-2.8.3 branch to Security check's push filter so its actual push run can satisfy protected-main checks. Workflow jobs, action pins, read-only permissions, source/policy digest enforcement, evidence generation, required checks and publication boundaries are unchanged. Manual workflow_dispatch success is verification evidence but not proof that branch protection accepts it; actual push-event CI and remote acceptance must be observed. Version remains 2.8.4; no new branch, PR or automatic publication is authorized."
   ]
 }

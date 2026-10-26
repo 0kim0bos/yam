@@ -3,7 +3,7 @@ name: Security check
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/release-2.8.3]
   workflow_dispatch:
   workflow_call:
     inputs:
