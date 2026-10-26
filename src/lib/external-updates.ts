@@ -943,6 +943,21 @@ async function applyScrapling(deps: ResolvedDependencies) {
     checks.push(commandCheck('install_exact_scrapling', install));
     if (!install.ok) throw new Error(`Scrapling install failed: ${commandNote(install)}`);
 
+    const directVersion = await deps.run(candidateScrapling, ['--version'], { env: deps.env, timeout: 30000 });
+    checks.push(commandCheck('candidate_version', directVersion));
+    if (!directVersion.ok || extractVersion(directVersion.stdout) !== check.latest_version) {
+      throw new Error(`candidate Scrapling version mismatch: ${commandNote(directVersion)}`);
+    }
+    const browserCommand = compareVersions(check.latest_version, '0.5') >= 0 ? 'fetch' : 'stealthy-fetch';
+    const browserHelp = await deps.run(candidateScrapling, ['extract', browserCommand, '--help'], {
+      env: deps.env,
+      timeout: 30000
+    });
+    checks.push(commandCheck('browser_cli_compatibility', browserHelp));
+    if (!browserHelp.ok) {
+      throw new Error(`Scrapling browser CLI ${browserCommand} is unavailable: ${commandNote(browserHelp)}`);
+    }
+
     const browsers = await deps.run(candidateScrapling, ['install', '--force'], {
       env: deps.env,
       timeout: 600000
@@ -961,28 +976,32 @@ async function applyScrapling(deps: ResolvedDependencies) {
     const httpOutput = path.join(candidate, '.yam-http-smoke.txt');
     const browserOutput = path.join(candidate, '.yam-browser-smoke.txt');
     const httpSmoke = await deps.run(candidateScrapling, [
-      'extract', 'get', 'https://example.com', httpOutput, '--css-selector', 'h1', '--timeout', '30'
+      'extract', 'get', 'https://example.com', httpOutput, '--css-selector', 'title', '--timeout', '30'
     ], { env: deps.env, timeout: 120000 });
-    checks.push(commandCheck('http_smoke', httpSmoke));
-    if (!httpSmoke.ok || !await fileContains(httpOutput, 'Example Domain')) {
+    const httpContentOk = httpSmoke.ok && await fileContains(httpOutput, 'Example Domain');
+    checks.push({
+      ...commandCheck('http_smoke', httpSmoke),
+      status: httpContentOk ? 'passed' : 'failed',
+      note: httpContentOk ? commandNote(httpSmoke) : boundedNote(`expected extracted title was not confirmed; ${commandNote(httpSmoke)}`)
+    });
+    if (!httpContentOk) {
       throw new Error(`Scrapling HTTP smoke failed: ${commandNote(httpSmoke)}`);
     }
     const browserSmoke = await deps.run(candidateScrapling, [
-      'extract', 'stealthy-fetch', 'https://example.com', browserOutput,
-      '--css-selector', 'h1', '--headless', '--timeout', '30000'
+      'extract', browserCommand, 'https://example.com', browserOutput,
+      '--css-selector', 'title', '--headless', '--timeout', '30000'
     ], { env: deps.env, timeout: 180000 });
-    checks.push(commandCheck('browser_smoke', browserSmoke));
-    if (!browserSmoke.ok || !await fileContains(browserOutput, 'Example Domain')) {
+    const browserContentOk = browserSmoke.ok && await fileContains(browserOutput, 'Example Domain');
+    checks.push({
+      ...commandCheck('browser_smoke', browserSmoke),
+      status: browserContentOk ? 'passed' : 'failed',
+      note: browserContentOk ? commandNote(browserSmoke) : boundedNote(`expected extracted title was not confirmed; ${commandNote(browserSmoke)}`)
+    });
+    if (!browserContentOk) {
       throw new Error(`Scrapling browser smoke failed: ${commandNote(browserSmoke)}`);
     }
     await unlinkIfExists(httpOutput);
     await unlinkIfExists(browserOutput);
-
-    const directVersion = await deps.run(candidateScrapling, ['--version'], { env: deps.env, timeout: 30000 });
-    checks.push(commandCheck('candidate_version', directVersion));
-    if (!directVersion.ok || extractVersion(directVersion.stdout) !== check.latest_version) {
-      throw new Error(`candidate Scrapling version mismatch: ${commandNote(directVersion)}`);
-    }
 
     await fsp.writeFile(path.join(candidate, '.yam-scrapling-install.json'), `${JSON.stringify({
       schema: 'yam.scrapling-install.v1',

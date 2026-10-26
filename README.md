@@ -177,7 +177,9 @@ A yam update is successful only after the installed version and status checks pl
 
 Effective yam identity currently verifies POSIX-style executable/symlink layouts through `which` and canonical realpaths. Windows npm `.cmd` shim identity is intentionally unverified and fails closed until a dedicated shim parser and fixture exist.
 
-Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
+Scrapling updates install an exact stable PyPI version into a new versioned virtual environment. Candidate version and browser-command help are checked before browser dependency installation: 0.4 uses `extract stealthy-fetch`, while 0.5 and later use `extract fetch`. An unavailable command fails without trying legacy aliases. `pip check`, ordinary HTTP extraction, and headless browser extraction must pass before the executable symlink changes atomically; the previous environment is retained. An existing environment must have a matching `.yam-scrapling-install.json` ownership marker before yam will replace its link. Insane Search uses only the official `codex plugin` commands. yam never edits `.codex/plugins/cache`, never removes the plugin first, and returns `manual_plugin_update_required` when the installed Codex CLI cannot update it safely in place.
+
+Scrapling hash-enforcement boundary: the check receipt records PyPI release-file SHA-256 values, but apply does not bind pip's selected artifact to that prior receipt or lock transitive dependencies. Native index hashes and TLS are not an independently reviewed lock. Full `--require-hashes` enforcement needs exact versions and accepted hashes for every dependency, plus Python/platform-specific wheel and rollback coverage; adding a single top-level hash is not sufficient. That installer change remains deferred rather than claiming stronger supply-chain proof. See [pip secure installs](https://pip.pypa.io/en/stable/topics/secure-installs/).
 
 There is no unattended updater. The exact project trigger in `AGENTS.md` grants one-time authorization for a checked `--all` run, and Codex is never restarted automatically.
 
@@ -198,8 +200,9 @@ The isolated executable can be used directly from the shell:
 
 ```bash
 scrapling --version
-scrapling extract get https://example.com example.txt --css-selector h1
-scrapling extract stealthy-fetch https://example.com example-browser.txt --css-selector h1 --headless
+scrapling extract get https://example.com example.txt --css-selector title
+# Scrapling 0.5+ (use stealthy-fetch instead of fetch on 0.4)
+scrapling extract fetch https://example.com example-browser.txt --css-selector title --headless
 ```
 
 From Python inside the installed environment:
@@ -208,10 +211,10 @@ From Python inside the installed environment:
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
 page = Fetcher.get("https://example.com")
-print(page.css("h1::text").get())
+print(page.css("title::text").get())
 
 browser_page = StealthyFetcher.fetch("https://example.com", headless=True)
-print(browser_page.css("h1::text").get())
+print(browser_page.css("title::text").get())
 ```
 
 Use `Fetcher` for ordinary HTTP pages and `StealthyFetcher` only when a real browser or stronger anti-bot behavior is needed; the browser path is heavier.

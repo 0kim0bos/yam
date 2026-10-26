@@ -12,7 +12,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   applyExternalUpdates,
   checkExternalUpdates,
@@ -173,8 +173,49 @@ try {
     ),
     ['--index-url', 'https://pypi.org/simple']
   );
+  assert.equal(fixture.commands.some(item => item.args[0] === 'extract' && item.args[1] === 'stealthy-fetch' && !item.args.includes('--help')), true);
 
-  const rollbackFixture = createFixture();
+  for (const latest of ['0.5', '0.5.0', '0.5.1']) {
+    const upgradeFixture = createFixture({ scraplingVersion: '0.4.15', scraplingLatest: latest });
+    const oldTarget = readlinkSync(upgradeFixture.scraplingBin);
+    const oldBytes = readFileSync(oldTarget);
+    const upgraded = await applyExternalUpdates('2.4.0', { component: 'scrapling' }, upgradeFixture.dependencies());
+    assert.equal(upgraded.success, true, JSON.stringify(upgraded));
+    assert.equal(upgraded.receipts[0].installed_version, latest);
+    assert.notEqual(readlinkSync(upgradeFixture.scraplingBin), oldTarget);
+    assert.deepEqual(readFileSync(oldTarget), oldBytes, 'upgrade must retain the old environment');
+    const helpIndex = upgradeFixture.commands.findIndex(item => item.args.join(' ') === 'extract fetch --help');
+    const browserInstallIndex = upgradeFixture.commands.findIndex(item => item.args.join(' ') === 'install --force');
+    assert.ok(helpIndex >= 0 && helpIndex < browserInstallIndex, 'CLI compatibility must pass before browser installation');
+    assert.equal(upgradeFixture.commands.some(item => item.args.includes('stealthy-fetch')), false, '0.5 must never retry the removed command');
+    assert.equal(upgradeFixture.commands.some(item => item.args[0] === 'extract' && item.args[1] === 'fetch' && item.args.includes('--headless')), true);
+  }
+
+  for (const failure of ['browserHelpFails', 'browserSmokeFails', 'httpWrongContent', 'browserWrongContent', 'linkedVersionFails']) {
+    const failedFixture = createFixture({ scraplingVersion: '0.4.15', scraplingLatest: '0.5' });
+    failedFixture[failure] = true;
+    const oldTarget = readlinkSync(failedFixture.scraplingBin);
+    const oldBytes = readFileSync(oldTarget);
+    const failed = await applyExternalUpdates('2.4.0', { component: 'scrapling' }, failedFixture.dependencies());
+    assert.equal(failed.success, false, failure);
+    assert.equal(failed.lock.released, true, failure);
+    assert.equal(failed.receipts[0].outcome, 'failed', failure);
+    assert.equal(failed.receipts[0].rollback_hint.automatic, true, failure);
+    assert.equal(readlinkSync(failedFixture.scraplingBin), oldTarget, failure);
+    assert.deepEqual(readFileSync(oldTarget), oldBytes, failure);
+    const candidate = failedFixture.commands.find(item => item.command === 'python3' && item.args[1] === 'venv').args[2];
+    assert.equal(existsSync(candidate), failure === 'linkedVersionFails', 'failed pre-switch candidates are removed; post-switch environments are retained');
+    if (failure === 'browserHelpFails') {
+      assert.equal(failedFixture.commands.some(item => item.args.join(' ') === 'install --force'), false);
+    }
+    if (failure === 'httpWrongContent' || failure === 'browserWrongContent') {
+      const checkId = failure === 'httpWrongContent' ? 'http_smoke' : 'browser_smoke';
+      assert.equal(failed.receipts[0].checks.find(item => item.id === checkId)?.status, 'failed', 'a zero exit with wrong content is not a passing smoke');
+    }
+    assert.equal(failedFixture.commands.some(item => item.args.includes('stealthy-fetch')), false);
+  }
+
+  const rollbackFixture = createFixture({ scraplingVersion: '0.4.15', scraplingLatest: '0.5' });
   const invalidReceiptDir = join(rollbackFixture.root, 'receipt-path-is-a-file');
   writeFileSync(invalidReceiptDir, 'not a directory\n');
   const originalTarget = resolve(dirname(rollbackFixture.scraplingBin), readlinkSync(rollbackFixture.scraplingBin));
@@ -669,6 +710,11 @@ function createFixture(options = {}) {
     installedInsane: '0.8.2',
     addFails: false,
     venvFails: false,
+    browserHelpFails: false,
+    browserSmokeFails: false,
+    httpWrongContent: false,
+    browserWrongContent: false,
+    linkedVersionFails: false,
     marketplaceUpgraded: false,
     marketplaceRevisionAfterUpgrade: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     marketplaceRevisionAfterAdd: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -821,14 +867,22 @@ function createFixture(options = {}) {
               target = command;
             }
           }
-          const version = target.match(/(\d+\.\d+\.\d+)/)?.[1] || scraplingVersion;
+          if (command === fixture.scraplingBin && target !== oldExecutable && fixture.linkedVersionFails) return fail('linked version unavailable\n');
+          const version = basename(dirname(dirname(target))).match(/^(\d+(?:\.\d+){1,3})(?:-yam-|$)/)?.[1] || scraplingVersion;
           return ok(`Scrapling, version ${version}\n`);
         }
         if (args[0] === 'install') return ok('browsers installed\n');
         if (args[0] === 'extract') {
+          const modern = Number(fixture.scraplingLatest.split('.')[0]) > 0 || Number(fixture.scraplingLatest.split('.')[1]) >= 5;
+          const browserCommand = modern ? 'fetch' : 'stealthy-fetch';
+          if (!['get', browserCommand].includes(args[1])) return fail(`No such command: ${args[1]}\n`);
+          if (args[2] === '--help') return fixture.browserHelpFails ? fail('browser command unavailable\n') : ok(`Usage: extract ${browserCommand} [OPTIONS] URL OUTPUT_FILE\n`);
+          if (args[1] === browserCommand && fixture.browserSmokeFails) return fail('browser extraction failed\n');
+          assert.equal(args[args.indexOf('--css-selector') + 1], 'title', 'smoke must extract the document title, not depend on a heading in the page body');
           const output = args[3];
           mkdirSync(dirname(output), { recursive: true });
-          writeFileSync(output, 'Example Domain\n');
+          const wrongContent = args[1] === 'get' ? fixture.httpWrongContent : fixture.browserWrongContent;
+          writeFileSync(output, wrongContent ? '' : 'Example Domain\n');
           return ok('fetched\n');
         }
       }

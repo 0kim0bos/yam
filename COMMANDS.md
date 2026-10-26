@@ -176,6 +176,8 @@ yam update apply --all --json
 
 `yam update check` is read-only. Its component result preserves the registry artifact source receipt: npm integrity/`gitHead` for yam, PyPI release-file SHA-256 values for Scrapling, and the Git-pinned manifest commit for Insane Search. Yam also compares `latest` with exact-version metadata and probes the official exact tarball URL; a 404 is `pending_distribution`, while network/auth/metadata mismatch is `check_failed`. The bounded HEAD probe confirms availability only and does not hash tarball bytes. Every `apply` needs explicit authorization, pins the official npm registry or isolated PyPI index, uses a concurrent-run lock, records a component receipt, and stops on failed/manual results. `--all` runs yam last. A yam install verifies the effective executable identity before any yam-side install command and repeats that check during rollback. This identity contract currently supports POSIX symlink layouts; Windows npm `.cmd` shims fail closed as unverified. Insane Search requires a clean tracked local manifest whose bytes match Git and matching pre/post-add commits, is never remove-first, and never edits `.codex/plugins/cache` directly.
 
+Scrapling preflights the candidate version and browser CLI before installing browser dependencies, then uses `extract stealthy-fetch` for 0.4 or `extract fetch` for 0.5+. HTTP/browser smoke checks must pass before the managed link changes; failures retain or restore the previous link. Recorded PyPI hashes do not imply a complete hash-locked dependency install; see README's hash-enforcement boundary.
+
 ## Release Supply Chain
 
 ```bash

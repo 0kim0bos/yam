@@ -2,6 +2,20 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.4 - 2026-10-26
+
+### Improved
+
+- Scrapling updates select the browser CLI for 0.4 or 0.5+, preflight candidate version/help before browser dependency installation, and preserve the existing atomic-link/rollback boundary.
+- Update smokes extract the document title instead of relying on a body heading; a zero exit with missing expected content is recorded as a failed check.
+- Scout guidance connects consequential claims to inspected evidence, separates reported/tested/inferred conclusions, retains version conflicts and adds cheap falsification checks without mandatory reviewers or a new receipt schema.
+- Research guidance makes outbound-data authority and sensitive session/network-state handling explicit; updater documentation distinguishes recorded PyPI hashes from a fully hash-locked dependency installation.
+
+### Verification
+
+- Focused update fixtures cover 0.4 compatibility, 0.4.15-to-0.5 variants, missing CLI/browser failures, post-switch failure and receipt-write rollback.
+- Isolated macOS/Python 3.14 checks exercised actual 0.4.15-to-0.5 installation, HTTP/headless extraction and receipt-failure rollback. A later isolated public suffix-list retry passed after a local CA-path repair; that environment-only repair is not shipped by this package.
+
 ## v2.8.3 - 2026-10-06
 
 ### Improved
