@@ -2,6 +2,13 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.7 - 2026-10-28
+
+### Fixed
+
+- Accept bold Markdown and sentence punctuation in an explicit `Test check: BLOCKED` handoff so the Stop hook can end an incomplete report without repeated correction requests.
+- Keep quoted and fenced examples outside handoff detection. A handoff grants no test approval; symbolic-link rejection and commit/push/deployment checks remain enforced.
+
 ## v2.8.6 - 2026-10-28
 
 ### Added
