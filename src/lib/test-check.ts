@@ -53,8 +53,10 @@ function gitBytes(root: string, args: string[]) {
 }
 function rootOf(cwd: string) { return fs.realpathSync(git(cwd, ['rev-parse', '--show-toplevel']).trim()); }
 function skillAliasTarget(file: string) {
-  const alias = /^\.(?:agent|claude|codex|cursor|gemini|opencode|windsurf)\/skills\/([A-Za-z0-9][A-Za-z0-9_.-]{0,159})$/.exec(file);
-  return alias ? `.agents/skills/${alias[1]}` : null;
+  const [tool, directory, name, ...tail] = file.split('/');
+  const supported = ['.agent', '.claude', '.codex', '.cursor', '.gemini', '.opencode', '.windsurf'];
+  return supported.includes(tool) && directory === 'skills' && !tail.length && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/.test(name || '')
+    ? `.agents/skills/${name}` : null;
 }
 const excluded = (f: string) => !skillAliasTarget(f) && (/^(?:\.git|\.yam|\.codex|\.agents|node_modules|dist|coverage|build|out|\.cache|\.next)(?:\/|$)/.test(f) || /\.(?:tgz|log)$/.test(f));
 function aliasIdentity(file: string, bytes: Buffer) {

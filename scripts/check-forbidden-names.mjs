@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import assert from 'node:assert/strict';
 
 const root = process.cwd();
 const ignoreDirs = new Set(['.git', '.yam', 'dist', 'node_modules']);
@@ -37,6 +38,26 @@ function escapeRegExp(text) {
 
 const patterns = blockedTerms.map((term) => new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(term)}([^\\p{L}\\p{N}_]|$)`, 'iu'));
 
+// These files define/test/document a filesystem protocol, not product attribution.
+// Permit only the exact quoted directory token; scan all remaining text normally.
+const protocolFiles = new Set(['src/lib/test-check.ts', 'scripts/test-check-skill-alias-smoke.mjs', 'references/test-check.md']);
+function scannedLine(file, line) {
+  return protocolFiles.has(file) ? line.replace(/(['"`])\.cursor\1/g, 'tool-skill-directory') : line;
+}
+if (process.argv.includes('--self-test')) {
+  const hit = (file, line) => patterns.some(pattern => pattern.test(scannedLine(file, line)));
+  for (const file of protocolFiles) {
+    for (const quote of ["'", '"', '`']) assert.equal(hit(file, quote + '.cursor' + quote), false);
+    assert.equal(hit(file, "'.cursor' " + blockedTerms[10]), true);
+    assert.equal(hit(file, "'.cursor' " + blockedTerms.at(-1)), true);
+    assert.equal(hit(file, "'cursor'"), true);
+  }
+  assert.equal(hit('README.md', '`.cursor`'), true);
+  assert.equal(hit('src/unrelated.ts', "'.cursor'"), true);
+  console.log('forbidden-names:smoke: ok (exact protocol tokens only; other names and attribution still blocked)');
+  process.exit(0);
+}
+
 function extname(path) {
   const index = path.lastIndexOf('.');
   return index === -1 ? '' : path.slice(index);
@@ -65,7 +86,7 @@ for (const file of walk(root)) {
   const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => {
     for (const pattern of patterns) {
-      if (pattern.test(line)) hits.push(`${file}:${index + 1}: ${line.trim()}`);
+      if (pattern.test(scannedLine(file, line))) hits.push(`${file}:${index + 1}: ${line.trim()}`);
     }
   });
 }
