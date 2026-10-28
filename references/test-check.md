@@ -22,6 +22,12 @@ not certify every possible input or prove a live deployment from a fixture.
    identity and required scenario inventory. A relevant edit invalidates the result.
 6. Completion requires PASS. An unavailable environment is BLOCKED, with a truthful
    incomplete handoff permitted; it must not be described as completed verification.
+   Stop accepts a standalone `Test check: BLOCKED` status line, including bold
+   Markdown and a following explanation. This ends the reporting correction loop;
+   the failed check stays BLOCKED and grants no commit/push/deployment approval.
+   Quoted or fenced examples do not count as a status handoff. `symlink_rejected`
+   means a source or evidence path contains a symbolic link: inspect the project
+   paths and resolve ownership/layout before retrying, without disabling link checks.
 
 Risk floors:
 

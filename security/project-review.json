@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "yam Deep release self-review with onboarding/Git/process simulations",
-  "reviewed_at": "2026-10-28T10:47:42.202Z",
+  "reviewer": "yam engineering self-review: formatted BLOCKED handoff regression and unchanged fail-closed link checks",
+  "reviewed_at": "2026-10-28T14:20:40.449263Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -111,7 +111,7 @@
     "scripts/test-check-postgres-smoke.mjs": "sha256:970a7a9032c24291aa41b15d81aab9705c699247633d78952dff047e198702aa",
     "scripts/test-check-project.mjs": "sha256:351de0269bb2f066ae0e254697f9ef345cc2ca92539b685875fec477f0b6e207",
     "scripts/test-check-setup-smoke.mjs": "sha256:edf56da89b8a2189348b7663d4df000a253c5138060c3a9626cc7f6397aafab9",
-    "scripts/test-check-smoke.mjs": "sha256:03a839ecb0752da7eca72fd4c91380b8bc2a142b12c7285111b95aa6b6298776",
+    "scripts/test-check-smoke.mjs": "sha256:168d983cf79c6e602ae1755ab3104aa147ee06d9429c4e2d272ca5554bcfe448",
     "scripts/trust-adoptions-smoke.mjs": "sha256:4b943b4bf23a8a39ddc35949d42376741a7dda99d0a6df859db95e9f4bd98612",
     "scripts/uninstall.sh": "sha256:c2764a7de990573c913b217198efe73425b4d9ff0db8beddd4c822e763c4213c",
     "src/bin/yam.ts": "sha256:b1283804ab2e9ea647a486ad176befa627ba367cd561942d204827bd04bf84e7",
@@ -133,7 +133,7 @@
     "src/lib/stable-order.ts": "sha256:67ae3f0d2f6fd4b4d29a0dd0f1b30fcc0189828d1f9baae192a50e0f52fdbddd",
     "src/lib/study-note-scope.ts": "sha256:fd3aead06cb2604384909adbadc0d20105f04ec244393f1b609910bc2aeac1f7",
     "src/lib/test-check-setup.ts": "sha256:6ed3f0e0ea9e5c24c335690d9b6bf2b7246679cc2fad8306849f33d7121efb55",
-    "src/lib/test-check.ts": "sha256:42e119a8a208e3af2fa9184f68d9046343d616d928488b60d55781fd41ee063b",
+    "src/lib/test-check.ts": "sha256:5c42b12f027e3bb2b9c9725e6c11ab156ca00a957e90ebff58d54e1a7ddcecda",
     "src/lib/trust-kernel.ts": "sha256:e77aec96c0d6e0ca3fa649f34c1b86c4bd070433886530f6295c911a15675ae2",
     "src/lib/ueye-artifacts.ts": "sha256:d802e5bedc32899f162f22e2fca4d7975e8ee8cd4678f1350248365d24009b9d",
     "src/lib/verification-closure.ts": "sha256:a9263005c5277fd7ec40d0ed94e4258278e8c2bd6cbc885adf29940b051a14d7",

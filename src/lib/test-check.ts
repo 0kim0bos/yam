@@ -326,7 +326,20 @@ export function testCheckStop(cwd: string, changed: boolean, message: string) {
   if (!changed || !testCheckConfigured(cwd)) return null;
   const result = checkTestCheck(cwd);
   if (result.ok) return null;
-  if (/^Test check: BLOCKED(?:\s*[;:—–-]\s*[^\r\n]+)?[ \t]*$/m.test(message)) return { continue: true, systemMessage: 'Test check remains BLOCKED; this is an incomplete-status handoff, not approval of completion, commit or deployment.' };
+  // A formatted status is still an incomplete handoff. Quoted code examples are not.
+  let fence = '', fenceLength = 0;
+  const handoff = message.split(/\r?\n/).some(line => {
+    const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (delimiter) {
+      if (!fence) { fence = delimiter[1][0]; fenceLength = delimiter[1].length; }
+      else if (delimiter[1][0] === fence && delimiter[1].length >= fenceLength && !delimiter[2].trim()) fence = '';
+      return false;
+    }
+    if (fence) return false;
+    const status = line.replace(/^\*\*(Test check: BLOCKED\.?)\*\*/, '$1');
+    return /^Test check: BLOCKED(?:[ \t]*[.;:—–-][ \t]*[^\r\n]*)?[ \t]*$/.test(status);
+  });
+  if (handoff) return { continue: true, systemMessage: 'Test check remains BLOCKED; this is an incomplete-status handoff, not approval of completion, commit or deployment.' };
   return { decision: 'block', reason: 'yam Test check BLOCKED. Run yam test-check run --base <exact-base> --json, then yam test-check check --json. Repair required scenarios/evidence; if unable, report Test check: BLOCKED and the verification limitation. Do not claim complete.' };
 }
 

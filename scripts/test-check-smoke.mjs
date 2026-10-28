@@ -72,6 +72,15 @@ console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==
    fs.unlinkSync(path.join(root,'receiving.SQL'));write(policyFile,policy());
  });
  test('quoted handoff marker cannot bypass Stop',()=>{write('feature.ts','different');assert.equal(testCheckStop(root,true,'Example: "Test check: BLOCKED". Done.').decision,'block');write('feature.ts','new');});
+ test('formatted blocked handoffs end correction without approval',()=>{
+   write('feature.ts','different');
+   for(const message of ['**Test check: BLOCKED** — symlink_rejected; verification incomplete.', '**Test check: BLOCKED.** Unable to verify.', 'Test check: BLOCKED. Unable to verify.', '**Test check: BLOCKED**']) {
+     assert.equal(testCheckStop(root,true,message).continue,true,message);
+     assert.equal(checkTestCheck(root).result,'BLOCKED');
+   }
+   for(const message of ['Example: **Test check: BLOCKED**', '```\nTest check: BLOCKED\n```\nDone.', '> Test check: BLOCKED', 'Test check: BLOCKEDNESS']) assert.equal(testCheckStop(root,true,message).decision,'block',message);
+   write('feature.ts','new');
+ });
  test('configured Stop cannot fail open when Git disappears',()=>{
    const old=process.env.PATH;try{process.env.PATH=path.join(root,'absent-bin');assert.equal(testCheckStop(root,true,'Done').decision,'block');}finally{process.env.PATH=old;}
  });
@@ -126,6 +135,10 @@ console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==
    const stop={...input,hook_event_name:'Stop',last_assistant_message:'Done',stop_hook_active:true};
    assert.equal(invoke(stop).decision,'block');
    assert.equal(invoke({...stop,last_assistant_message:'Test check: BLOCKED; actual DB unavailable'}).continue,true);
+   for(const last_assistant_message of ['**Test check: BLOCKED** — symlink_rejected; verification incomplete.', '**Test check: BLOCKED.** Unable to verify.']) {
+     for(let retry=0;retry<3;retry++) assert.equal(invoke({...stop,last_assistant_message}).continue,true);
+   }
+   assert.equal(checkTestCheck(root).result,'BLOCKED');
    write('feature.ts','new');
  });
  test('Security check rejects stale Test check',()=>{
