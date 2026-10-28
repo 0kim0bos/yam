@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const root = process.cwd();
-const ignoreDirs = new Set(['.git', 'dist', 'node_modules']);
+const ignoreDirs = new Set(['.git', '.yam', 'dist', 'node_modules']);
 const ignoreFiles = new Set(['scripts/check-forbidden-names.mjs']);
 const ignoreExts = new Set(['.tgz', '.zip', '.tar', '.gz', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.mov', '.webm']);
 const blockedTerms = [

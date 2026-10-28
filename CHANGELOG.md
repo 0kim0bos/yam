@@ -10,6 +10,10 @@ All notable changes to yam-flow are documented here.
 - Require current Test check evidence before configured commit, push, CI and deployment security approval; CI verifies an administrator-reviewed test policy pin before executing project code.
 - Add an optional isolated PostgreSQL simulation that reproduces SQLSTATE 42702 and checks normal writes, authorization, rollback, migration freshness and function drift using synthetic data.
 
+### Fixed
+
+- Keep private `.yam` research receipts and temporary tools outside the public-product terminology scan while retaining checks for public source and documentation.
+
 ### Verification
 
 - 49 gate regression cases and full self-verification passed. Real PostgreSQL 17.10 simulations cover ten workflow scenarios and a 16-case role/brand/quantity matrix.

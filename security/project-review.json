@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
   "reviewer": "yam Deep self-review with adversarial and isolated real PostgreSQL simulations",
-  "reviewed_at": "2026-10-28T05:26:11.337Z",
+  "reviewed_at": "2026-10-28T05:28:54.036Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -76,7 +76,7 @@
     "package-lock.json": "sha256:4f113bc7dac74bf9f9d59190d7224f6328e27f9142d2914998a77ee52cf0eb51",
     "package.json": "sha256:7fc194182edbbb2088a05d6abad244f18639ad01d816c1df49d2f30688ded78c",
     "scripts/check-dist-freshness.mjs": "sha256:0bb2e70cef7d1f4dd9cde576c3e1abb426e1af8c19c2ad370b9cf598bd934b3f",
-    "scripts/check-forbidden-names.mjs": "sha256:2d64dd5fab2f7b928c3d0cc223a710ee28e4ae7e7fdef4da293481965d2013ef",
+    "scripts/check-forbidden-names.mjs": "sha256:49e9e83b268de2eaadb9c88550cce25c6e5d0064fffd26cd1434ec47245663a5",
     "scripts/check-package-boundary.mjs": "sha256:49285dd04fca8e1c637f9a4ae129e88312e404d1f117145c88c1db872e47910c",
     "scripts/check-package-secrets.mjs": "sha256:0df09581d8eed18af365df86f1df5de2464ac25e534606d0d71836c6332b31f8",
     "scripts/check-registry-version.mjs": "sha256:23865b9e10152fb5a37571204743792f37e345bbaaba0e56d93e9a3fffed8e4f",
@@ -173,6 +173,7 @@
     "Reviewed follow-up push-event CI amendment: add only the existing codex/release-2.8.3 branch to Security check's push filter so its actual push run can satisfy protected-main checks. Workflow jobs, action pins, read-only permissions, source/policy digest enforcement, evidence generation, required checks and publication boundaries are unchanged. Manual workflow_dispatch success is verification evidence but not proof that branch protection accepts it; actual push-event CI and remote acceptance must be observed. Version remains 2.8.4; no new branch, PR or automatic publication is authorized.",
     "Reviewed 2.8.5 Test check implementation and project adapter: bounded risk/scenario floors, measured subprocess exits and observations, source/index/base/CI/deployment bindings, real-environment identity checks, safe failure notes and exact-status handoff handling. Local adversarial regression cases and isolated synthetic PostgreSQL 17.10 evidence are self-review, not an independent production application audit.",
     "Reviewed 2.8.5 activation: the existing Security check job validates the approved test policy before project execution and requires Test check before security approval. Existing administrator-enforced branch protection and deployment inspection requirements stay in force; no branch, PR or npm publication is created by this release preparation.",
-    "Reviewed 2.8.5 metadata: synchronized package, package lock and manifest patch versions; dependency graph unchanged. Changelog records the measured simulation scope and remaining hosted/project-specific verification."
+    "Reviewed 2.8.5 metadata: synchronized package, package lock and manifest patch versions; dependency graph unchanged. Changelog records the measured simulation scope and remaining hosted/project-specific verification.",
+    "Reviewed release scanner scope correction: exclude private .yam receipts and temporary tools from public-product terminology checks, consistent with the package boundary. A failing private-research fixture was reproduced before the fix; private research passes after the fix while a public README violation still fails. No research receipt is deleted or rewritten."
   ]
 }
