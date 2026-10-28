@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runTestCheckCommand, testCheckStop, testCheckConfigured } from '../lib/test-check.js';
+import { inspectTestCheckSetup } from '../lib/test-check-setup.js';
 import { spawnSync } from 'node:child_process';
 import { studyNoteTurnScope } from '../lib/study-note-scope.js';
 import { selectHookNode, probeHookDiscovery, inspectHookObservation, recordHookObservation } from '../lib/hook-readiness.js';
@@ -229,7 +230,7 @@ Usage:
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam study-note check [dir] [--report file|--text text] [--json]
-  yam test-check <plan|run|check|status> [--base commit] [--json]
+  yam test-check <init|plan|run|check|status> [--base commit] [--json]
   yam security <init|check|hooks|status> [--stage commit|push|ci|deploy] [--json]
   yam next-step <report|verify> [--spec file|--receipt file] [--json]
   yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
@@ -2559,7 +2560,9 @@ async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd
 
 async function buildStudyNoteTurnContext(input: AnyRecord, cwd: string) {
   const scope = studyNoteTurnScope(input, cwd, true);
-  const testReminder = testCheckConfigured(cwd) ? ' Test check active: before completion run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Missing required tests/evidence block completion; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.' : '';
+  const needsTestSetup = !testCheckConfigured(cwd) || inspectTestCheckSetup(cwd).configuration_status === 'draft';
+  const testReminder = !needsTestSetup ? ' Test check active: before completion run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Missing required tests/evidence block completion; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.'
+    : ' Test check setup: for authorized implementation work, capture the starting commit and run yam test-check init --base <exact starting commit> --json before editing. Review discovered tests, connect actual project observations and required scenarios, then set the draft policy ready and run/revalidate the gate. Do not end solely because setup is missing when you can safely configure it within scope. Initializer success grants no test approval. Read-only questions require no setup; preserve existing files and external permissions.';
   if (!scope.available) return 'yam Study Note: turn scope is unavailable; do not treat this as a clean project. Inspect changed artifacts manually; no strict block will be applied without a baseline.';
   return `yam Study Note turn baseline saved (hash-only). Mode: ${scope.mode}. Only changes since this prompt count; known generated logs, mission/security receipts and screenshots are excluded unless explicitly included. Include a concise Study Note followed by Next step when product artifacts change. ${scope.mode === 'strict' ? 'Risk work uses the detailed report contract and one correction pass.' : 'Ordinary work is advisory: a short explanation, verification/limits and remaining work (or none) suffice.'}${testReminder}`;
 }
@@ -5479,11 +5482,13 @@ async function initProject(targetDir = process.cwd()) {
   const existingPack = await findProjectPack(resolved);
   if (existingPack) {
     console.log(`${path.basename(existingPack)} already exists: ${existingPack}`);
+    console.log('For implementation work, inspect Test check setup with: yam test-check status; initialize missing setup with: yam test-check init --json');
     return;
   }
   await fsp.copyFile(template, target);
   await maybeAppendDetectedCommands(target, resolved);
   console.log(`created ${target}`);
+  console.log('Before implementation, initialize the project test connection with: yam test-check init --json (draft setup, no automatic approval)');
 }
 
 async function inspectProjectPack(targetDir = process.cwd()) {
@@ -6464,8 +6469,8 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'help';
   if (command === 'test-check') {
-    if (!args[1] || ['help', '--help', '-h'].includes(args[1])) {
-      console.log('yam test-check run --base <exact commit> [--policy file --policy-digest sha256] [--json]\nyam test-check check [--stage complete|commit|push|ci|deploy --source <exact commit> --policy-digest sha256 --receipt file] [--json]\nyam test-check status\nyam test-check plan --base <exact commit> --json\nSee references/test-check.md for required scenarios, adapters and activation.'); return;
+    if (!args[1] || ['help', '--help', '-h'].includes(args[1]) || args.slice(2).some(arg => ['--help', '-h'].includes(arg))) {
+      console.log('yam test-check init [--base <exact commit>] [--dry-run] [--json]\nyam test-check run --base <exact commit> [--policy file --policy-digest sha256] [--json]\nyam test-check check [--stage complete|commit|push|ci|deploy --source <exact commit> --policy-digest sha256 --receipt file] [--json]\nyam test-check status\nyam test-check plan --base <exact commit> --json\nInit discovers existing tests and creates a draft policy/process bridge; connect real observations before approval. See references/test-check.md.'); return;
     }
     const result = runTestCheckCommand(args.slice(1));
     console.log(JSON.stringify(result, null, 2)); if (!result.ok) process.exitCode = 1; return;

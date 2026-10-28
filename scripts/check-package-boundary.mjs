@@ -32,6 +32,8 @@ const blocked = [
 const required = [
   'dist/lib/test-check.js',
   'dist/lib/test-check.d.ts',
+  'dist/lib/test-check-setup.js',
+  'dist/lib/test-check-setup.d.ts',
   'references/test-check.md',
   'templates/test-check-policy.json',
   'dist/bin/yam.js',

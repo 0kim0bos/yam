@@ -1,5 +1,6 @@
 {
   "schema": "yam.test-policy.v1",
+  "setup_status": "draft",
   "surfaces": [
     {
       "id": "feature",

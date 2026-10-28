@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { initializeTestCheck, inspectTestCheckSetup } from './test-check-setup.js';
 
 const digest = (x: string | Buffer) => `sha256:${createHash('sha256').update(x).digest('hex')}`;
 const stable = (x: any): string => Array.isArray(x) ? `[${x.map(stable).join(',')}]` : x && typeof x === 'object'
@@ -20,7 +21,7 @@ export const TEST_REQUIREMENTS = {
 type Risk = keyof typeof TEST_REQUIREMENTS;
 type Check = { id: string; target: string; scenario: string; explanation: string; evidence: 'static' | 'unit' | 'integration' | 'e2e'; command: string[]; environment?: string };
 type Surface = { id: string; paths: string[]; risks: Risk[]; targets: string[]; checks: Check[] };
-type Policy = { schema: 'yam.test-policy.v1'; surfaces: Surface[] };
+type Policy = { schema: 'yam.test-policy.v1'; setup_status?: 'draft' | 'ready'; surfaces: Surface[] };
 type Measurement = { check_id: string; command_digest: string; exit_code: number; output_digest: string; observation: any; errors: string[] };
 const POLICY = 'testing/policy.json';
 function policyPath(root: string, supplied?: string) { return supplied || (fs.existsSync(path.join(root, POLICY)) || git(root, ['ls-files', '--', POLICY]).trim() ? POLICY : '.yam/testing/policy.json'); }
@@ -82,7 +83,8 @@ function snapshot(root: string, ref?: string) {
 function readPolicy(root: string, file: string, pin?: string): { policy: Policy; digest: string } {
   const bytes = regular(path.join(root, rel(file))), value = JSON.parse(bytes.toString());
   if (pin && (!/^sha256:[a-f0-9]{64}$/.test(pin) || digest(bytes) !== pin)) fail('policy_pin_mismatch');
-  exact(value, ['schema', 'surfaces']);
+  exact(value, ['schema', 'setup_status', 'surfaces']);
+  if (value.setup_status !== undefined && !['draft', 'ready'].includes(value.setup_status)) fail('invalid_setup_status');
   if (value.schema !== 'yam.test-policy.v1' || !Array.isArray(value.surfaces) || !value.surfaces.length || value.surfaces.length > 128) fail('invalid_policy');
   if (value.surfaces.reduce((n,s) => n + (Array.isArray(s?.checks) ? s.checks.length : 0), 0) > 256) fail('policy_limit');
   const ids = new Set<string>();
@@ -117,7 +119,7 @@ function infer(file: string): Risk[] {
 export function planTestCheck(root: string, policy: Policy, base: string) {
   const now = snapshot(root), old = snapshot(root, base);
   const changed = [...new Set([...Object.keys(now.files), ...Object.keys(old.files)])].filter(f => now.files[f] !== old.files[f]).sort();
-  const errors: string[] = [], selected = new Map<string, Check>();
+  const errors: string[] = policy.setup_status === 'draft' ? ['project_setup_required'] : [], selected = new Map<string, Check>();
   const surfaces = policy.surfaces.filter(s => changed.some(f => s.paths.some(p => match(f, p))));
   for (const file of changed) {
     const owners = surfaces.filter(s => s.paths.some(p => match(file, p)));
@@ -225,6 +227,7 @@ export function runTestCheck(cwd: string, options: { policy?: string; pin?: stri
     if (r.stage === 'deploy') r.deployment = deployment(root, options.artifact, options.configuration);
     const p = readPolicy(root, policyPath(root, options.policy), options.pin); r.policy_digest = p.digest;
     if (typeof options.base !== 'string' || !OID.test(options.base)) fail('exact_base_required'); r.base = options.base;
+    if (p.policy.setup_status === 'draft') fail('project_setup_required');
     const plan = planTestCheck(root, p.policy, r.base); checks = plan.checks; r.source_digest = plan.source_digest; r.changed = plan.changed;
     r.errors.push(...plan.errors); if (!plan.changed.length) r.errors.push('empty_change_scope');
     for (const c of checks) r.expected_environments[c.id] = environment(root, c);
@@ -277,6 +280,7 @@ export function runTestCheck(cwd: string, options: { policy?: string; pin?: stri
 export function checkTestCheck(cwd: string, options: { policy?: string; pin?: string; stage?: string; source?: string; receipt?: string; artifact?: string; configuration?: string; base?: string } = {}) {
   try {
     const root = rootOf(cwd), { policy, digest: policyDigest } = readPolicy(root, policyPath(root, options.policy), options.pin);
+    if (policy.setup_status === 'draft') return { ok: false, result: 'BLOCKED', errors: ['project_setup_required'], next_action: 'connect_project_observations_and_review_scenarios' };
     const r = JSON.parse(regular(path.join(root, rel(options.receipt || '.yam/testing/latest.json'))).toString());
     const { digest: storedDigest, ...body } = r;
     const errors: string[] = [];
@@ -330,7 +334,11 @@ export function runTestCheckCommand(args: string[], cwd = process.cwd()) {
   const action = args[0]; const options: any = {};
   const names = { '--policy': 'policy', '--policy-digest': 'pin', '--base': 'base', '--stage': 'stage', '--source': 'source', '--receipt': 'receipt', '--artifact': 'artifact', '--configuration': 'configuration' };
   try {
-    for (let i=1; i<args.length; i++) { if (args[i] === '--json') continue; const key = names[args[i]]; if (!key || options[key] || !args[i+1] || args[i+1].startsWith('--')) fail('invalid_option'); options[key] = args[++i]; }
+    for (let i=1; i<args.length; i++) { if (args[i] === '--json') continue; if (action === 'init' && args[i] === '--dry-run') { if (options.dryRun) fail('invalid_option'); options.dryRun = true; continue; } const key = names[args[i]]; if (!key || options[key] || !args[i+1] || args[i+1].startsWith('--')) fail('invalid_option'); options[key] = args[++i]; }
+    if (action === 'init') {
+      if (Object.keys(options).some(key => !['base', 'dryRun'].includes(key))) fail('invalid_option');
+      return initializeTestCheck(cwd, options, { infer, requirements: TEST_REQUIREMENTS });
+    }
     if (action === 'plan') {
       const root = rootOf(cwd); if (!options.base || !OID.test(options.base)) fail('exact_base_required');
       const { policy, digest: policy_digest } = readPolicy(root, policyPath(root, options.policy), options.pin);
@@ -339,8 +347,13 @@ export function runTestCheckCommand(args: string[], cwd = process.cwd()) {
     }
     if (action === 'run') return runTestCheck(cwd, options);
     if (action === 'check') return checkTestCheck(cwd, options);
-    if (action === 'status') return { ok: true, configured: testCheckConfigured(cwd), ...checkTestCheck(cwd, options) };
-    return { ok: false, result: 'BLOCKED', errors: ['supported_commands_run_check_status'] };
+    if (action === 'status') {
+      const setup = inspectTestCheckSetup(cwd);
+      if (setup.configuration_status !== 'configured') return { ok: false, result: 'BLOCKED', configured: setup.configuration_status === 'draft', ...setup,
+        errors: [setup.configuration_status === 'unavailable' ? 'test_check_unavailable' : 'project_setup_required'] };
+      return { configured: true, ...setup, ...checkTestCheck(cwd, options) };
+    }
+    return { ok: false, result: 'BLOCKED', errors: ['supported_commands_init_plan_run_check_status'] };
   } catch {
     if (action === 'run') return runTestCheck(cwd, { stage: 'invalid' });
     return { ok: false, result: 'BLOCKED', errors: ['invalid_test_check_command'] };

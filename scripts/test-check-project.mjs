@@ -11,7 +11,10 @@ const run = (id, args) => {
 };
 const smoke = run('gate-regressions', ['scripts/test-check-smoke.mjs','--json']);
 let summary;try{summary=JSON.parse(smoke.stdout);}catch{}
-const meaningful = summary?.status==='passed' && summary.assertions >= 32;
+const setupSmoke = run('setup-regressions', ['scripts/test-check-setup-smoke.mjs','--json']);
+let setupSummary;try{setupSummary=JSON.parse(setupSmoke.stdout);}catch{}
+const meaningful = summary?.status==='passed' && summary.assertions >= 32 && setupSummary?.status==='passed' && setupSummary.assertions >= 20;
+const assertionCount = meaningful ? summary.assertions + setupSummary.assertions : 0;
 run('typecheck', ['node_modules/typescript/bin/tsc','-p','tsconfig.json','--noEmit']);
 run('closure-regression', ['scripts/phase-adoptions-smoke.mjs']);
 run('package-secrets', ['scripts/check-package-secrets.mjs']);
@@ -43,5 +46,5 @@ try {
 if(process.argv.includes('--diagnostic'))console.error(JSON.stringify({checks,artifact,meaningful}));
 const passed=meaningful && checks.every(c=>c.passed) && artifact;
 const scenarios=['inspection','success','invalid','boundary','artifact','integrity'];
-console.log(JSON.stringify({schema:'yam.test-observation.v1',tests:scenarios.map(s=>({id:'yam-'+s,target:'yam',scenario:s,evidence:['artifact','integrity'].includes(s)?'integration':s==='inspection'?'static':'unit',status:passed?'passed':'failed',tests:meaningful?summary.assertions:0,assertions:meaningful?summary.assertions:0,failed:passed?0:1,skipped:0,mocked:!['artifact','integrity'].includes(s)}))}));
+console.log(JSON.stringify({schema:'yam.test-observation.v1',tests:scenarios.map(s=>({id:'yam-'+s,target:'yam',scenario:s,evidence:['artifact','integrity'].includes(s)?'integration':s==='inspection'?'static':'unit',status:passed?'passed':'failed',tests:assertionCount,assertions:assertionCount,failed:passed?0:1,skipped:0,mocked:!['artifact','integrity'].includes(s)}))}));
 if(!passed)process.exitCode=1;

@@ -73,6 +73,8 @@
 
 ## Recent Decisions
 
+- Missing project test connections start with `test-check init`: discover existing test commands without executing them, preserve existing files, and create draft policy/observer scaffolding with a saved baseline. Agents complete scenario mapping and real observations during authorized implementation; initialization and suite totals never grant approval.
+
 - Test check uses project-owned scenario floors, actual subprocess reports and source/environment hashes before completion. Existing Study Note Stop hooks validate configured projects separately from report formatting; actual runtime claims still depend on reviewed project adapters. No production DB tests are performed by the generic gate.
 
 - Security checks use nine explained SEC areas, stage-bound evidence and append-only private notes. Gate policy and supplied evidence need independent trust; local hooks cannot replace protected CI/deployment enforcement.

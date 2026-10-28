@@ -26,6 +26,8 @@
 
 ## Test check completion gate
 
+For authorized implementation work in an unconfigured project, capture the starting revision and run `yam test-check init --base <exact starting commit> --json` before editing. Review discovered existing tests, connect actual project observations, refine draft targets/scenarios and set the policy ready only after review. Do not stop solely because initial configuration is missing when safe setup is within scope. Initialization grants no approval; preserve existing files and never fabricate passing counts or DB observations. Read-only work needs no setup.
+
 After implementation and before claiming changed work complete, follow `references/test-check.md`: identify the exact starting revision, map changed targets to required scenarios, run the project Test check adapter and require a current PASS plus its explained note. Missing real DB/runtime evidence, skipped required scenarios, stale source/environment or note-write failures block completion approval. Report `Test check: BLOCKED` for an incomplete handoff; it does not grant commit/push/deployment approval. Recheck source identity before those operations. Do not treat report formatting, mock results, or operator-declared receipts as actual runtime verification. Projects need their own policy and adapters; an unavailable configuration is not a security or completion approval.
 
 ## Security check gate

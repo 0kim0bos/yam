@@ -44,14 +44,57 @@ Do not label a function passing merely because a broad file-level test passed.
 
 ## Commands and activation
 
+For authorized implementation work, prepare a missing project connection at the
+start rather than repeatedly ending with an unconfigured-gate handoff. Pure Q&A
+or read-only review does not need setup. Existing policy/adapter files remain
+user-owned and are never overwritten by the initializer.
+
 ```bash
-mkdir -p testing
-yam template test-check > testing/policy.json
-# Edit policy and implement the referenced adapter; capture BASE before editing.
+BASE=$(git rev-parse HEAD) # capture before implementing the requested change
+yam test-check status --json
+yam test-check init --base "$BASE" --dry-run --json
+yam test-check init --base "$BASE" --json
+# Review the discovered commands, narrow draft paths/targets and connect real tests.
+# Set testing/policy.json setup_status to ready after that project review.
 yam test-check plan --base "$BASE" --json
 yam test-check run --base "$BASE" --json
 yam test-check check --json
 ```
+
+`init` reads bounded repository paths and package-script metadata without executing
+project commands. It creates four files: `testing/policy.json`,
+`testing/yam-adapter.mjs`, `testing/yam-observations.mjs`, and `testing/setup.json`.
+The setup file retains the exact baseline, discovered command names/frameworks,
+risk areas and ordered next actions. It omits raw script bodies. Commands are
+candidates to review, not permission to run production tasks or use credentials.
+The process bridge supports structured observations supplied by the project;
+it does not automatically parse or approve every framework's result format.
+
+Initializer success means draft files were created, with `approval_granted:false`;
+it grants no completion, commit or deployment approval. `setup_status:"draft"`
+blocks command execution through the gate. The generated observer also fails closed
+until connected to actual reports. Setting `ready` alone cannot pass. Existing
+policies without this optional field retain their existing contract.
+
+The agent implementing the requested feature should connect the existing tests,
+map named cases to required scenarios and verify the connection within scope.
+A suite total or an earlier passing browser run is not a substitute for scenario
+mapping, measured assertions, source identity or real DB environment observations.
+Broad draft paths are conservative candidates: refine them to real boundaries;
+SQL functions and other specific targets still require explicit mapping.
+Missing tests or unavailable environments remain BLOCKED; never add fake passing
+counts, echo expected DB state, or change application/user permissions for setup.
+
+`status` separately reports `configuration_status:not_configured|draft|configured`
+(or `unavailable` when inspection fails). An unconfigured or draft project has
+`result:BLOCKED` with `project_setup_required` and an actionable next step. A
+configured project still needs a current passing run; configuration is not approval.
+`init --dry-run` writes nothing; repeated init preserves existing public/private
+policies, and collisions, links, another owner's lock or write failure block safely.
+The initializer does not install hooks, change CI pins, create Git history or
+modify DB accounts. Hook/CI enforcement remains the separate activation below.
+
+`yam template test-check` remains a manual starter with the same draft requirement.
 
 `BASE` must be an exact existing commit ID. A base equal to the candidate with no
 changes cannot authorize completion. Generated/private `.yam`, dist, build, coverage,

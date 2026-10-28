@@ -2,6 +2,19 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.6 - 2026-10-28
+
+### Added
+
+- Add `yam test-check init` and a read-only preview to discover existing test commands and create project-owned draft policy, process bridge, observer and setup instructions with an exact baseline.
+- Distinguish missing, draft and configured project connections. Work-start guidance directs agents to complete safe setup during authorized implementation instead of repeatedly ending at missing configuration.
+
+### Safety and verification
+
+- Initialization never approves tests or executes discovered commands. Draft policies and unconnected observers block; suite totals cannot replace mapped scenario observations or real DB evidence.
+- Preserve existing shared/private policies and user files. Focused simulations cover collisions, links, owned-lock handling, partial-write rollback, real subprocess assertions and prompt guidance.
+- 26 onboarding cases, 49 gate regression cases, full self-verification, package boundary and packaged CLI checks passed locally. Project adapters still require review; production application behavior is outside these fixtures.
+
 ## v2.8.5 - 2026-10-28
 
 ### Added
