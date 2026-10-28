@@ -123,6 +123,16 @@ try {
     assert.match(prompt('missing'), /Test check setup:.*test-check init/); absent(f);
     f.init(); assert.match(prompt('draft'), /Test check setup:.*connect actual project observations/);
   });
+  test('a previous failed receipt cannot hide missing project configuration from the prompt', () => {
+    const f = fixture();
+    assert.equal(command(['run', '--base', f.base], f.root).result, 'BLOCKED');
+    assert(fs.existsSync(path.join(f.root, '.yam/testing/latest.json')));
+    hookStateFiles.push(path.join(os.tmpdir(), `yam-study-note-${process.getuid?.() ?? 'user'}`, createHash('sha256').update(f.root + '\0' + f.root).digest('hex') + '.json'));
+    const r = spawnSync(process.execPath, [bin, 'hook', 'run', 'study-note'], { input: JSON.stringify({ cwd: f.root, session_id: f.root, turn_id: 'failed-receipt', hook_event_name: 'UserPromptSubmit', prompt: 'implement the requested feature' }), encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /Test check setup:.*test-check init/);
+    absent(f);
+  });
   test('missing Git cannot trigger a filesystem-only initializer', () => {
     const f = fixture(), old = process.env.PATH; try { process.env.PATH = path.join(f.root, 'absent-bin'); assert.equal(f.init().ok, false); } finally { process.env.PATH = old; } absent(f);
   });

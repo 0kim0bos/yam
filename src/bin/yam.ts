@@ -2560,7 +2560,8 @@ async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd
 
 async function buildStudyNoteTurnContext(input: AnyRecord, cwd: string) {
   const scope = studyNoteTurnScope(input, cwd, true);
-  const needsTestSetup = !testCheckConfigured(cwd) || inspectTestCheckSetup(cwd).configuration_status === 'draft';
+  const testSetupStatus = inspectTestCheckSetup(cwd).configuration_status;
+  const needsTestSetup = !testCheckConfigured(cwd) || ['not_configured', 'draft'].includes(testSetupStatus);
   const testReminder = !needsTestSetup ? ' Test check active: before completion run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Missing required tests/evidence block completion; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.'
     : ' Test check setup: for authorized implementation work, capture the starting commit and run yam test-check init --base <exact starting commit> --json before editing. Review discovered tests, connect actual project observations and required scenarios, then set the draft policy ready and run/revalidate the gate. Do not end solely because setup is missing when you can safely configure it within scope. Initializer success grants no test approval. Read-only questions require no setup; preserve existing files and external permissions.';
   if (!scope.available) return 'yam Study Note: turn scope is unavailable; do not treat this as a clean project. Inspect changed artifacts manually; no strict block will be applied without a baseline.';

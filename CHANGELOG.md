@@ -13,7 +13,8 @@ All notable changes to yam-flow are documented here.
 
 - Initialization never approves tests or executes discovered commands. Draft policies and unconnected observers block; suite totals cannot replace mapped scenario observations or real DB evidence.
 - Preserve existing shared/private policies and user files. Focused simulations cover collisions, links, owned-lock handling, partial-write rollback, real subprocess assertions and prompt guidance.
-- 26 onboarding cases, 49 gate regression cases, full self-verification, package boundary and packaged CLI checks passed locally. Project adapters still require review; production application behavior is outside these fixtures.
+- An earlier failed receipt cannot hide a missing policy from work-start setup guidance.
+- 27 onboarding cases, 49 gate regression cases, full self-verification, package boundary and packaged CLI checks passed locally. Project adapters still require review; production application behavior is outside these fixtures.
 
 ## v2.8.5 - 2026-10-28
 

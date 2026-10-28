@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
   "reviewer": "yam Deep release self-review with onboarding/Git/process simulations",
-  "reviewed_at": "2026-10-28T10:37:57.500Z",
+  "reviewed_at": "2026-10-28T10:47:42.202Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -110,11 +110,11 @@
     "scripts/study-note-turn-smoke.mjs": "sha256:e6b62eee608ffe551d5ad8622cf67d154994763175e1beefda5bf99229170d5b",
     "scripts/test-check-postgres-smoke.mjs": "sha256:970a7a9032c24291aa41b15d81aab9705c699247633d78952dff047e198702aa",
     "scripts/test-check-project.mjs": "sha256:351de0269bb2f066ae0e254697f9ef345cc2ca92539b685875fec477f0b6e207",
-    "scripts/test-check-setup-smoke.mjs": "sha256:cccc563cc1b0dd1c4fdf9325c32145a405388d0f973e86b2fcb866833e5bad69",
+    "scripts/test-check-setup-smoke.mjs": "sha256:edf56da89b8a2189348b7663d4df000a253c5138060c3a9626cc7f6397aafab9",
     "scripts/test-check-smoke.mjs": "sha256:03a839ecb0752da7eca72fd4c91380b8bc2a142b12c7285111b95aa6b6298776",
     "scripts/trust-adoptions-smoke.mjs": "sha256:4b943b4bf23a8a39ddc35949d42376741a7dda99d0a6df859db95e9f4bd98612",
     "scripts/uninstall.sh": "sha256:c2764a7de990573c913b217198efe73425b4d9ff0db8beddd4c822e763c4213c",
-    "src/bin/yam.ts": "sha256:ef31c3a0cc7ed7bd0fd9c9574eb3ec9a1fd8a7acf229c923b08a54f0e254d6de",
+    "src/bin/yam.ts": "sha256:b1283804ab2e9ea647a486ad176befa627ba367cd561942d204827bd04bf84e7",
     "src/lib/benchmark-promotion.ts": "sha256:5be7d5eb5e8dfa3654f8176ceb8098565ee6fdf534e87c5cd8e9b028931a7d3d",
     "src/lib/bounded-input.ts": "sha256:65d207a8f5503c10a1cc8b4007a297fdfdd1a51243bbffe584b53eeb64c2931c",
     "src/lib/design-production.ts": "sha256:46314fbb041e4e10f151f84556fb3b5510a00a0d82b4ef173c574e8e835cd79a",
@@ -181,6 +181,7 @@
     "Reviewed release scanner scope correction: exclude private .yam receipts and temporary tools from public-product terminology checks, consistent with the package boundary. A failing private-research fixture was reproduced before the fix; private research passes after the fix while a public README violation still fails. No research receipt is deleted or rewritten.",
     "Reviewed 2.8.6 project initialization: bounded Git/package metadata discovery without running candidate scripts; exact existing commit baseline; draft policy and independent project observer remain unapproved. Public/private existing policies, tracked deletions, collisions, links, other-owner locks and partial-write failures preserve user data. Filesystem identity checks do not establish an adversarial same-user sandbox.",
     "Reviewed draft/ready policy compatibility and work-start guidance: legacy policies retain their contract; draft setup never executes test commands or grants PASS; marking ready alone cannot pass without mapped actual observations. Real DB identity requirements, stage bindings, mandatory scenarios, Security check and hosted policy pins remain in force. Initializer metadata is not universal framework parsing or production runtime proof.",
-    "Reviewed 2.8.6 release metadata and executable inventory: package, lock and manifest versions are synchronized, dependency graph unchanged, and the setup module/test are included. Local 26-case onboarding and 49-case gate suites, process assertions and packaged CLI evidence are self-review. Existing real PostgreSQL evidence is historical synthetic coverage, not a new production application audit."
+    "Reviewed 2.8.6 release metadata and executable inventory: package, lock and manifest versions are synchronized, dependency graph unchanged, and the setup module/test are included. Local 26-case onboarding and 49-case gate suites, process assertions and packaged CLI evidence are self-review. Existing real PostgreSQL evidence is historical synthetic coverage, not a new production application audit.",
+    "Reviewed final 2.8.6 activation edge case: a prior failed receipt without a policy must keep work-start guidance in setup mode. A regression reproduced the incorrect active reminder before the fix; configuration status now determines missing/draft setup independently of receipt presence. The follow-up leaves runtime approval, stored failures and trusted CI checks unchanged; final onboarding suite contains 27 cases."
   ]
 }
