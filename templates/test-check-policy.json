@@ -1,0 +1,53 @@
+{
+  "schema": "yam.test-policy.v1",
+  "surfaces": [
+    {
+      "id": "feature",
+      "paths": [
+        "src/**",
+        "tests/**"
+      ],
+      "risks": [
+        "logic"
+      ],
+      "targets": [
+        "feature"
+      ],
+      "checks": [
+        {
+          "id": "success",
+          "target": "feature",
+          "scenario": "success",
+          "explanation": "정상 입력에서 기대하는 결과 확인",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "tests/yam-adapter.mjs"
+          ]
+        },
+        {
+          "id": "invalid",
+          "target": "feature",
+          "scenario": "invalid",
+          "explanation": "Invalid input is rejected without incorrect side effects",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "tests/yam-adapter.mjs"
+          ]
+        },
+        {
+          "id": "boundary",
+          "target": "feature",
+          "scenario": "boundary",
+          "explanation": "Boundary and regression cases",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "tests/yam-adapter.mjs"
+          ]
+        }
+      ]
+    }
+  ]
+}

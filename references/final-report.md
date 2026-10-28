@@ -142,3 +142,7 @@ Diagnostic next action:
 ```
 
 Use `none` when there is no meaningful next action.
+
+## Functional completion evidence
+
+For configured changed-work projects, require a current Test check PASS before claiming completion. Report test scope, real versus fixture evidence and remaining uncertainty. `Test check: BLOCKED` is an incomplete handoff marker, not permission to commit or deploy. Report formatting checks do not execute or replace tests; see `test-check.md`.

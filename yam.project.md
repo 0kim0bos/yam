@@ -73,6 +73,8 @@
 
 ## Recent Decisions
 
+- Test check uses project-owned scenario floors, actual subprocess reports and source/environment hashes before completion. Existing Study Note Stop hooks validate configured projects separately from report formatting; actual runtime claims still depend on reviewed project adapters. No production DB tests are performed by the generic gate.
+
 - Security checks use nine explained SEC areas, stage-bound evidence and append-only private notes. Gate policy and supplied evidence need independent trust; local hooks cannot replace protected CI/deployment enforcement.
 
 - Add an immutable Scout source/claim receipt only for repeated research; do not create a default research database.

@@ -2,6 +2,19 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.5 - 2026-10-28
+
+### Added
+
+- Add the Test check completion gate with project-owned scenario policies, measured subprocess observations, source/environment bindings and private append-only notes.
+- Require current Test check evidence before configured commit, push, CI and deployment security approval; CI verifies an administrator-reviewed test policy pin before executing project code.
+- Add an optional isolated PostgreSQL simulation that reproduces SQLSTATE 42702 and checks normal writes, authorization, rollback, migration freshness and function drift using synthetic data.
+
+### Verification
+
+- 49 gate regression cases and full self-verification passed. Real PostgreSQL 17.10 simulations cover ten workflow scenarios and a 16-case role/brand/quantity matrix.
+- Exact-target security integration and package checks passed locally. Production application behavior and hosted rollout require their own project evidence.
+
 ## v2.8.4 - 2026-10-26
 
 ### Improved

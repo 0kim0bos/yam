@@ -1,0 +1,108 @@
+{
+  "schema": "yam.test-policy.v1",
+  "surfaces": [
+    {
+      "id": "yam",
+      "paths": [
+        "AGENTS.md",
+        "COMMANDS.md",
+        "yam.project.md",
+        "package.json",
+        "src/**",
+        "scripts/**",
+        "references/**",
+        "skills/**",
+        "templates/**",
+        "testing/**",
+        ".github/workflows/**",
+        "security/**",
+        "package-lock.json",
+        "yam.manifest.json",
+        "tsconfig.json",
+        "README.md",
+        "CHANGELOG.md",
+        "DECISIONS.md",
+        "ROADMAP.md",
+        "LICENSE",
+        ".gitignore",
+        ".github/CODEOWNERS"
+      ],
+      "risks": [
+        "logic",
+        "docs",
+        "release"
+      ],
+      "targets": [
+        "yam"
+      ],
+      "checks": [
+        {
+          "id": "yam-inspection",
+          "target": "yam",
+          "scenario": "inspection",
+          "explanation": "변경 내용과 형식 검사",
+          "evidence": "static",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        },
+        {
+          "id": "yam-success",
+          "target": "yam",
+          "scenario": "success",
+          "explanation": "완료 게이트 정상 실행과 Git 대상 연결",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        },
+        {
+          "id": "yam-invalid",
+          "target": "yam",
+          "scenario": "invalid",
+          "explanation": "필수 시나리오 누락·가짜 근거·환경 불일치 차단",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        },
+        {
+          "id": "yam-boundary",
+          "target": "yam",
+          "scenario": "boundary",
+          "explanation": "빈 테스트·변경 후 무효화·링크·파일 경계 검사",
+          "evidence": "unit",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        },
+        {
+          "id": "yam-artifact",
+          "target": "yam",
+          "scenario": "artifact",
+          "explanation": "실제 npm 패키지 생성 및 필수 파일 검사",
+          "evidence": "integration",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        },
+        {
+          "id": "yam-integrity",
+          "target": "yam",
+          "scenario": "integrity",
+          "explanation": "패키지 버전과 실제 tarball 바이트 무결성 검사",
+          "evidence": "integration",
+          "command": [
+            "$NODE",
+            "scripts/test-check-project.mjs"
+          ]
+        }
+      ]
+    }
+  ]
+}

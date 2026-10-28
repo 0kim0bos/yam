@@ -80,3 +80,14 @@ installed in this task, and restore the saved branch-protection/variable state
 from `.yam/mission/security-runtime/` if activation must be reversed. Reverting
 the workflow changes removes the release dependency, so treat that as a security
 policy change requiring review.
+
+## Test check prerequisite
+
+Configured projects now require current Test check evidence before Security check
+can approve commit/push/CI/deploy. Run `yam test-check run --base <exact starting
+commit> --json` before attempting those operations. CI uses the administrator-owned
+`YAM_TEST_POLICY_SHA256` variable and forwards `--test-policy-digest`; provision it
+from the reviewed `testing/policy.json` only after reviewing both policy and adapter.
+The existing source-review manifest/pin must also cover the new executable and
+policy inventory. Current local edits do not update hosted pins or installed hook
+runtime hashes. Do not regenerate those pins merely to bypass an incomplete check.

@@ -39,6 +39,7 @@ jobs:
         env:
           REVIEW_PIN: ${{ vars.YAM_SECURITY_REVIEW_SHA256 }}
           POLICY_PIN: ${{ vars.YAM_SECURITY_POLICY_SHA256 }}
+          TEST_PIN: ${{ vars.YAM_TEST_POLICY_SHA256 }}
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync, lstatSync } from 'node:fs';
@@ -46,6 +47,7 @@ jobs:
           const hash = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
           const bytes = readFileSync('security/project-review.json');
           if (!process.env.REVIEW_PIN || hash(bytes) !== process.env.REVIEW_PIN) throw Error('review pin mismatch');
+          if (!process.env.TEST_PIN || hash(readFileSync('testing/policy.json')) !== process.env.TEST_PIN) throw Error('test policy pin mismatch');
           if (!process.env.POLICY_PIN || hash(readFileSync('security/policy.json')) !== process.env.POLICY_PIN) throw Error('policy pin mismatch');
           const review = JSON.parse(bytes);
           if (review.schema !== 'yam.project-security-review.v1' || !Object.keys(review.files || {}).length) throw Error('invalid review');
@@ -61,20 +63,35 @@ jobs:
         if: inputs.stage == 'deploy'
         with:
           name: ${{ inputs.artifact_name }}
-          path: package-artifact
+          path: .yam/security/release
+      - name: Run Test check before security approval
+        env:
+          TEST_PIN: ${{ vars.YAM_TEST_POLICY_SHA256 }}
+          CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHECK_STAGE: ${{ inputs.stage || 'ci' }}
+        run: |
+          SOURCE=$(git rev-parse HEAD)
+          BASE=${CHECK_BASE:-$(git rev-parse HEAD^)}
+          if [ "$CHECK_STAGE" = deploy ]; then
+            ARTIFACT=$(node --input-type=module -e 'import{readdirSync}from"node:fs";const f=readdirSync(".yam/security/release").filter(x=>x.endsWith(".tgz"));if(f.length!==1)throw Error("one artifact required");process.stdout.write(".yam/security/release/"+f[0])')
+            node dist/bin/yam.js test-check run --base "$BASE" --stage deploy --source "$SOURCE" --artifact "$ARTIFACT" --configuration .github/workflows/release.yml --policy-digest "$TEST_PIN" --json
+          else
+            node dist/bin/yam.js test-check run --base "$BASE" --stage ci --source "$SOURCE" --policy-digest "$TEST_PIN" --json
+          fi
       - name: Run exact target security checks
         env:
           POLICY_PIN: ${{ vars.YAM_SECURITY_POLICY_SHA256 }}
+          TEST_PIN: ${{ vars.YAM_TEST_POLICY_SHA256 }}
           CHECK_STAGE: ${{ inputs.stage || 'ci' }}
           CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           SOURCE=$(git rev-parse HEAD)
           if [ "$CHECK_STAGE" = deploy ]; then
-            ARTIFACT=$(node --input-type=module -e 'import{readdirSync}from"node:fs";const f=readdirSync("package-artifact").filter(x=>x.endsWith(".tgz"));if(f.length!==1)throw Error("one artifact required");process.stdout.write("package-artifact/"+f[0])')
-            node scripts/project-security-check.mjs --stage deploy --source "$SOURCE" --artifact "$ARTIFACT" --configuration .github/workflows/release.yml --environment npm-production --environment-evidence .yam/security/deployment-inspection.json --policy-digest "$POLICY_PIN" --json
+            ARTIFACT=$(node --input-type=module -e 'import{readdirSync}from"node:fs";const f=readdirSync(".yam/security/release").filter(x=>x.endsWith(".tgz"));if(f.length!==1)throw Error("one artifact required");process.stdout.write(".yam/security/release/"+f[0])')
+            node scripts/project-security-check.mjs --stage deploy --source "$SOURCE" --artifact "$ARTIFACT" --configuration .github/workflows/release.yml --environment npm-production --environment-evidence .yam/security/deployment-inspection.json --policy-digest "$POLICY_PIN" --test-policy-digest "$TEST_PIN" --json
           else
             BASE=${CHECK_BASE:-$SOURCE}
-            node scripts/project-security-check.mjs --stage ci --source "$SOURCE" --base "$BASE" --policy-digest "$POLICY_PIN" --json
+            node scripts/project-security-check.mjs --stage ci --source "$SOURCE" --base "$BASE" --policy-digest "$POLICY_PIN" --test-policy-digest "$TEST_PIN" --json
           fi
       - name: Record bootstrap failures without executing candidate code
         if: failure()
@@ -104,5 +121,7 @@ jobs:
             .yam/security/notes.md
             .yam/security/runs/
             .yam/security/project-evidence-*.json
+            .yam/testing/notes.md
+            .yam/testing/runs/
           if-no-files-found: warn
           retention-days: 14

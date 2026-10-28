@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "Codex single-agent engineering re-review; user-authorized 2.8.4 push-event CI amendment",
-  "reviewed_at": "2026-10-26T01:38:22.230Z",
+  "reviewer": "yam Deep self-review with adversarial and isolated real PostgreSQL simulations",
+  "reviewed_at": "2026-10-28T05:26:11.337Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -39,6 +39,9 @@
     "scripts/skill-content-smoke.mjs",
     "scripts/status.sh",
     "scripts/study-note-turn-smoke.mjs",
+    "scripts/test-check-postgres-smoke.mjs",
+    "scripts/test-check-project.mjs",
+    "scripts/test-check-smoke.mjs",
     "scripts/trust-adoptions-smoke.mjs",
     "scripts/uninstall.sh",
     "src/bin/yam.ts",
@@ -59,20 +62,22 @@
     "src/lib/skill-installation.ts",
     "src/lib/stable-order.ts",
     "src/lib/study-note-scope.ts",
+    "src/lib/test-check.ts",
     "src/lib/trust-kernel.ts",
     "src/lib/ueye-artifacts.ts",
     "src/lib/verification-closure.ts",
+    "testing/policy.json",
     "tsconfig.json"
   ],
   "files": {
     ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
-    ".github/workflows/security-check.yml": "sha256:2598fac9a866279ed5daef97c4196aa39eac5aeb7eda38f1985362eb44d30385",
+    ".github/workflows/security-check.yml": "sha256:faf17cbe248a7b2333520b414809b60ced15a683c919436e56086ae39fdf6343",
     ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
-    "package-lock.json": "sha256:407b59337bd048f92fc182d06b27f73963e81dd1e34f7d7972a12cf226dc92a5",
-    "package.json": "sha256:45ea45cedd8a8c0f6d5cf19a481ef38ea41d96872ba6a04cba2e68f94f08eaad",
-    "scripts/check-dist-freshness.mjs": "sha256:0615ed2dbe97fd2a2cc21dc0937c8fe65a1031226923e3456ef61cf60caee0ce",
+    "package-lock.json": "sha256:4f113bc7dac74bf9f9d59190d7224f6328e27f9142d2914998a77ee52cf0eb51",
+    "package.json": "sha256:7fc194182edbbb2088a05d6abad244f18639ad01d816c1df49d2f30688ded78c",
+    "scripts/check-dist-freshness.mjs": "sha256:0bb2e70cef7d1f4dd9cde576c3e1abb426e1af8c19c2ad370b9cf598bd934b3f",
     "scripts/check-forbidden-names.mjs": "sha256:2d64dd5fab2f7b928c3d0cc223a710ee28e4ae7e7fdef4da293481965d2013ef",
-    "scripts/check-package-boundary.mjs": "sha256:7fa4f8be95e4234c90e573c41be0b03b07ff846f5f6024cef085a5cc2fb03d3e",
+    "scripts/check-package-boundary.mjs": "sha256:49285dd04fca8e1c637f9a4ae129e88312e404d1f117145c88c1db872e47910c",
     "scripts/check-package-secrets.mjs": "sha256:0df09581d8eed18af365df86f1df5de2464ac25e534606d0d71836c6332b31f8",
     "scripts/check-registry-version.mjs": "sha256:23865b9e10152fb5a37571204743792f37e345bbaaba0e56d93e9a3fffed8e4f",
     "scripts/check-release-ref.mjs": "sha256:e21e208562d9a7f5d65a91107886370c31958fa5ca2225255a883720e005d039",
@@ -90,8 +95,8 @@
     "scripts/package-secrets-smoke.mjs": "sha256:f648fb1d82f65786fcd6738dfdf68b5872aed501ec0c99633c82d50078e4e6b7",
     "scripts/packed-lifecycle-smoke.mjs": "sha256:83874e16a1ff277ae1722678fde6f424b5c5cdf4bda81b86c635d4749e43576a",
     "scripts/phase-adoptions-smoke.mjs": "sha256:986da105ef360f7513de0ea5fa175367a32d353c7ac03f435458315817682dec",
-    "scripts/project-security-check-smoke.mjs": "sha256:f4505be03399edfdb13e3a2960898ecad8a338646f745760ed2ad936c05bc1be",
-    "scripts/project-security-check.mjs": "sha256:a1cbebb31e128fa5659aca3f68c59bbbc52125c6f846c6465994892a2c1b193e",
+    "scripts/project-security-check-smoke.mjs": "sha256:9fdefdc53d83b2fb1e99462f7ba98a53082a86109597d495fb56459425250911",
+    "scripts/project-security-check.mjs": "sha256:2295c3c740034aeb93ff1c7f9d986bb07dbe4124ff570e2f1f64322f86cc94a7",
     "scripts/release-auth-readiness-smoke.mjs": "sha256:deae08d797b6a0e97afa5533459f169d20daa6d6c3e99e92b459b8c3fa776261",
     "scripts/release-registry-status-smoke.mjs": "sha256:e306143aead0f3aa25f32a6bb3e7cee08467c14c3fecd012efbcb08c056afef4",
     "scripts/scout-receipt-smoke.mjs": "sha256:0a499fb36295201d373ac3b72f67ee3d3f7b874e6b27f75b3fd78ae2ba0321ec",
@@ -101,9 +106,12 @@
     "scripts/skill-content-smoke.mjs": "sha256:c58af76f0d33a9a5189ed2788b42976805e170b614a4af65d3f8753621c18f79",
     "scripts/status.sh": "sha256:b9289d3444db3361e5275c13bbd5f4d1fa551491c84b62a0c470b7991d36f86f",
     "scripts/study-note-turn-smoke.mjs": "sha256:e6b62eee608ffe551d5ad8622cf67d154994763175e1beefda5bf99229170d5b",
+    "scripts/test-check-postgres-smoke.mjs": "sha256:970a7a9032c24291aa41b15d81aab9705c699247633d78952dff047e198702aa",
+    "scripts/test-check-project.mjs": "sha256:be7779739135236aaf22afb2dd3b5732d78434fbcfc6bba4954f370bdfc401bd",
+    "scripts/test-check-smoke.mjs": "sha256:03a839ecb0752da7eca72fd4c91380b8bc2a142b12c7285111b95aa6b6298776",
     "scripts/trust-adoptions-smoke.mjs": "sha256:4b943b4bf23a8a39ddc35949d42376741a7dda99d0a6df859db95e9f4bd98612",
     "scripts/uninstall.sh": "sha256:c2764a7de990573c913b217198efe73425b4d9ff0db8beddd4c822e763c4213c",
-    "src/bin/yam.ts": "sha256:3be0ed9dc19eb05aec93fb2b481f6a8e3b4cb4b5b5da13ad2881a9cf58bb7f9f",
+    "src/bin/yam.ts": "sha256:3d44e9d511eb11577b1c87407338cb78e16090b448f74441b5fa83f91028b599",
     "src/lib/benchmark-promotion.ts": "sha256:5be7d5eb5e8dfa3654f8176ceb8098565ee6fdf534e87c5cd8e9b028931a7d3d",
     "src/lib/bounded-input.ts": "sha256:65d207a8f5503c10a1cc8b4007a297fdfdd1a51243bbffe584b53eeb64c2931c",
     "src/lib/design-production.ts": "sha256:46314fbb041e4e10f151f84556fb3b5510a00a0d82b4ef173c574e8e835cd79a",
@@ -117,13 +125,15 @@
     "src/lib/release-registry-status.ts": "sha256:25416a014ed209dd071f8ecc6463841827c4edf7d7fe368eda612ce3df274d78",
     "src/lib/scout-receipt.ts": "sha256:e31c6359d074107712243e5bac2587c3aa85337799cb6d4f908af4ae69f68bd2",
     "src/lib/security-check.ts": "sha256:2b6136e0bb8e0c7817336f849784bee20053993b973af30ba4a163df6b26708d",
-    "src/lib/security-integration.ts": "sha256:cec9477647311f73a39b1986f31be70d7fcfc0a5e6ba9587199a17453d4e506c",
+    "src/lib/security-integration.ts": "sha256:8a57b74335783b6ab7fc27123f874fe1d26f8e0073567e29473e46862921e7e1",
     "src/lib/skill-installation.ts": "sha256:eb9a9cf45c7271d8333f2aab9b7cb90c219ee826d8b89ac6e782926ccbd2d00e",
     "src/lib/stable-order.ts": "sha256:67ae3f0d2f6fd4b4d29a0dd0f1b30fcc0189828d1f9baae192a50e0f52fdbddd",
     "src/lib/study-note-scope.ts": "sha256:fd3aead06cb2604384909adbadc0d20105f04ec244393f1b609910bc2aeac1f7",
+    "src/lib/test-check.ts": "sha256:4aa8a7e91f873684c6e7814d10306859522ec73aa9246fe7f4f8b5449cd32c13",
     "src/lib/trust-kernel.ts": "sha256:e77aec96c0d6e0ca3fa649f34c1b86c4bd070433886530f6295c911a15675ae2",
     "src/lib/ueye-artifacts.ts": "sha256:d802e5bedc32899f162f22e2fca4d7975e8ee8cd4678f1350248365d24009b9d",
     "src/lib/verification-closure.ts": "sha256:a9263005c5277fd7ec40d0ed94e4258278e8c2bd6cbc885adf29940b051a14d7",
+    "testing/policy.json": "sha256:21f22b2af1c8dff79a6729dd0df1614027793b34339a13df93bd154fc9f8ec9f",
     "tsconfig.json": "sha256:530aa615793c49ec75df56d9db96ddd9498526638ecaf0a62810eb2dc0a672d8"
   },
   "areas": {
@@ -140,7 +150,8 @@
   "limitations": [
     "Digest inventory detects divergence from identified engineering review; it is not a comprehensive code audit.",
     "Sensitive source or executable changes require renewed review rather than automatic approval.",
-    "Remote deployment state and installed dependency provenance are not proved by source hashes alone."
+    "Remote deployment state and installed dependency provenance are not proved by source hashes alone.",
+    "Current Test check implementation is self-reviewed in Deep mode, not independently audited; hosted pin refresh and execution remain outside this local task."
   ],
   "review_notes": [
     "Reviewed hook schema migration: opt-in, backup and file identity checks, handler preservation, no Codex trust bypass; existing same-user filesystem race limitation retained.",
@@ -159,6 +170,9 @@
     "Reviewed HTTP/browser smoke content checks: expected title content is required in addition to command success, and zero-exit missing content is recorded as failed. Focused fixtures cover 0.5 version variants, help refusal before browser install, browser/content failures and rollback; earlier isolated macOS/Python 3.14 runtime evidence does not establish cross-platform coverage.",
     "Reviewed Scout and updater guidance: inspected claim locators, source/test/inference separation, version-conflict and falsification guidance add no mandatory receipt schema or automatic reviewer. External content grants no egress or credential authority; sensitive session/network data stays out of research receipts. These are instruction boundaries, not a new network sandbox.",
     "Reviewed 2.8.4 metadata: version-only manifest/lock changes, no dependency graph or CI workflow/policy change. Full dependency hash enforcement remains deferred and documented; recorded PyPI hashes are not a hash-locked installation. Local CA-path repair is environment-only and is not part of the shipped product.",
-    "Reviewed follow-up push-event CI amendment: add only the existing codex/release-2.8.3 branch to Security check's push filter so its actual push run can satisfy protected-main checks. Workflow jobs, action pins, read-only permissions, source/policy digest enforcement, evidence generation, required checks and publication boundaries are unchanged. Manual workflow_dispatch success is verification evidence but not proof that branch protection accepts it; actual push-event CI and remote acceptance must be observed. Version remains 2.8.4; no new branch, PR or automatic publication is authorized."
+    "Reviewed follow-up push-event CI amendment: add only the existing codex/release-2.8.3 branch to Security check's push filter so its actual push run can satisfy protected-main checks. Workflow jobs, action pins, read-only permissions, source/policy digest enforcement, evidence generation, required checks and publication boundaries are unchanged. Manual workflow_dispatch success is verification evidence but not proof that branch protection accepts it; actual push-event CI and remote acceptance must be observed. Version remains 2.8.4; no new branch, PR or automatic publication is authorized.",
+    "Reviewed 2.8.5 Test check implementation and project adapter: bounded risk/scenario floors, measured subprocess exits and observations, source/index/base/CI/deployment bindings, real-environment identity checks, safe failure notes and exact-status handoff handling. Local adversarial regression cases and isolated synthetic PostgreSQL 17.10 evidence are self-review, not an independent production application audit.",
+    "Reviewed 2.8.5 activation: the existing Security check job validates the approved test policy before project execution and requires Test check before security approval. Existing administrator-enforced branch protection and deployment inspection requirements stay in force; no branch, PR or npm publication is created by this release preparation.",
+    "Reviewed 2.8.5 metadata: synchronized package, package lock and manifest patch versions; dependency graph unchanged. Changelog records the measured simulation scope and remaining hosted/project-specific verification."
   ]
 }

@@ -183,6 +183,10 @@ Always consider:
 - Interaction affordance.
 - Consistency with the project's visual language.
 
+## Test check before completion
+
+Before claiming changed work complete, use `references/test-check.md`. With a configured project policy run `yam test-check run --base <exact starting commit> --json` and `yam test-check check --json`. Require mapped scenarios, actual project-runner evidence, matching source/environment and a persisted Test check note. Required missing/failed/skipped checks block approval; give an honest `Test check: BLOCKED` handoff when unable to verify. Recheck exact staged/outgoing/deployment targets before their operations. Do not substitute mock DB results, report validation or old operator-declared receipts. If project adapters/policy are missing, report the activation gap instead of claiming gated completion. Read-only advisory work needs no execution gate; tiny changes use fitting inspection checks.
+
 ## Commit, push and deployment security gate
 
 Before performing a requested commit, push or deployment, follow `references/security-check.md`: validate stage-bound evidence with `yam security check`, require a successful persisted Security check note, and stop the operation when the gate blocks. If the project is not configured, report that blocker rather than claim security approval. Do not overwrite existing hooks or treat supplied evidence as an automatic vulnerability scan.

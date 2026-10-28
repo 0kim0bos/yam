@@ -30,6 +30,10 @@ const blocked = [
   /^.*\.dump$/,
 ];
 const required = [
+  'dist/lib/test-check.js',
+  'dist/lib/test-check.d.ts',
+  'references/test-check.md',
+  'templates/test-check-policy.json',
   'dist/bin/yam.js',
   'dist/lib/security-check.js',
   'dist/lib/security-integration.js',

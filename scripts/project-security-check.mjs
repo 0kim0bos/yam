@@ -15,7 +15,7 @@ const hash = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 async function main() {
 const options = new Map();
-const allowed = ['--stage', '--policy-digest', '--remote', '--destination', '--source', '--base', '--artifact', '--artifact-digest', '--configuration', '--configuration-digest', '--environment', '--environment-evidence'];
+const allowed = ['--stage', '--policy-digest', '--remote', '--destination', '--source', '--base', '--artifact', '--artifact-digest', '--configuration', '--configuration-digest', '--environment', '--environment-evidence', '--test-policy-digest'];
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--json') continue;
   const key = process.argv[i];
@@ -96,7 +96,7 @@ try {
     const archive = execFileSync('git', ['-C', root, 'archive', '--format=tar', tree], { maxBuffer: 64 * 1024 * 1024 });
     execFileSync('tar', ['-xf', '-', '-C', snapshot], { input: archive, stdio: ['pipe', 'pipe', 'pipe'] });
     // A clean snapshot prevents unstaged code from standing in for checked revisions.
-    const inventory = git('ls-tree', '-r', '--name-only', tree).split('\n').filter(name => /^(src\/|scripts\/|\.github\/workflows\/)/.test(name) || ['package.json', 'package-lock.json', 'tsconfig.json'].includes(name)).sort();
+    const inventory = git('ls-tree', '-r', '--name-only', tree).split('\n').filter(name => /^(src\/|scripts\/|testing\/|\.github\/workflows\/)/.test(name) || ['package.json', 'package-lock.json', 'tsconfig.json'].includes(name)).sort();
     let reviewPassed = review.schema === 'yam.project-security-review.v1' && JSON.stringify(inventory) === JSON.stringify(review.source_inventory);
     for (const [file, expected] of Object.entries(review.files || {})) {
       try { if (hash(await readRegular(path.join(snapshot, file))) !== expected) reviewPassed = false; }

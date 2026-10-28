@@ -353,3 +353,7 @@ yam hook disable study-note --global
 - `yam template security` / `yam template security-ci`: explained note and CI setup templates.
 
 See `references/security-check.md` for stage arguments, trusted policy requirements and limitations. This validates supplied evidence; it does not automatically scan application vulnerabilities.
+
+## Test check
+
+Before changed-work completion: `yam test-check plan --base <exact starting commit> --json`, then `yam test-check run --base <exact starting commit> --json` and `yam test-check check --json`. Configure `testing/policy.json` or `.yam/testing/policy.json` and a reviewed JSON-report adapter first. `yam template test-check` prints a blocked-until-configured starter. See `references/test-check.md` for scenario floors, real DB manifests, Stop integration and stage-specific identity checks. `check --stage commit` verifies index equality; push/CI/deploy require `--source <exact commit>` and CI/deploy also require a trusted `--policy-digest`. No global hook, branch protection or deployment is silently installed.
