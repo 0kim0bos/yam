@@ -18,6 +18,7 @@ const assertionCount = meaningful ? summary.assertions + setupSummary.assertions
 run('typecheck', ['node_modules/typescript/bin/tsc','-p','tsconfig.json','--noEmit']);
 run('closure-regression', ['scripts/phase-adoptions-smoke.mjs']);
 run('turn-scope-regressions', ['scripts/study-note-turn-smoke.mjs']);
+run('skill-alias-regressions', ['scripts/test-check-skill-alias-smoke.mjs']);
 run('package-secrets', ['scripts/check-package-secrets.mjs']);
 const whitespace=spawnSync('git',['diff','--check'],{encoding:'utf8'});
 checks.push({id:'inspection',passed:whitespace.status===0});

@@ -52,7 +52,15 @@ function gitBytes(root: string, args: string[]) {
   if (r.status !== 0 || r.error) fail('git_unavailable'); return r.stdout;
 }
 function rootOf(cwd: string) { return fs.realpathSync(git(cwd, ['rev-parse', '--show-toplevel']).trim()); }
-const excluded = (f: string) => /^(?:\.git|\.yam|\.codex|\.agents|node_modules|dist|coverage|build|out|\.cache|\.next)(?:\/|$)/.test(f) || /\.(?:tgz|log)$/.test(f);
+function skillAliasTarget(file: string) {
+  const alias = /^\.(?:agent|claude|codex|cursor|gemini|opencode|windsurf)\/skills\/([A-Za-z0-9][A-Za-z0-9_.-]{0,159})$/.exec(file);
+  return alias ? `.agents/skills/${alias[1]}` : null;
+}
+const excluded = (f: string) => !skillAliasTarget(f) && (/^(?:\.git|\.yam|\.codex|\.agents|node_modules|dist|coverage|build|out|\.cache|\.next)(?:\/|$)/.test(f) || /\.(?:tgz|log)$/.test(f));
+function aliasIdentity(file: string, bytes: Buffer) {
+  if (bytes.toString() !== `../../${skillAliasTarget(file)}`) fail('invalid_skill_alias_target');
+  return seal(['120000', digest(bytes)]);
+}
 const match = (f: string, p: string) => p.endsWith('/**') ? f.startsWith(p.slice(0, -2)) : f === p;
 function snapshot(root: string, ref?: string) {
   const files: Record<string, string> = Object.create(null); let total = 0;
@@ -62,8 +70,19 @@ function snapshot(root: string, ref?: string) {
       const tab = row.indexOf('\t'), [mode, oid, stage] = row.slice(0,tab).split(' ');
       if (stage !== '0') fail('unmerged_index'); return `${mode} blob ${oid}\t${row.slice(tab+1)}`;
     }) : git(root, ['ls-tree', '-rz', ref]).split('\0').filter(Boolean);
+    const regularEntries = new Set(rows.filter(row => /^(100644|100755) blob /.test(row)).map(row => row.slice(row.indexOf('\t') + 1)));
     for (const row of rows) {
       const tab = row.indexOf('\t'), f = row.slice(tab + 1); if (excluded(f)) continue; rel(f);
+      const target = skillAliasTarget(f);
+      if (target) {
+        if (!row.startsWith('120000 blob ')) fail('invalid_skill_alias');
+        const oid = row.slice(0, tab).split(' ')[2];
+        if (Number(git(root, ['cat-file', '-s', oid]).trim()) > 2048) fail('invalid_skill_alias_target');
+        const bytes = gitBytes(root, ['cat-file', 'blob', oid]);
+        const identity = aliasIdentity(f, bytes);
+        if (!regularEntries.has(`${target}/SKILL.md`)) fail('invalid_skill_alias_target');
+        files[f] = identity; continue;
+      }
       if (!/^(100644|100755) blob /.test(row)) fail('unsupported_source_entry');
       const oid = row.slice(0, tab).split(' ')[2];
       const bytes = gitBytes(root, ['cat-file', 'blob', oid]); total += bytes.length;
@@ -73,6 +92,18 @@ function snapshot(root: string, ref?: string) {
     for (const f of [...new Set(git(root, ['ls-files', '-co', '--exclude-standard', '-z']).split('\0').filter(Boolean))].sort()) {
       if (excluded(f)) continue; rel(f); const file = path.join(root, f);
       try { fs.lstatSync(file); } catch (e: any) { if (e.code === 'ENOENT') continue; throw e; }
+      const target = skillAliasTarget(f);
+      if (target) {
+        // Inspect link text and regular target metadata; never traverse the alias.
+        for (let parent = path.dirname(file); parent !== root; parent = path.dirname(parent)) {
+          const stat = fs.lstatSync(parent);
+          if (!stat.isDirectory() || stat.isSymbolicLink()) fail('invalid_skill_alias_target');
+        }
+        if (!fs.lstatSync(file).isSymbolicLink()) fail('invalid_skill_alias');
+        const identity = aliasIdentity(f, Buffer.from(fs.readlinkSync(file)));
+        regular(path.join(root, target, 'SKILL.md'));
+        files[f] = identity; continue;
+      }
       const bytes = regular(file, 32 * MAX); total += bytes.length; if (total > 128 * MAX) fail('source_limit');
       files[f] = seal([(fs.statSync(file).mode & 0o111) ? '100755' : '100644', digest(bytes)]);
     }

@@ -2,6 +2,14 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.9 - 2026-10-29
+
+### Fixed
+
+- Recognize canonical repository-local skill aliases for agent, Claude, Codex, Cursor, Gemini, OpenCode and Windsurf directories. Record link metadata without following the alias when collecting current files, baseline commits and staged trees.
+- Require each alias to point exactly to its same-name `.agents/skills` directory with a regular `SKILL.md`. External, broken, cyclic, redirected and impersonated aliases block before adapters run; ordinary source and evidence links remain rejected.
+- Keep alias identities in source fingerprints, including Codex aliases, so removals and unreviewed alias additions cannot silently reuse earlier passing evidence.
+
 ## v2.8.8 - 2026-10-29
 
 ### Fixed

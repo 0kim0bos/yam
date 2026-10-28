@@ -29,6 +29,28 @@ not certify every possible input or prove a live deployment from a fixture.
    means a source or evidence path contains a symbolic link: inspect the project
    paths and resolve ownership/layout before retrying, without disabling link checks.
 
+### Repository skill aliases
+
+Source snapshots recognize only `.<tool>/skills/<name>` aliases for `.agent`,
+`.claude`, `.codex`, `.cursor`, `.gemini`, `.opencode` and `.windsurf`. Names use
+ASCII letters/digits with dots, underscores or hyphens and start with a letter
+or digit. The stored target must be exactly `../../.agents/skills/<name>`.
+The target must contain a regular `SKILL.md`; current directory parents and the
+target cannot redirect through links. Historical/index snapshots validate the
+same target against regular entries in that exact Git tree, rather than the
+current checkout. Missing, absolute, external, cyclic or alternate targets block.
+
+The collector never traverses the alias. Its path, `120000` mode and target bytes
+participate in the source fingerprint consistently in worktree, baseline, index,
+outgoing and CI checks. Alias changes need scenario mapping, just like other
+collected changes; Codex alias metadata is included despite other `.codex` data
+being excluded. Canonical skill contents remain outside the application source
+scope, as before; this is not a skill-content audit or permission to execute it.
+Policy, observation, environment, receipt and deployment evidence files still
+require regular files. General application source links remain unsupported.
+Checkouts must materialize actual symbolic links; text placeholders produced by
+Git with `core.symlinks=false` are rejected rather than treated as equivalent.
+
 With a configured project, the automatic Stop hook distinguishes three states:
 unchanged files since a reliable turn baseline need no new Test check; changed
 files require current PASS; unavailable scope blocks completion claims even if
