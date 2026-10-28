@@ -2528,7 +2528,7 @@ async function buildYamLiteContext({ cwd, prompt }) {
 async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd()) {
   const lastAssistantMessage = String(input?.last_assistant_message || input?.lastAssistantMessage || '');
   const scope = studyNoteTurnScope(input, cwd);
-  const testGate = testCheckStop(cwd, !scope.available || scope.files.length > 0, lastAssistantMessage);
+  const testGate = testCheckStop(cwd, !scope.available || scope.files.length > 0, lastAssistantMessage, scope.available);
   if (testGate) return testGate;
   const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message', scope);
   if (result.truth_status === 'partial' && !result.changed_file_detection.available) {
@@ -2562,9 +2562,9 @@ async function buildStudyNoteTurnContext(input: AnyRecord, cwd: string) {
   const scope = studyNoteTurnScope(input, cwd, true);
   const testSetupStatus = inspectTestCheckSetup(cwd).configuration_status;
   const needsTestSetup = !testCheckConfigured(cwd) || ['not_configured', 'draft'].includes(testSetupStatus);
-  const testReminder = !needsTestSetup ? ' Test check active: before completion run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Missing required tests/evidence block completion; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.'
+  const testReminder = !needsTestSetup ? ' Test check active for changed implementation: before claiming changed work complete run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Read-only/status turns with no artifact changes need no new Test check. Missing required tests/evidence block completion; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.'
     : ' Test check setup: for authorized implementation work, capture the starting commit and run yam test-check init --base <exact starting commit> --json before editing. Review discovered tests, connect actual project observations and required scenarios, then set the draft policy ready and run/revalidate the gate. Do not end solely because setup is missing when you can safely configure it within scope. Initializer success grants no test approval. Read-only questions require no setup; preserve existing files and external permissions.';
-  if (!scope.available) return 'yam Study Note: turn scope is unavailable; do not treat this as a clean project. Inspect changed artifacts manually; no strict block will be applied without a baseline.';
+  if (!scope.available) return `yam Study Note: turn scope is unavailable (${scope.reason}); do not treat this as a clean project. Inspect changed artifacts manually. A configured Test check blocks completion claims until turn scope and testing are verified; an explicit Test check: BLOCKED handoff is permitted without test approval.`;
   return `yam Study Note turn baseline saved (hash-only). Mode: ${scope.mode}. Only changes since this prompt count; known generated logs, mission/security receipts and screenshots are excluded unless explicitly included. Include a concise Study Note followed by Next step when product artifacts change. ${scope.mode === 'strict' ? 'Risk work uses the detailed report contract and one correction pass.' : 'Ordinary work is advisory: a short explanation, verification/limits and remaining work (or none) suffice.'}${testReminder}`;
 }
 

@@ -79,7 +79,12 @@ const matches = (name: string, pattern: string) => pattern.endsWith('/**')
 function selected(name: string, config: Policy) {
   if (config.include.some(p => matches(name, p))) return true;
   if (config.exclude.some(p => matches(name, p))) return false;
-  return !/^(dist\/|\.yam\/(mission|security|logs|screenshots)\/)/.test(name)
+  // Private testing mixes live controls with output records; do not exclude it
+  // wholesale. Other audit work directories are generated unless opted in above.
+  if (name.startsWith('.yam/testing/') && /\.(jsonl?|log|md|txt|csv|html|png|jpe?g|webp|pdf|xlsx?|docx?|pptx?|zip)$/i.test(name)
+    && !/(?:^|\/)(?:policy|config|setup|package|package-lock|tsconfig|environment)\.json$/i.test(name)
+    && !/\.config\.json$/i.test(name)) return false;
+  return !/^(dist\/|\.yam\/(deep|investigations|ueye|mission|security|logs|screenshots)\/)/.test(name)
     && !/\.tgz$/.test(name);
 }
 
@@ -128,7 +133,9 @@ export function studyNoteTurnScope(input: any, cwd: string, begin = false) {
     const files = [...new Set([...Object.keys(before.files), ...Object.keys(current.files)])]
       .filter(name => before.files[name] !== current.files[name] && selected(name, config));
     return { available: true, files, source: 'turn_baseline', mode: config.strict || before.strict ? 'strict' : 'advisory', reason: '' };
-  } catch {
-    return { available: false, files: [], source: 'turn_baseline', mode: 'advisory', reason: 'baseline_unavailable; inspect changed artifacts manually' };
+  } catch (error: any) {
+    const code = ['scope_limit', 'git_scope_unavailable', 'unsafe_path', 'unsafe_state', 'invalid_policy', 'invalid_baseline', 'stale_baseline', 'session_unavailable'].includes(error?.message)
+      ? error.message : 'baseline_unavailable';
+    return { available: false, files: [], source: 'turn_baseline', mode: 'advisory', reason: `${code}; inspect changed artifacts manually` };
   }
 }

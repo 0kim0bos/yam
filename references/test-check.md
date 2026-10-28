@@ -29,6 +29,29 @@ not certify every possible input or prove a live deployment from a fixture.
    means a source or evidence path contains a symbolic link: inspect the project
    paths and resolve ownership/layout before retrying, without disabling link checks.
 
+With a configured project, the automatic Stop hook distinguishes three states:
+unchanged files since a reliable turn baseline need no new Test check; changed
+files require current PASS; unavailable scope blocks completion claims even if
+an earlier receipt passes. An explicit `Test check: BLOCKED` handoff ends the
+correction without approving completion. Do not rerun failed commands unchanged.
+Restore the scope or explain its limitation. Explicit Test check and
+commit/push/CI/deployment gates retain their own evidence requirements.
+
+Turn scope excludes the generated audit/work directories `.yam/deep/`,
+`.yam/investigations/` and `.yam/ueye/`, alongside the existing generated paths.
+This includes copied candidate source trees and SQL snapshots, not just logs.
+Keep live project source/configuration outside these work directories, or opt it
+in explicitly. Private `.yam/testing/` is mixed: data/report outputs (JSON/JSONL,
+logs, Markdown, text, CSV, HTML, raster images, PDF, Office attachments and ZIP)
+are excluded, but executable adapters and `policy.json`, `config.json`,
+`setup.json`, `package.json`, `package-lock.json`, `tsconfig.json`,
+`environment.json` and `*.config.json` stay visible. Custom data/config names
+there require an explicit include. Public `testing/` is not excluded.
+`.yam/study-note.json` `include` overrides generated-output exclusions and still
+enforces the same file/byte limits. Scope errors expose only fixed diagnostic
+codes, never file contents. These rules govern turn detection, not Test check's
+source/evidence validation or symbolic-link rejection.
+
 Risk floors:
 
 | Risk | Required scenarios |

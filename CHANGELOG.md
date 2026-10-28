@@ -2,6 +2,14 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.8 - 2026-10-29
+
+### Fixed
+
+- Exclude generated audit work directories and private test output records from turn change detection while retaining live testing policies, configuration and executable adapters. Explicit includes override generated-output exclusions.
+- Keep status-only turns with verified unchanged files outside the completion gate. Unknown turn scope blocks completion claims even with an earlier passing receipt; explicit BLOCKED handoffs can end without granting approval.
+- Expose bounded scope diagnostic codes and run turn-scope regressions through the project Test check adapter. Source/evidence validation and symbolic-link rejection remain enforced.
+
 ## v2.8.7 - 2026-10-28
 
 ### Fixed

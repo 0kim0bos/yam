@@ -26,6 +26,46 @@ try {
   assert.deepEqual(scope().files, []);
   assert.equal(scope().mode, 'advisory');
   assert.equal(hook('Stop', { last_assistant_message: 'Review done.' }).systemMessage, undefined);
+  // Generated audit records must not exhaust the content budget or hide source edits.
+  mkdirSync(join(dir, '.yam/deep/audit'), { recursive: true });
+  writeFileSync(join(dir, '.yam/deep/audit/catalog-expected-final.json'), Buffer.alloc(3 * 1024 * 1024));
+  for(const folder of ['.yam/deep/audit/candidate','.yam/investigations/audit','.yam/ueye/audit']) {
+    mkdirSync(join(dir,folder),{recursive:true});
+    writeFileSync(join(dir,folder,'snapshot.sql'),Buffer.alloc(3*1024*1024));
+  }
+  assert.equal(scope().available,true);
+  assert.deepEqual(scope().files,[]);
+  mkdirSync(join(dir, '.yam/testing'), { recursive: true });
+  writeFileSync(join(dir, '.yam/testing/adapter.mjs'), 'export const changed = true;');
+  assert(scope().files.includes('.yam/testing/adapter.mjs'));
+  rmSync(join(dir, '.yam/testing/adapter.mjs'));
+  for(const name of ['policy.json','project.config.json','setup.json','package.json','tsconfig.json']) {
+    writeFileSync(join(dir,'.yam/testing',name),'{}');
+    assert(scope().files.includes('.yam/testing/'+name),name+' must stay in scope');
+    rmSync(join(dir,'.yam/testing',name));
+  }
+  mkdirSync(join(dir, '.yam/testing'), { recursive: true });
+  writeFileSync(join(dir, '.yam/testing/policy.json'), '{}');
+  writeFileSync(join(dir, '.yam/testing/yam-observations.mjs'), 'export default [];');
+  mkdirSync(join(dir,'.yam/testing/permission-simulation'),{recursive:true});
+  writeFileSync(join(dir,'.yam/testing/permission-simulation/execution.json'),Buffer.alloc(24*1024*1024));
+  writeFileSync(join(dir,'.yam/deep/audit/input.xlsx'),Buffer.alloc(3*1024*1024));
+  assert.equal(scope().available,true);
+  assert(!scope().files.includes('.yam/testing/permission-simulation/execution.json'));
+  assert(!scope().files.includes('.yam/deep/audit/input.xlsx'));
+  assert(scope().files.includes('.yam/testing/policy.json'));
+  assert(scope().files.includes('.yam/testing/yam-observations.mjs'));
+  writeFileSync(join(dir,'.yam/testing/environment.json'),'{}');
+  assert(scope().files.includes('.yam/testing/environment.json'));
+  mkdirSync(join(dir,'testing'));
+  writeFileSync(join(dir,'testing/policy.json'),'{}');
+  assert(scope().files.includes('testing/policy.json'));
+  rmSync(join(dir,'testing'),{recursive:true});
+  rmSync(join(dir, '.yam/testing'), {recursive:true});
+  writeFileSync(join(dir, '.yam/study-note.json'), JSON.stringify({include:['.yam/deep/**']}));
+  assert.equal(scope().available,false,'explicit inclusion must still enforce the size limit');
+  rmSync(join(dir, '.yam/study-note.json'));
+  rmSync(join(dir,'.yam/deep'),{recursive:true});
   writeFileSync(join(dir, 'app.ts'), 'new dirty');
   assert.deepEqual(scope().files, ['app.ts']);
   assert.equal(hook('Stop', { last_assistant_message: 'Done.' }).continue, true);
@@ -71,7 +111,7 @@ try {
   writeFileSync(join(dir, 'protected.txt'), 'preserve');
   assert.equal(studyNoteTurnScope({ session_id }, dir, true).available, false);
   assert.equal(readFileSync(join(dir, 'protected.txt'), 'utf8'), 'preserve');
-  console.log('study-note-turn-smoke: ok (dirty re-edit, advisory/strict, generated/include, commit/rename/delete, missing/stale/corrupt baseline, symlink safety)');
+  console.log('study-note-turn-smoke: ok (dirty re-edit, advisory/strict, large generated audit records, executable/config visibility, generated/include, commit/rename/delete, missing/stale/corrupt baseline, symlink safety)');
 } finally {
   rmSync(stateFile, { force: true });
   rmSync(dir, { recursive: true, force: true });

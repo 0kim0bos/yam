@@ -37,6 +37,11 @@ console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==
  const run=()=>runTestCheck(root,{base});
  const blocked=(mode)=>{process.env.YAM_FIXTURE_MODE=mode;assert.equal(run().result,'BLOCKED');delete process.env.YAM_FIXTURE_MODE;};
  test('actual success',()=>{assert.equal(run().result,'PASS');assert.equal(checkTestCheck(root).result,'PASS');});
+ test('unknown turn scope cannot reuse a passing receipt',()=>{
+   assert.equal(checkTestCheck(root).result,'PASS');
+   assert.equal(testCheckStop(root,true,'Implementation complete.',false).decision,'block');
+   assert.equal(testCheckStop(root,true,'**Test check: BLOCKED** — turn scope unavailable.',false).continue,true);
+ });
  test('staged versus unstaged',()=>{assert.equal(checkTestCheck(root,{stage:'commit'}).result,'BLOCKED');git('add','feature.ts');assert.equal(checkTestCheck(root,{stage:'commit'}).result,'PASS');});
  for(const mode of ['zero','assertions','failed','skipped','duplicate','exit'])test(mode,()=>blocked(mode));
  test('missing happy path',()=>{const p=policy();p.surfaces[0].checks=p.surfaces[0].checks.filter(c=>c.scenario!=='success');write(policyFile,p);assert.equal(run().result,'BLOCKED');write(policyFile,policy());});
@@ -138,6 +143,26 @@ console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==
    for(const last_assistant_message of ['**Test check: BLOCKED** — symlink_rejected; verification incomplete.', '**Test check: BLOCKED.** Unable to verify.']) {
      for(let retry=0;retry<3;retry++) assert.equal(invoke({...stop,last_assistant_message}).continue,true);
    }
+   assert.equal(checkTestCheck(root).result,'BLOCKED');
+   // A previous failed run must not turn a status-only turn into completion work.
+   invoke({...input,turn_id:'status',prompt:'What is the investigation status?'});
+   assert.equal(invoke({...stop,turn_id:'status',last_assistant_message:'Investigation is partial; defects remain.'}).continue,true);
+   // Unknown scope must not approve completion, even on correction passes.
+   const unknown={...stop,session_id:'missing-baseline-'+path.basename(root),last_assistant_message:'Implementation complete.'};
+   assert.equal(invoke(unknown).decision,'block');
+   for(let retry=0;retry<3;retry++) assert.equal(invoke({...unknown,last_assistant_message:'**Test check: BLOCKED.** Turn scope unavailable; verification incomplete.'}).continue,true);
+   const stateFile=path.join(os.tmpdir(),`yam-study-note-${process.getuid?.()??'user'}`,createHash('sha256').update(root+'\0'+input.session_id).digest('hex')+'.json');
+   const saved=fs.readFileSync(stateFile,'utf8');
+   for(const baseline of [null,'{corrupt',JSON.stringify({...JSON.parse(saved),created:0})]) {
+     if(baseline===null)fs.rmSync(stateFile);else fs.writeFileSync(stateFile,baseline);
+     assert.equal(invoke({...stop,turn_id:'status'}).decision,'block');
+     assert.equal(invoke({...stop,turn_id:'status',last_assistant_message:'Test check: BLOCKED; baseline unavailable.'}).continue,true);
+   }
+   fs.writeFileSync(stateFile,saved);
+   write('large-source.txt','x'.repeat(2*1024*1024+1));
+   assert.equal(invoke({...stop,turn_id:'status'}).decision,'block');
+   assert.equal(invoke({...stop,turn_id:'status',last_assistant_message:'Test check: BLOCKED; source snapshot unavailable.'}).continue,true);
+   fs.unlinkSync(path.join(root,'large-source.txt'));
    assert.equal(checkTestCheck(root).result,'BLOCKED');
    write('feature.ts','new');
  });

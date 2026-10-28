@@ -322,10 +322,10 @@ export function testCheckConfigured(cwd: string) {
     }
   }
 }
-export function testCheckStop(cwd: string, changed: boolean, message: string) {
+export function testCheckStop(cwd: string, changed: boolean, message: string, scopeKnown = true) {
   if (!changed || !testCheckConfigured(cwd)) return null;
-  const result = checkTestCheck(cwd);
-  if (result.ok) return null;
+  // A passing source receipt cannot establish what changed during an unknown turn.
+  if (scopeKnown && checkTestCheck(cwd).ok) return null;
   // A formatted status is still an incomplete handoff. Quoted code examples are not.
   let fence = '', fenceLength = 0;
   const handoff = message.split(/\r?\n/).some(line => {
@@ -340,6 +340,7 @@ export function testCheckStop(cwd: string, changed: boolean, message: string) {
     return /^Test check: BLOCKED(?:[ \t]*[.;:—–-][ \t]*[^\r\n]*)?[ \t]*$/.test(status);
   });
   if (handoff) return { continue: true, systemMessage: 'Test check remains BLOCKED; this is an incomplete-status handoff, not approval of completion, commit or deployment.' };
+  if (!scopeKnown) return { decision: 'block', reason: 'yam Test check BLOCKED: current turn change scope is unavailable. Restore the turn baseline and verify actual changes before claiming completion. If unable, report Test check: BLOCKED and the verification limitation to end the handoff. Do not claim complete or repeat the same failed commands without repairing the cause.' };
   return { decision: 'block', reason: 'yam Test check BLOCKED. Run yam test-check run --base <exact-base> --json, then yam test-check check --json. Repair required scenarios/evidence; if unable, report Test check: BLOCKED and the verification limitation. Do not claim complete.' };
 }
 
