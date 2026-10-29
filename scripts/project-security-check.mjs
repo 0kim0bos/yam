@@ -20,7 +20,8 @@ for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--json') continue;
   const key = process.argv[i];
   if (!allowed.includes(key) || options.has(key) || !process.argv[i + 1] || process.argv[i + 1].startsWith('--')) throw new Error('invalid project security option');
-  options.set(key, process.argv[++i]);
+  const value = process.argv[++i];
+  if (key !== '--test-policy-digest') options.set(key, value);
 }
 const stage = options.get('--stage');
 const stdin = stage === 'push' ? await new Promise((resolve, reject) => {
@@ -78,7 +79,7 @@ if (stage === 'deploy') {
 const binding = collectSecurityBinding(root, stage, options, stdin);
 const report = createSecurityStarter({ stage: stage === 'ci' ? 'push' : stage, policy, binding,
   environment: stage === 'deploy' ? options.get('--environment') : 'local-cli',
-  scope: ['CLI filesystem and installation boundaries', 'reviewed source inventory', 'exact Git target test snapshots', 'package secrets and CI action pins'],
+  scope: ['CLI filesystem and installation boundaries', 'reviewed source inventory', 'exact Git target security checks', 'package secrets and CI action pins'],
   checker: 'yam-project-security-v1' });
 report.policy_digest = pin;
 const results = [];

@@ -145,4 +145,7 @@ Use `none` when there is no meaningful next action.
 
 ## Functional completion evidence
 
-For configured changed-work projects, require a current Test check PASS before claiming completion. Report test scope, real versus fixture evidence and remaining uncertainty. `Test check: BLOCKED` is an incomplete handoff marker, not permission to commit or deploy. Report formatting checks do not execute or replace tests; see `test-check.md`.
+Report the actual checks performed, their scope, real versus fixture evidence and
+remaining uncertainty. Choose checks appropriate to the change and use existing
+project tests. Do not invent passing results or confuse report formatting with
+runtime evidence or Security check approval.

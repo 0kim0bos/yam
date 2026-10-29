@@ -11,6 +11,9 @@ const output = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scr
 const packs = JSON.parse(output);
 const files = packs[0]?.files?.map((file) => file.path) ?? [];
 const blocked = [
+  /^dist\/lib\/test-check(?:-setup)?\.(?:js|d\.ts)$/,
+  /^references\/test-check\.md$/,
+  /^templates\/test-check-policy\.json$/,
   /^\.git\//,
   /^\.codex\//,
   /^\.agents\//,
@@ -30,12 +33,6 @@ const blocked = [
   /^.*\.dump$/,
 ];
 const required = [
-  'dist/lib/test-check.js',
-  'dist/lib/test-check.d.ts',
-  'dist/lib/test-check-setup.js',
-  'dist/lib/test-check-setup.d.ts',
-  'references/test-check.md',
-  'templates/test-check-policy.json',
   'dist/bin/yam.js',
   'dist/lib/security-check.js',
   'dist/lib/security-integration.js',

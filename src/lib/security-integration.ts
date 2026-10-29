@@ -1,4 +1,3 @@
-import { checkTestCheck, testCheckConfigured } from './test-check.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -29,7 +28,8 @@ function parseArgs(args: string[]): Map<string, string> {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--json') continue;
     if (!['--policy', '--policy-digest', '--evidence', '--note', '--stage', '--remote', '--destination', '--source', '--base', '--artifact', '--artifact-digest', '--configuration', '--configuration-digest', '--environment', '--cli', '--test-policy-digest'].includes(args[i]) || !args[i + 1] || args[i + 1].startsWith('--') || out.has(args[i])) throw new Error('invalid or duplicate security option');
-    out.set(args[i], args[++i]);
+    const key = args[i], value = args[++i];
+    if (key !== '--test-policy-digest') out.set(key, value);
   }
   return out;
 }
@@ -262,13 +262,6 @@ async function check(cwd: string, options: Map<string, string>, settings: Securi
     input = createSecurityStarter({ stage: normalizedStage as any, binding: binding as any, environment: stage === 'deploy' ? options.get('--environment') || 'unavailable' : 'local', scope: ['security gate unavailable'], checker: 'yam-security-check' });
     result = validateSecurityCheck(input, binding as any);
     gateErrors.push('security_input_or_binding_unavailable');
-  }
-  if (testCheckConfigured(cwd) || config.test_policy_digest) {
-    const pin = options.get('--test-policy-digest') || config.test_policy_digest;
-    const sources = stage === 'push' ? (binding.push_refs as any[] || []).map(ref => ref.local_oid)
-      : [binding.source_revision as string | undefined];
-    const targets = sources.length ? sources : [undefined];
-    if (targets.some(source => !checkTestCheck(cwd, { stage, source, pin, base: stage === 'ci' ? binding.base_revision as string : undefined, artifact: options.get('--artifact'), configuration: options.get('--configuration') }).ok)) gateErrors.push('test_check_blocked');
   }
   if (gateErrors.length) {
     result.result = 'BLOCKED';

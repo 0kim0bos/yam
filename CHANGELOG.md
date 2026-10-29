@@ -2,6 +2,13 @@
 
 All notable changes to yam-flow are documented here.
 
+## Unreleased
+
+### Removed
+
+- Remove the dedicated project test-gate CLI, policy initializer, approval runner, automatic completion hooks, security prerequisites and hosted CI execution. Ordinary tests, Security check and Study Note remain available.
+- Preserve user-owned project configurations and historical receipts. A local development build is used to apply this removal before a new public release.
+
 ## v2.8.10 - 2026-10-29
 
 ### Changed

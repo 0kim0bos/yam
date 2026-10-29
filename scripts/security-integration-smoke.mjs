@@ -52,15 +52,16 @@ try {
  await prepare('deploy',deploy);assert.equal((await run(['check','--stage','deploy',...deploy,'--policy-digest',pin])).ok,true);
  await fs.writeFile(path.join(cwd,'.yam/security/artifact.bin'),'altered');assert.equal((await run(['check','--stage','deploy',...deploy,'--policy-digest',pin])).ok,false);
  await prepare('commit');await fs.writeFile(path.join(cwd,'.yam/security/proof.bin'),'changed');assert.equal((await run(['check','--stage','commit'])).ok,false);
- // security_only waives the Test requirement for transport, never Security evidence.
+ // Obsolete project test policies do not replace or prevent independent security evidence.
  await fs.mkdir(path.join(cwd,'.yam/testing'),{recursive:true});
- await fs.writeFile(path.join(cwd,'.yam/testing/policy.json'),JSON.stringify({schema:'yam.test-policy.v1',execution:{approval:'required',trigger:'changed_surface',commit:'security_only',push:'security_only',deploy:'test_required'},surfaces:[{id:'file',paths:['file.txt'],risks:['docs'],targets:['file'],checks:[]}]}));
+ await fs.writeFile(path.join(cwd,'.yam/testing/policy.json'),'{invalid legacy policy');
  await fs.writeFile(path.join(cwd,'.yam/security/proof.bin'),data);await prepare('commit');
- assert.equal((await run(['check','--stage','commit'])).ok,true);
+ assert.equal((await run(['check','--stage','commit','--test-policy-digest','retired-unused'])).ok,true);
  await prepare('push',push,stdin);
  assert.equal((await runSecurityCommand(['check','--stage','push',...push],{cwd,cliPath:cli,stdin})).ok,true);
  await prepare('ci',ci);
- assert.equal((await run(['check','--stage','ci',...ci,'--policy-digest',pin])).ok,false);
+ assert.equal((await run(['check','--stage','ci',...ci,'--policy-digest',pin])).ok,true);
+ assert.equal(await fs.readFile(path.join(cwd,'.yam/testing/policy.json'),'utf8'),'{invalid legacy policy');
  await prepare('commit');await fs.writeFile(path.join(cwd,'.yam/security/proof.bin'),'invalid independent security evidence');
  assert.equal((await run(['check','--stage','commit'])).ok,false);
  const note=await fs.readFile(path.join(cwd,'.yam/security/notes.md'),'utf8');assert.match(note,/Result: PASS/);assert.match(note,/Result: BLOCKED/);assert.match(note,/SEC-09/);

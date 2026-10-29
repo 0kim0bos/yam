@@ -81,16 +81,10 @@ from `.yam/mission/security-runtime/` if activation must be reversed. Reverting
 the workflow changes removes the release dependency, so treat that as a security
 policy change requiring review.
 
-## Test check and security stages
+## Independent security enforcement
 
-This repository uses reviewed `security_only` Test check policy for commit/push.
-Those transport stages append a DEFERRED record without launching project tests;
-independent Security check still validates the exact Git target. CI and deployment
-retain current Test check PASS requirements and the existing scenario inventory.
-Local skipping does not authorize bypassing a protected remote CI requirement.
-
-CI uses administrator-owned `YAM_TEST_POLICY_SHA256` and forwards
-`--test-policy-digest`. Refresh it only after policy/adapter review, together with
-the executable source-review manifest and its trusted pin. Local runtime pins also
-need reviewed refresh after a validator update. Never refresh pins merely to waive
-a failing test, remove required scenarios or weaken deployment checks.
+Security check validates the exact commit, outgoing refs, CI source or deployment
+artifact without requiring a separate test-gate receipt. Existing project tests
+remain available to the operator. Required security evidence, source-review pins,
+artifact/configuration binding and publication-environment inspection still apply.
+Historical project policies and private receipts are user-owned and are not deleted.

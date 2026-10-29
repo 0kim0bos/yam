@@ -26,17 +26,9 @@ try {
   await fs.appendFile(path.join(fixture, 'CHANGELOG.md'), '\nFixture candidate change.\n');
   git(fixture, 'add', 'CHANGELOG.md'); git(fixture, 'commit', '-m', 'fixture candidate');
   const source = git(fixture, 'rev-parse', 'HEAD');
-  const testPin = hash(await fs.readFile(path.join(fixture, 'testing/policy.json')));
-  const prepareTests = stage => {
-    const args = [path.join(fixture, 'dist/bin/yam.js'), 'test-check', 'run', '--base', testBase];
-    if(stage === 'deploy') args.push('--stage','deploy','--source',source,'--artifact','artifact.tgz','--configuration','.yam/deploy-config.json','--policy-digest',testPin);
-    const result = spawnSync(process.execPath,args,{cwd:fixture,encoding:'utf8',timeout:300000,maxBuffer:8*1024*1024});
-    assert.equal(result.status,0,result.stdout || result.stderr);
-  };
-  prepareTests('complete');
   const pin = hash(await fs.readFile(path.join(fixture, 'security/policy.json')));
   const run = (args, expected) => {
-    const result = spawnSync(process.execPath, ['scripts/project-security-check.mjs', ...args, '--policy-digest', pin, '--test-policy-digest', testPin], {
+    const result = spawnSync(process.execPath, ['scripts/project-security-check.mjs', ...args, '--policy-digest', pin], {
       cwd: fixture, encoding: 'utf8', timeout: 300000, maxBuffer: 8 * 1024 * 1024
     });
     assert.equal(result.error, undefined); assert.equal(result.status, expected, result.stdout || result.stderr);
@@ -48,7 +40,6 @@ try {
   const packedInfo=JSON.parse(packed.stdout)[0];
   await fs.copyFile(path.join(tmp,packedInfo.filename),path.join(fixture,'artifact.tgz'));
   await fs.writeFile(path.join(fixture, '.yam/deploy-config.json'), '{}');
-  prepareTests('deploy');
   const deploy = ['--stage', 'deploy', '--source', source, '--artifact', 'artifact.tgz', '--configuration', '.yam/deploy-config.json', '--environment', 'fixture'];
   const blocked = run(deploy, 1); assert(blocked.result.blocking.some(value => value.includes('SEC-05')), JSON.stringify(blocked));
   await fs.writeFile(path.join(fixture, '.yam/environment.json'), JSON.stringify({ schema: 'yam.deployment-inspection.v1', result: 'passed', checked_at: new Date().toISOString(),

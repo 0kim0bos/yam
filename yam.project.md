@@ -73,9 +73,9 @@
 
 ## Recent Decisions
 
-- Missing project test connections start with `test-check init`: discover existing test commands without executing them, preserve existing files, and create draft policy/observer scaffolding with a saved baseline. Agents complete scenario mapping and real observations during authorized implementation; initialization and suite totals never grant approval.
+- Removed the project test gate and its CLI, automatic hook, Security check prerequisite and CI execution. Use ordinary project tests according to change risk; preserve existing project files and historical evidence. Security check and Study Note remain independent.
 
-- Test check preserves scenario floors, actual subprocess reports and source/environment hashes. New project setup requires user approval of a changed-functional-work plan before simulation; Stop prepares requests without running adapters. Deferred decisions are incomplete. Commit/push may use reviewed `security_only` policy, while CI/deploy require current Test check PASS. Legacy policies stay strict until reviewed migration. Safe DB manifests and credential non-inheritance help setup, but reviewed adapters remain responsible for actual isolation and runtime truth.
+
 
 - Security checks use nine explained SEC areas, stage-bound evidence and append-only private notes. Gate policy and supplied evidence need independent trust; local hooks cannot replace protected CI/deployment enforcement.
 

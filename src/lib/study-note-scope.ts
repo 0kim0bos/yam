@@ -110,8 +110,7 @@ export function studyNoteTurnScope(input: any, cwd: string, begin = false) {
       const prompt = String(input.prompt || input.user_prompt || '');
       // Deep/Mission alone do not make a read-only task strict. Risk intent or explicit strict does.
       const strict = config.strict || /(?:study-note\s+strict|strict\s+study.note|commit|push|deploy|publish|security|migration|database|\bDB\b|커밋|푸시|배포|보안|마이그레이션|데이터베이스)/i.test(prompt);
-      const base = git(current.root, ['rev-parse', 'HEAD']).trim();
-      const state = { schema: 'yam.study-note-baseline.v1', created: Date.now(), turn, strict, base, ...current };
+      const state = { schema: 'yam.study-note-baseline.v1', created: Date.now(), turn, strict, ...current };
       try {
         const previous = fs.lstatSync(target);
         if (!previous.isFile() || previous.isSymbolicLink() || previous.nlink !== 1
@@ -119,7 +118,7 @@ export function studyNoteTurnScope(input: any, cwd: string, begin = false) {
       } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
       const fd = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
       try { fs.writeFileSync(fd, JSON.stringify(state)); } finally { fs.closeSync(fd); }
-      return { available: true, files: [], base, source: 'turn_baseline', mode: strict ? 'strict' : 'advisory', reason: '' };
+      return { available: true, files: [], source: 'turn_baseline', mode: strict ? 'strict' : 'advisory', reason: '' };
     }
     const stat = fs.lstatSync(target);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_BYTES) throw new Error('invalid_baseline');
@@ -133,7 +132,7 @@ export function studyNoteTurnScope(input: any, cwd: string, begin = false) {
       || (turn && before.turn !== turn)) throw new Error('stale_baseline');
     const files = [...new Set([...Object.keys(before.files), ...Object.keys(current.files)])]
       .filter(name => before.files[name] !== current.files[name] && selected(name, config));
-    return { available: true, files, base: typeof before.base === 'string' && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(before.base) ? before.base : undefined, source: 'turn_baseline', mode: config.strict || before.strict ? 'strict' : 'advisory', reason: '' };
+    return { available: true, files, source: 'turn_baseline', mode: config.strict || before.strict ? 'strict' : 'advisory', reason: '' };
   } catch (error: any) {
     const code = ['scope_limit', 'git_scope_unavailable', 'unsafe_path', 'unsafe_state', 'invalid_policy', 'invalid_baseline', 'stale_baseline', 'session_unavailable'].includes(error?.message)
       ? error.message : 'baseline_unavailable';

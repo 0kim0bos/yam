@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import { runTestCheckCommand, testCheckStop, testCheckConfigured } from '../lib/test-check.js';
-import { inspectTestCheckSetup } from '../lib/test-check-setup.js';
 import { spawnSync } from 'node:child_process';
 import { studyNoteTurnScope } from '../lib/study-note-scope.js';
 import { selectHookNode, probeHookDiscovery, inspectHookObservation, recordHookObservation } from '../lib/hook-readiness.js';
@@ -230,7 +228,6 @@ Usage:
   yam proof [dir|--from file] [--route route] [--truth status] [--command text] [--evidence text]
   yam proof write [dir] [--format json|md] [--out file] [--route route] [--truth status] [--command text]
   yam study-note check [dir] [--report file|--text text] [--json]
-  yam test-check <init|plan|approval|run|check|status> [--base commit] [--json]
   yam security <init|check|hooks|status> [--stage commit|push|ci|deploy] [--json]
   yam next-step <report|verify> [--spec file|--receipt file] [--json]
   yam loop report [--route route] [--intent text] [--stage id:status:note] [--evidence text] [--json]
@@ -257,7 +254,7 @@ Usage:
   yam safety [text...]
   yam memory <init|add|list|summary|resolve> [dir] [options]
   yam hook <status|enable|disable|run> [lite|study-note] [--global|--project dir]
-  yam template <project|ueye|mission|proof|tuning|security|security-ci|test-check>
+  yam template <project|ueye|mission|proof|tuning|security|security-ci>
   yam tune-log [dir]
   yam install [--dry-run] [--json] [--replace-user-skill name]
   yam uninstall
@@ -579,7 +576,6 @@ async function verify({ quiet = false } = {}) {
     'markdown-management.md',
     'study-note.md',
     'security-check.md',
-    'test-check.md',
     'final-report.md',
     'token-budget-reporter.md',
     'memory.md'
@@ -595,7 +591,7 @@ async function verify({ quiet = false } = {}) {
       if (!hasHeading(projectTemplate, section)) issues.push(`project template missing section: ${section}`);
     }
   }
-  for (const template of ['ueye-review.md', 'ueye-comparison.md', 'mission-plan.md', 'runtime-proof.md', 'tuning-log.md', 'security-check-note.md', 'security-gate.yml', 'test-check-policy.json']) {
+  for (const template of ['ueye-review.md', 'ueye-comparison.md', 'mission-plan.md', 'runtime-proof.md', 'tuning-log.md', 'security-check-note.md', 'security-gate.yml']) {
     if (!await exists(path.join(ROOT, 'templates', template))) issues.push(`missing template: ${template}`);
   }
   for (const module of ['trust-kernel.js', 'ueye-artifacts.js']) {
@@ -2528,8 +2524,6 @@ async function buildYamLiteContext({ cwd, prompt }) {
 async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd()) {
   const lastAssistantMessage = String(input?.last_assistant_message || input?.lastAssistantMessage || '');
   const scope = studyNoteTurnScope(input, cwd);
-  const testGate = testCheckStop(cwd, !scope.available || scope.files.length > 0, lastAssistantMessage, scope.available, scope.files, scope.base);
-  if (testGate) return testGate;
   const result = await buildStudyNoteGuardResult(path.resolve(cwd), lastAssistantMessage, 'stop_hook_last_assistant_message', scope);
   if (result.truth_status === 'partial' && !result.changed_file_detection.available) {
     return {
@@ -2560,12 +2554,8 @@ async function buildStudyNoteStopOutput(input: AnyRecord = {}, cwd = process.cwd
 
 async function buildStudyNoteTurnContext(input: AnyRecord, cwd: string) {
   const scope = studyNoteTurnScope(input, cwd, true);
-  const testSetupStatus = inspectTestCheckSetup(cwd).configuration_status;
-  const needsTestSetup = !testCheckConfigured(cwd) || ['not_configured', 'draft'].includes(testSetupStatus);
-  const testReminder = !needsTestSetup ? ' Test check active for changed implementation: the Stop hook plans only when mapped functional files changed and does not launch adapters. Review the plan, then run yam test-check approval request --base <exact starting commit> and approve or defer; after approval run yam test-check run --base <exact starting commit> --json and yam test-check check --json. Read-only/status or documentation-only turns need no new Test check. Missing required tests/evidence block CI/deployment approval; report Test check: BLOCKED if unable to verify. This is separate from report formatting and Security check.'
-    : ' Test check setup: for authorized implementation work, capture the starting commit and run yam test-check init --base <exact starting commit> --json before editing. Review discovered tests, connect actual project observations and required scenarios, then set the draft policy ready and run/revalidate the gate. Do not end solely because setup is missing when you can safely configure it within scope. Initializer success grants no test approval. Read-only questions require no setup; preserve existing files and external permissions.';
-  if (!scope.available) return `yam Study Note: turn scope is unavailable (${scope.reason}); do not treat this as a clean project. Inspect changed artifacts manually. Scope is unknown: do not execute tests automatically or claim verification PASS. Report Test check: BLOCKED and the limitation; review the project execution policy before planning or approval.`;
-  return `yam Study Note turn baseline saved (hash-only). Mode: ${scope.mode}. Only changes since this prompt count; known generated logs, mission/security receipts and screenshots are excluded unless explicitly included. Include a concise Study Note followed by Next step when product artifacts change. ${scope.mode === 'strict' ? 'Risk work uses the detailed report contract and one correction pass.' : 'Ordinary work is advisory: a short explanation, verification/limits and remaining work (or none) suffice.'}${testReminder}`;
+  if (!scope.available) return `yam Study Note: turn scope is unavailable (${scope.reason}); do not treat this as a clean project. Inspect changed artifacts manually. Report actual verification and its limitations honestly.`;
+  return `yam Study Note turn baseline saved (hash-only). Mode: ${scope.mode}. Only changes since this prompt count; known generated logs, mission/security receipts and screenshots are excluded unless explicitly included. Include a concise Study Note followed by Next step when product artifacts change. ${scope.mode === 'strict' ? 'Risk work uses the detailed report contract and one correction pass.' : 'Ordinary work is advisory: a short explanation, verification/limits and remaining work (or none) suffice.'}`;
 }
 
 function yamLiteRouteHint(prompt = '') {
@@ -5483,13 +5473,11 @@ async function initProject(targetDir = process.cwd()) {
   const existingPack = await findProjectPack(resolved);
   if (existingPack) {
     console.log(`${path.basename(existingPack)} already exists: ${existingPack}`);
-    console.log('For implementation work, inspect Test check setup with: yam test-check status; initialize missing setup with: yam test-check init --json');
     return;
   }
   await fsp.copyFile(template, target);
   await maybeAppendDetectedCommands(target, resolved);
   console.log(`created ${target}`);
-  console.log('Before implementation, initialize the project test connection with: yam test-check init --json (draft setup, no automatic approval)');
 }
 
 async function inspectProjectPack(targetDir = process.cwd()) {
@@ -6161,12 +6149,11 @@ async function printTemplate(name = '') {
     runtime: 'runtime-proof.md',
     tuning: 'tuning-log.md',
     security: 'security-check-note.md',
-    'security-ci': 'security-gate.yml',
-    'test-check': 'test-check-policy.json'
+    'security-ci': 'security-gate.yml'
   };
   const file = map[key];
   if (!file) {
-    console.error('usage: yam template <project|ueye|ueye-comparison|mission|proof|tuning|security|security-ci|test-check>');
+    console.error('usage: yam template <project|ueye|ueye-comparison|mission|proof|tuning|security|security-ci>');
     process.exitCode = 1;
     return;
   }
@@ -6469,13 +6456,6 @@ function showRequestedHelp(args: string[]) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'help';
-  if (command === 'test-check') {
-    if (!args[1] || ['help', '--help', '-h'].includes(args[1]) || args.slice(2).some(arg => ['--help', '-h'].includes(arg))) {
-      console.log('yam test-check init [--base <exact commit>] [--dry-run] [--json]\nyam test-check plan --base <exact commit> --json\nyam test-check approval request|approve|defer --base <exact commit> [--stage complete|ci|deploy] [--reason text] [--json]\nyam test-check approval status --json\nyam test-check run --base <exact commit> [--policy file --policy-digest sha256] [--json]\nyam test-check check [--stage complete|commit|push|ci|deploy --source <exact commit> --policy-digest sha256 --receipt file] [--json]\nyam test-check status\nInit discovers existing tests and creates a draft policy/process bridge; connect real observations before approval. Hook Stop plans and requests approval but never launches adapters. See references/test-check.md.'); return;
-    }
-    const result = runTestCheckCommand(args.slice(1));
-    console.log(JSON.stringify(result, null, 2)); if (!result.ok) process.exitCode = 1; return;
-  }
   if (showRequestedHelp(args)) return;
   if (command === 'help') return usage();
   if (command === 'security') {
