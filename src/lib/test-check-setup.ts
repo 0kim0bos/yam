@@ -134,10 +134,12 @@ export function initializeTestCheck(cwd: string, options: { base?: string; dryRu
         'Broad draft paths must be narrowed and DB functions/roles/scenarios mapped by project review.'],
       required_actions: ['Review discovered commands and existing tests before executing them.', 'Map changed targets and named success/failure cases to policy checks.',
         'Implement testing/yam-observations.mjs using actual process reports and measured assertions; retain missing/skipped failures.',
-        'For DB/runtime changes observe the real environment; do not replace it with mock/API totals.',
-        'Set policy setup_status to ready only after review, then run and revalidate Test check using this baseline.'],
-      next_commands: [['yam', 'test-check', 'plan', '--base', base, '--json'], ['yam', 'test-check', 'run', '--base', base, '--json'], ['yam', 'test-check', 'check', '--json']] };
-    const contents = [JSON.stringify({ schema: 'yam.test-policy.v1', setup_status: 'draft', surfaces }, null, 2) + '\n', adapter, observer, JSON.stringify(setup, null, 2) + '\n'];
+        'For DB/runtime changes use a disposable or isolated environment and never forward production DATABASE_URL or service credentials.',
+        'Set policy setup_status to ready only after review, then request and approve the exact baseline before running Test check.'],
+      next_commands: [['yam', 'test-check', 'plan', '--base', base, '--json'], ['yam', 'test-check', 'approval', 'request', '--base', base, '--json'], ['yam', 'test-check', 'approval', 'approve', '--base', base, '--json'], ['yam', 'test-check', 'run', '--base', base, '--json'], ['yam', 'test-check', 'check', '--json']] };
+    const contents = [JSON.stringify({ schema: 'yam.test-policy.v1', setup_status: 'draft', execution: {
+      approval: 'required', trigger: 'changed_surface', commit: 'security_only', push: 'security_only', deploy: 'test_required'
+    }, surfaces }, null, 2) + '\n', adapter, observer, JSON.stringify(setup, null, 2) + '\n'];
     directory = path.join(root, 'testing');
     if (present(directory)) { const s = fs.lstatSync(directory); if (!s.isDirectory() || s.isSymbolicLink()) fail('unsafe_setup_directory'); }
     for (const file of FILES) if (present(path.join(root, file))) fail('setup_file_exists');

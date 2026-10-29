@@ -13,8 +13,10 @@ const smoke = run('gate-regressions', ['scripts/test-check-smoke.mjs','--json'])
 let summary;try{summary=JSON.parse(smoke.stdout);}catch{}
 const setupSmoke = run('setup-regressions', ['scripts/test-check-setup-smoke.mjs','--json']);
 let setupSummary;try{setupSummary=JSON.parse(setupSmoke.stdout);}catch{}
-const meaningful = summary?.status==='passed' && summary.assertions >= 32 && setupSummary?.status==='passed' && setupSummary.assertions >= 20;
-const assertionCount = meaningful ? summary.assertions + setupSummary.assertions : 0;
+const approvalSmoke = run('approval-regressions', ['scripts/test-check-approval-smoke.mjs','--json']);
+let approvalSummary;try{approvalSummary=JSON.parse(approvalSmoke.stdout);}catch{}
+const meaningful = approvalSummary?.status==='passed' && approvalSummary.assertions >= 14 && summary?.status==='passed' && summary.assertions >= 32 && setupSummary?.status==='passed' && setupSummary.assertions >= 20;
+const assertionCount = meaningful ? summary.assertions + setupSummary.assertions + approvalSummary.assertions : 0;
 run('typecheck', ['node_modules/typescript/bin/tsc','-p','tsconfig.json','--noEmit']);
 run('closure-regression', ['scripts/phase-adoptions-smoke.mjs']);
 run('turn-scope-regressions', ['scripts/study-note-turn-smoke.mjs']);

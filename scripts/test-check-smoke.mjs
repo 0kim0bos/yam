@@ -31,12 +31,31 @@ if(mode==='duplicate')tests.push(tests[0]);
 if(mode==='stale-env')tests.forEach(t=>t.environment={wrong:true});
 if(mode==='mutate')fs.appendFileSync('feature.ts','late');
 if(mode==='leak'){console.error('fixture-private-value');tests.forEach(t=>t.extra='fixture-private-value');}
+if(mode==='env-leak' && process.env.DATABASE_URL) process.exit(9);
 console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==='exit')process.exit(2);`);
  write(policyFile,policy());git('add','.');git('commit','-m','fixture baseline');const base=git('rev-parse','HEAD');
  write('feature.ts','new');
  const run=()=>runTestCheck(root,{base});
  const blocked=(mode)=>{process.env.YAM_FIXTURE_MODE=mode;assert.equal(run().result,'BLOCKED');delete process.env.YAM_FIXTURE_MODE;};
  test('actual success',()=>{assert.equal(run().result,'PASS');assert.equal(checkTestCheck(root).result,'PASS');});
+ test('approval plan requires explicit approval and strips production DB env',()=>{
+   const original=read(policyFile);const configured={...original,execution:{approval:'required',trigger:'changed_surface',commit:'security_only',push:'security_only',deploy:'test_required'}};
+   write(policyFile,configured);fs.rmSync(path.join(root,'.yam/testing/approval.json'),{force:true});process.env.YAM_FIXTURE_MODE='env-leak';process.env.DATABASE_URL='postgres://production.invalid/db';
+   const before=fs.existsSync(path.join(root,'.yam/adapter-started'));fs.rmSync(path.join(root,'.yam/adapter-started'),{force:true});
+   assert.equal(run().result,'BLOCKED');assert(run().errors.includes('approval_required'));assert(!fs.existsSync(path.join(root,'.yam/adapter-started')));
+   assert.equal(runTestCheckCommand(['approval','request','--base',base,'--stage','complete'],root).result,'approval_required');
+   assert.equal(run().result,'BLOCKED');
+   assert.equal(runTestCheckCommand(['approval','approve','--base',base,'--stage','complete'],root).result,'approved');
+   assert.equal(run().result,'PASS');assert(fs.existsSync(path.join(root,'.yam/adapter-started')));
+   delete process.env.DATABASE_URL;delete process.env.YAM_FIXTURE_MODE;write(policyFile,original);if(!before)fs.rmSync(path.join(root,'.yam/adapter-started'),{force:true});assert.equal(run().result,'PASS');
+ });
+ test('manual trigger plans without running from Stop hook',()=>{
+   const original=read(policyFile);write(policyFile,{...original,execution:{approval:'required',trigger:'manual',commit:'security_only',push:'security_only',deploy:'test_required'}});
+   const result=testCheckStop(root,true,'Done');assert.equal(result.continue,true);assert.match(result.systemMessage,/manual/);write(policyFile,original);
+ });
+ test('documentation-only turn does not trigger changed-surface gate',()=>{
+   assert.equal(testCheckStop(root,true,'Documentation updated.',true,['references/guide.md']),null);
+ });
  test('unknown turn scope cannot reuse a passing receipt',()=>{
    assert.equal(checkTestCheck(root).result,'PASS');
    assert.equal(testCheckStop(root,true,'Implementation complete.',false).decision,'block');
@@ -117,6 +136,21 @@ console.log(JSON.stringify({schema:'yam.test-observation.v1',tests})); if(mode==
  const {planTestCheck}=await import('../dist/lib/test-check.js');
  const env={schema:'yam.test-environment.v1',engine:'fixture-postgres',engine_version:'fixture',source_digest:planTestCheck(root,dbPolicy,base).source_digest,configuration_digest:hash('config'),roles_digest:hash('roles'),fixtures_digest:hash('synthetic'),migrations:[{file:'migrations/001.sql',sha256:hash(fs.readFileSync(path.join(root,'migrations/001.sql')))}]};
  write('.yam/environment.json',env);
+ test('dynamic SQL is a review flag, not an execution bypass',()=>{
+   write('migrations/002.sql',"CREATE OR REPLACE FUNCTION public.receiving() RETURNS void AS $$ BEGIN EXECUTE 'SELECT 1'; END $$ LANGUAGE plpgsql;");
+   const plan=planTestCheck(root,dbPolicy,base);assert(plan.review.includes('sql_manual_review:migrations/002.sql'));assert(!plan.errors.includes('sql_manual_review_required'));
+   fs.unlinkSync(path.join(root,'migrations/002.sql'));
+ });
+ test('SQL hints ignore comments, literals, trigger syntax and quoted identifiers',()=>{
+   write('migrations/002.sql', `-- EXECUTE hidden
+/* EXECUTE hidden /* nested */ */
+SELECT 'EXECUTE hidden';
+CREATE OR REPLACE FUNCTION "public"."receiving"() RETURNS void AS $$ BEGIN PERFORM 'EXECUTE hidden'; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER receiving_trigger AFTER INSERT ON receiving FOR EACH ROW EXECUTE FUNCTION public.receiving();`);
+   const p=structuredClone(dbPolicy);p.surfaces[1].targets.push('trigger:receiving_trigger');
+   const plan=planTestCheck(root,p,base);assert.deepEqual(plan.review,[]);assert(!plan.errors.includes('unmapped_sql_object'));
+   fs.unlinkSync(path.join(root,'migrations/002.sql'));
+ });
  test('DB protocol fixture',()=>assert.equal(run().result,'PASS'));
  test('mock substitution',()=>blocked('mock'));
  test('old applied environment',()=>blocked('stale-env'));

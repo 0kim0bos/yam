@@ -148,6 +148,8 @@ try {
     const f = fixture(); f.init(); const p = f.read('testing/policy.json'); p.setup_status = 'ready'; f.write('testing/policy.json', p);
     const program = `const assert=require('node:assert/strict');const tests=[];for(const s of ['success','invalid','boundary']){let assertions=0;if(s==='success'){assert.equal(2+2,4);assertions++;}if(s==='invalid'){assert.throws(()=>JSON.parse('{'));assertions++;}if(s==='boundary'){assert.equal([].length,0);assertions++;}tests.push({id:'logic-'+s,target:'project',scenario:s,evidence:'unit',status:'passed',tests:1,assertions,failed:0,skipped:0,mocked:true});}console.log(JSON.stringify(tests));`;
     f.write('testing/yam-observations.mjs', `export function observe({run}){const r=run('$NODE',['-e',${JSON.stringify(program)}]);if(r.exit_code!==0)throw Error('test_failed');return JSON.parse(r.stdout);}`);
+    assert.equal(command(['approval', 'request', '--base', f.base], f.root).result, 'approval_required');
+    assert.equal(command(['approval', 'approve', '--base', f.base], f.root).result, 'approved');
     assert.equal(command(['run', '--base', f.base], f.root).result, 'PASS'); assert.equal(command(['check'], f.root).result, 'PASS');
     f.write('feature.ts', 'changed later'); assert.equal(command(['check'], f.root).result, 'BLOCKED');
   });

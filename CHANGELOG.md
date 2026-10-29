@@ -2,6 +2,20 @@
 
 All notable changes to yam-flow are documented here.
 
+## v2.8.10 - 2026-10-29
+
+### Changed
+
+- Preserve Test check source, scenario and runtime evidence validation while adding explicit plan approval and deferral. New project setup requests approval for functional changes; Stop hooks never launch adapters.
+- Bind approved plans to the exact base, source, policy, stage and environment, plus deployment artifact/configuration. Stale or incomplete evidence cannot grant verification approval.
+- Allow reviewed commit/push `security_only` policies with separate deferral records. CI and deployment retain their Test check requirements; existing project policies remain unchanged until reviewed migration.
+- Require isolated DB declarations for approval-required execution and avoid forwarding common database credentials. Dynamic SQL creates an advisory review flag without preventing simulation; adapters remain responsible for actual environment isolation.
+- Apply commit/push `security_only` to this repository while preserving its existing CI/deployment scenario inventory and automation.
+
+### Fixed
+
+- Keep missing DB environments, corrupt approvals, stale results and failed note persistence from reintroducing forced-run Stop loops or displaying an unsupported PASS.
+
 ## v2.8.9 - 2026-10-29
 
 ### Fixed

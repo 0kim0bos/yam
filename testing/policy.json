@@ -104,5 +104,10 @@
         }
       ]
     }
-  ]
+  ],
+  "execution": {
+    "commit": "security_only",
+    "push": "security_only",
+    "deploy": "test_required"
+  }
 }

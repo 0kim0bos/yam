@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "yam Deep engineering self-review: 2.8.9 canonical skill alias validation and exact quoted protocol path exception; invalid links and non-protocol attribution remain blocked",
-  "reviewed_at": "2026-10-28T15:50:10.732424Z",
+  "reviewer": "yam Deep 2.8.10 release engineering review; approval redesign independently cross-reviewed in prior Mission; release metadata and transport policy reviewed separately",
+  "reviewed_at": "2026-10-29T07:43:35.873241+00:00",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -39,6 +39,7 @@
     "scripts/skill-content-smoke.mjs",
     "scripts/status.sh",
     "scripts/study-note-turn-smoke.mjs",
+    "scripts/test-check-approval-smoke.mjs",
     "scripts/test-check-postgres-smoke.mjs",
     "scripts/test-check-project.mjs",
     "scripts/test-check-setup-smoke.mjs",
@@ -76,8 +77,8 @@
     ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
     ".github/workflows/security-check.yml": "sha256:faf17cbe248a7b2333520b414809b60ced15a683c919436e56086ae39fdf6343",
     ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
-    "package-lock.json": "sha256:03016ba33d1b32946e9d44134efd288ec2a1924bbc10fd81d2306095988c0df7",
-    "package.json": "sha256:761f6a14e7ada47c52a044ffe180c2fbb98a696eed5c4265067b3d0ebc9a6ac4",
+    "package-lock.json": "sha256:efb4a153879bf76458d6de7cf2d6abbb1cc6acff4e38919b9bc8699aee0dac13",
+    "package.json": "sha256:36f07fb93605ce5f7e4824bd050de450b076db44c34ea858e014604bd96c6b8e",
     "scripts/check-dist-freshness.mjs": "sha256:4b1a17e8ff6509ef88f2afedfe7b89c6d5b6d141495bd70e8ca2025ead390601",
     "scripts/check-forbidden-names.mjs": "sha256:fdb83ff72d92b7dc4947ae48cd31fdbffabb1e97f6beb76af4475810e95facaa",
     "scripts/check-package-boundary.mjs": "sha256:2a55edd725ff15fa2244e3adf933f7682c8d8b1e86bc6d1513c351e4730ba449",
@@ -105,18 +106,19 @@
     "scripts/scout-receipt-smoke.mjs": "sha256:0a499fb36295201d373ac3b72f67ee3d3f7b874e6b27f75b3fd78ae2ba0321ec",
     "scripts/secret-patterns.mjs": "sha256:592c3ee646d5583a5cbf0480d98c2b478b98a8a93d9be1a38c0b6c7b35bc0d95",
     "scripts/security-check-smoke.mjs": "sha256:10cf422cc5cd55caafab8f5092870cd452eb34b693e76d6dd2ab6bc1f760e8c4",
-    "scripts/security-integration-smoke.mjs": "sha256:0f5831440c33be0b6103a38eb29ae30c649025cf646e5681c7e3d52caae4718c",
+    "scripts/security-integration-smoke.mjs": "sha256:d5186ee4fadc7eccbf9a6fb192f6bd109efaff24827ba1c50508ff018f00e503",
     "scripts/skill-content-smoke.mjs": "sha256:c58af76f0d33a9a5189ed2788b42976805e170b614a4af65d3f8753621c18f79",
     "scripts/status.sh": "sha256:b9289d3444db3361e5275c13bbd5f4d1fa551491c84b62a0c470b7991d36f86f",
     "scripts/study-note-turn-smoke.mjs": "sha256:c12c1033c67dabf6ffaae0489129eab11412cfe705d38148dd9a462fae3826ea",
-    "scripts/test-check-postgres-smoke.mjs": "sha256:970a7a9032c24291aa41b15d81aab9705c699247633d78952dff047e198702aa",
-    "scripts/test-check-project.mjs": "sha256:ba26540ca8640be2d7ab25446570e44d96252316c315d2e60c3213582c7415d8",
-    "scripts/test-check-setup-smoke.mjs": "sha256:edf56da89b8a2189348b7663d4df000a253c5138060c3a9626cc7f6397aafab9",
+    "scripts/test-check-approval-smoke.mjs": "sha256:43b85b46abb49d04354ba346ffc975e5f60e0f6ceb595da58b28cafd13eea420",
+    "scripts/test-check-postgres-smoke.mjs": "sha256:b59f06a5fcb64a06160372d68f5b6384dac6f6ceac9ce16d801badb62b430f2f",
+    "scripts/test-check-project.mjs": "sha256:480d0f1b0d390e9e6545aee1b7935eee3673b8f55b26941a7137afe01db959d2",
+    "scripts/test-check-setup-smoke.mjs": "sha256:7b751dadffa81531468b992eef0fcc006c5f489a1e7a9d35ced43fc350d9d848",
     "scripts/test-check-skill-alias-smoke.mjs": "sha256:1d5fb34b82353bfcbb831114bd206679ff1d762b04927f00b4f2fcdee4a16318",
-    "scripts/test-check-smoke.mjs": "sha256:f81c74f4698136ccee8c2a864c0ba376fdad2d1eb5e34c9601cfcf0af59d1e94",
+    "scripts/test-check-smoke.mjs": "sha256:0b80b2fed2a24699a7280b90fad229ecabf906157486d122b8554651cca0eb74",
     "scripts/trust-adoptions-smoke.mjs": "sha256:4b943b4bf23a8a39ddc35949d42376741a7dda99d0a6df859db95e9f4bd98612",
     "scripts/uninstall.sh": "sha256:c2764a7de990573c913b217198efe73425b4d9ff0db8beddd4c822e763c4213c",
-    "src/bin/yam.ts": "sha256:4bc24e6e0770212acbc96a8c4e4855d8c0b5ef506ae8ac0ad10354a8096a3576",
+    "src/bin/yam.ts": "sha256:8705a2aba5c540d07a6d3cda5283fdec915fcaac9070e30fbd422ce976070101",
     "src/lib/benchmark-promotion.ts": "sha256:5be7d5eb5e8dfa3654f8176ceb8098565ee6fdf534e87c5cd8e9b028931a7d3d",
     "src/lib/bounded-input.ts": "sha256:65d207a8f5503c10a1cc8b4007a297fdfdd1a51243bbffe584b53eeb64c2931c",
     "src/lib/design-production.ts": "sha256:46314fbb041e4e10f151f84556fb3b5510a00a0d82b4ef173c574e8e835cd79a",
@@ -133,13 +135,13 @@
     "src/lib/security-integration.ts": "sha256:8a57b74335783b6ab7fc27123f874fe1d26f8e0073567e29473e46862921e7e1",
     "src/lib/skill-installation.ts": "sha256:eb9a9cf45c7271d8333f2aab9b7cb90c219ee826d8b89ac6e782926ccbd2d00e",
     "src/lib/stable-order.ts": "sha256:67ae3f0d2f6fd4b4d29a0dd0f1b30fcc0189828d1f9baae192a50e0f52fdbddd",
-    "src/lib/study-note-scope.ts": "sha256:bc19dbc388d2eddf633ddccbe9671aa67375acb8e97995af5105afafbc74a356",
-    "src/lib/test-check-setup.ts": "sha256:6ed3f0e0ea9e5c24c335690d9b6bf2b7246679cc2fad8306849f33d7121efb55",
-    "src/lib/test-check.ts": "sha256:57e1497eaedc3a8b9ad57c1a5a4f556f8c244e539dbb7484a439145911a0ec77",
+    "src/lib/study-note-scope.ts": "sha256:e572ced587080fb00c5d534576d84eff3a38beacb00e155e914eb0e6e8307780",
+    "src/lib/test-check-setup.ts": "sha256:9387c7bb248ef1edf4fa4a9c55154c0ff8516e0840e8ad5cd968acd9b840bbee",
+    "src/lib/test-check.ts": "sha256:7455d6a63d1f5a6a112bec146db528ff3badffba42ecad764d7f3dbce633409c",
     "src/lib/trust-kernel.ts": "sha256:e77aec96c0d6e0ca3fa649f34c1b86c4bd070433886530f6295c911a15675ae2",
     "src/lib/ueye-artifacts.ts": "sha256:d802e5bedc32899f162f22e2fca4d7975e8ee8cd4678f1350248365d24009b9d",
     "src/lib/verification-closure.ts": "sha256:a9263005c5277fd7ec40d0ed94e4258278e8c2bd6cbc885adf29940b051a14d7",
-    "testing/policy.json": "sha256:21f22b2af1c8dff79a6729dd0df1614027793b34339a13df93bd154fc9f8ec9f",
+    "testing/policy.json": "sha256:c21c1a0065a7129afc24aa782301be2b8a460a76dab89b39d8c255112c845e7c",
     "tsconfig.json": "sha256:530aa615793c49ec75df56d9db96ddd9498526638ecaf0a62810eb2dc0a672d8"
   },
   "areas": {
@@ -157,7 +159,7 @@
     "Digest inventory detects divergence from identified engineering review; it is not a comprehensive code audit.",
     "Sensitive source or executable changes require renewed review rather than automatic approval.",
     "Remote deployment state and installed dependency provenance are not proved by source hashes alone.",
-    "Current Test check implementation is self-reviewed in Deep mode, not independently audited; hosted pin refresh and execution remain outside this local task."
+    "Approval redesign had bounded independent code review and synthetic PostgreSQL simulation before release preparation. Release metadata and security_only transport policy are identified engineering self-review; no production application or remote deployment is certified."
   ],
   "review_notes": [
     "Reviewed hook schema migration: opt-in, backup and file identity checks, handler preservation, no Codex trust bypass; existing same-user filesystem race limitation retained.",
@@ -184,6 +186,8 @@
     "Reviewed 2.8.6 project initialization: bounded Git/package metadata discovery without running candidate scripts; exact existing commit baseline; draft policy and independent project observer remain unapproved. Public/private existing policies, tracked deletions, collisions, links, other-owner locks and partial-write failures preserve user data. Filesystem identity checks do not establish an adversarial same-user sandbox.",
     "Reviewed draft/ready policy compatibility and work-start guidance: legacy policies retain their contract; draft setup never executes test commands or grants PASS; marking ready alone cannot pass without mapped actual observations. Real DB identity requirements, stage bindings, mandatory scenarios, Security check and hosted policy pins remain in force. Initializer metadata is not universal framework parsing or production runtime proof.",
     "Reviewed 2.8.6 release metadata and executable inventory: package, lock and manifest versions are synchronized, dependency graph unchanged, and the setup module/test are included. Local 26-case onboarding and 49-case gate suites, process assertions and packaged CLI evidence are self-review. Existing real PostgreSQL evidence is historical synthetic coverage, not a new production application audit.",
-    "Reviewed final 2.8.6 activation edge case: a prior failed receipt without a policy must keep work-start guidance in setup mode. A regression reproduced the incorrect active reminder before the fix; configuration status now determines missing/draft setup independently of receipt presence. The follow-up leaves runtime approval, stored failures and trusted CI checks unchanged; final onboarding suite contains 27 cases."
+    "Reviewed final 2.8.6 activation edge case: a prior failed receipt without a policy must keep work-start guidance in setup mode. A regression reproduced the incorrect active reminder before the fix; configuration status now determines missing/draft setup independently of receipt presence. The follow-up leaves runtime approval, stored failures and trusted CI checks unchanged; final onboarding suite contains 27 cases.",
+    "Reviewed 2.8.10 approval redesign against Mission evidence: exact source/base/policy/stage/scenario/environment/artifact bindings, expiry, failed persistence, nonblocking approval-required Stop handling, preserved deferred decisions, credential non-inheritance and advisory SQL review. No trust-kernel/source/evidence validation removed.",
+    "Reviewed 2.8.10 release preparation: synchronized package, package lock and manifest versions; dependency graph unchanged. User explicitly requested no new local Test check execution. The repository transport policy defers only commit/push tests, keeps independent Security check, and preserves CI/deploy requirements, scenario inventory and workflows. No branch-protection change, hook bypass, global install or npm publication is authorized."
   ]
 }
