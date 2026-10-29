@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, delimiter as pathDelimiter, dirname, join, resolve } from 'node:path';
+import { packRelease, verifyPackedSource } from './release-pack.mjs';
 
 function parseArgs(argv) {
   const options = { artifactDir: '', receipt: '', writeReceipt: '', expectedSha256: '', verifyOnly: false, selfTest: false };
@@ -49,6 +50,7 @@ function findSingleTarball(artifactDir) {
 function writeReceipt(artifactDir, receiptPath) {
   const tarball = findSingleTarball(artifactDir);
   const identity = packageIdentity();
+  verifyPackedSource(tarball, currentCommit());
   const receipt = {
     schema: 'yam.packed-release-artifact.v1',
     package: identity.name,
@@ -81,6 +83,7 @@ function verifyReceipt(artifactDir, receiptPath, expectedSha256 = '') {
   if (receipt.sha256 !== actualSha256) throw new Error(`tarball sha256 mismatch: expected ${receipt.sha256}, got ${actualSha256}`);
   const commit = currentCommit();
   if (receipt.source_commit && commit && receipt.source_commit !== commit) throw new Error(`receipt source commit ${receipt.source_commit} does not match checkout ${commit}`);
+  verifyPackedSource(tarball, commit);
   if (findSingleTarball(artifactDir) !== tarball) throw new Error('artifact directory contains an unexpected tarball');
   return { receipt, tarball };
 }
@@ -222,9 +225,7 @@ function runSelfTest() {
     if (JSON.stringify(observedArgv) !== JSON.stringify(argvFixture)) {
       throw new Error(`shell-free argv boundary changed values: ${JSON.stringify(observedArgv)}`);
     }
-    runNpm(['pack', '--json', '--pack-destination', artifactDir], {
-      cwd: process.cwd(),
-    });
+    packRelease(process.cwd(), artifactDir, npmCliPath());
     findSingleTarball(artifactDir);
     writeReceipt(artifactDir, receiptPath);
     const verified = verifyReceipt(artifactDir, receiptPath);

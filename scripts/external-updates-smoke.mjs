@@ -43,7 +43,7 @@ try {
   assert.equal(fixture.fetches.some((url) => url.includes('/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/')), true);
   assert.equal(fixture.fetches.some((url) => url.includes('/HEAD/')), false);
 
-  for (const scenario of ['metadata404', 'artifact404', 'network', 'auth', 'mismatch', 'untrusted']) {
+  for (const scenario of ['metadata404', 'artifact404', 'network', 'auth', 'mismatch', 'untrusted', 'missingGitHead', 'invalidGitHead', 'revisionMismatch']) {
     const pendingFixture = createFixture();
     const deps = pendingFixture.dependencies();
     const originalFetch = deps.fetchJson;
@@ -55,6 +55,9 @@ try {
       }
       const data = await originalFetch(url);
       if (url === 'https://registry.npmjs.org/yam-flow/2.5.0' && scenario === 'mismatch') data.dist.integrity = 'sha512-bWlzbWF0Y2g=';
+      if (url.endsWith('/latest') && scenario === 'missingGitHead') delete data.gitHead;
+      if (url.endsWith('/latest') && scenario === 'invalidGitHead') data.gitHead = 'invalid';
+      if (url === 'https://registry.npmjs.org/yam-flow/2.5.0' && scenario === 'revisionMismatch') data.gitHead = 'd'.repeat(40);
       if (url.endsWith('/latest') && scenario === 'untrusted') data.dist.tarball = 'https://example.invalid/evil.tgz';
       return data;
     };

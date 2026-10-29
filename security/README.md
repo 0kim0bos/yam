@@ -41,7 +41,7 @@ route, and obtain a recent environment inspection for those exact bytes:
 ```bash
 npm run release:check
 mkdir -p .yam/security/release
-npm pack --ignore-scripts --pack-destination .yam/security/release
+npm run release:pack -- .yam/security/release
 node scripts/project-security-check.mjs --stage deploy \
   --source "$(git rev-parse HEAD)" \
   --artifact .yam/security/release/yam-flow-VERSION.tgz \
@@ -50,6 +50,8 @@ node scripts/project-security-check.mjs --stage deploy \
   --environment-evidence .yam/security/deployment-inspection.json \
   --policy-digest "$YAM_SECURITY_POLICY_SHA256" --json
 ```
+
+Release packing requires a clean checkout and preserves its exact Git commit as `gitHead` inside the tarball. The lifecycle verifier rejects missing or mismatched source metadata before publication. Do not substitute plain `npm pack`: npm publication of a tarball does not infer its original Git revision.
 
 Replace VERSION with the verified package version. Use the administrator-approved
 policy pin; never use a newly computed candidate value as approval. The inspection

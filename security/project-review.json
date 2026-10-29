@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "yam local removal engineering review: dedicated test gate removed; independent Security check and Study Note retained",
-  "reviewed_at": "2026-10-29T10:59:49.346771+00:00",
+  "reviewer": "yam release metadata engineering review; exact packed source metadata and independent Security check retained",
+  "reviewed_at": "2026-10-29T12:07:38.293368+00:00",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -31,6 +31,8 @@
     "scripts/project-security-check-smoke.mjs",
     "scripts/project-security-check.mjs",
     "scripts/release-auth-readiness-smoke.mjs",
+    "scripts/release-pack-smoke.mjs",
+    "scripts/release-pack.mjs",
     "scripts/release-registry-status-smoke.mjs",
     "scripts/removed-feature-smoke.mjs",
     "scripts/scout-receipt-smoke.mjs",
@@ -66,11 +68,11 @@
     "tsconfig.json"
   ],
   "files": {
-    ".github/workflows/release.yml": "sha256:e394eda64aa03470e2d40229a656ca8ae7f5d8deb4a173668e372fa1269502ba",
+    ".github/workflows/release.yml": "sha256:f2962b7add85307c11c50cc2347af1f8586f76dbefc49dc418c21fb9572ba683",
     ".github/workflows/security-check.yml": "sha256:0d0ccff635d6b94e866a1e3024495def6ca3614312dd428a8f7ba1d2d44098cb",
-    ".github/workflows/supply-chain.yml": "sha256:2dc3b432d583dbdba6b6ced7b483d2ff1013564be8bfc6b1e54c2999d1fe4661",
-    "package-lock.json": "sha256:7ab93a6a2dfe2bf4b88f412250ff2c79df2a8a42afa40aa393d7ac65f83e0a14",
-    "package.json": "sha256:bae98440cd556a186680cbc031626ff0cc5d74df5e22d90f802991523e616c7a",
+    ".github/workflows/supply-chain.yml": "sha256:295cc35476ac423841962d41f9ae663c870709dfb7824ff9597c63763f62669b",
+    "package-lock.json": "sha256:5d6c7c4c409a51ce0ec526317c797bce39320c1bf57ba31157974166463feb71",
+    "package.json": "sha256:c22a9cce4952653aa165f3d4adaf23777966e7d77b230d05ecf15ef188f30c16",
     "scripts/check-dist-freshness.mjs": "sha256:0615ed2dbe97fd2a2cc21dc0937c8fe65a1031226923e3456ef61cf60caee0ce",
     "scripts/check-forbidden-names.mjs": "sha256:f67187ce0efcb86108cf064116bc5db443ec70f335ab9968d00e308151d3f977",
     "scripts/check-package-boundary.mjs": "sha256:ac082b2117b661f8a1dfe10b417f46fd7f138b34912a707c202b5578bb556b51",
@@ -81,7 +83,7 @@
     "scripts/check-workflow-pins.mjs": "sha256:06a4864a9af4acb8014a53d94419be8cc6fa0ed3d5a7ed41ae1e444ba099ba01",
     "scripts/cli-smoke.mjs": "sha256:52e7219635595fc8742bd8114f4b653f283cb45688edc6871586d560f31e4ce7",
     "scripts/design-production-smoke.mjs": "sha256:292b332394658e695f6833068b084e7c29ac7452581f65bffd0737212a21c664",
-    "scripts/external-updates-smoke.mjs": "sha256:bcadc33a54f29b9ea29e95e5fb75e0c49aafea67dfcbf6e4ded288e8b9e9b7e3",
+    "scripts/external-updates-smoke.mjs": "sha256:b9595ac4f88be7a86f3c669d77501d4657a007c14e0feefea87ff5ae0f4a9088",
     "scripts/hook-latency-smoke.mjs": "sha256:deced88307ed3e003e13de183c5ac4e1ba023164385bbd1e47cfa6bf6bdf5362",
     "scripts/hook-readiness-smoke.mjs": "sha256:7c701fb9a4ed8e4ff05187066c0d281f79289a71eaba53cdc805864ce32458c8",
     "scripts/install-transaction-smoke.mjs": "sha256:c8e83e34adcb7fe0b2e2fa1d43315bfbc4f6f7789e2e3c81c2dffb3e05dadb22",
@@ -89,11 +91,13 @@
     "scripts/memory-completeness-smoke.mjs": "sha256:9614e9e654135672da34849807596ff3067a54f0e6b5b545552942c6bc306b28",
     "scripts/next-step-smoke.mjs": "sha256:54c744e729eef3b002b55ceaef967d66f7fb1c8f6e7e6fe852d934305bafb7b7",
     "scripts/package-secrets-smoke.mjs": "sha256:f648fb1d82f65786fcd6738dfdf68b5872aed501ec0c99633c82d50078e4e6b7",
-    "scripts/packed-lifecycle-smoke.mjs": "sha256:83874e16a1ff277ae1722678fde6f424b5c5cdf4bda81b86c635d4749e43576a",
+    "scripts/packed-lifecycle-smoke.mjs": "sha256:1fc8aa479e796f114b97e1451e16e435f85b2cbf4632efc8ce08dedf8e9fa57b",
     "scripts/phase-adoptions-smoke.mjs": "sha256:986da105ef360f7513de0ea5fa175367a32d353c7ac03f435458315817682dec",
     "scripts/project-security-check-smoke.mjs": "sha256:091ef725e9cfe18df99b71fc5203c497b6b2340bb3876acfdefec4885b539161",
     "scripts/project-security-check.mjs": "sha256:a2deed021764b9b03c775131f17848cdcd3c6527bc3a69d69886d73c791d0bcf",
     "scripts/release-auth-readiness-smoke.mjs": "sha256:deae08d797b6a0e97afa5533459f169d20daa6d6c3e99e92b459b8c3fa776261",
+    "scripts/release-pack-smoke.mjs": "sha256:1e4da6c4db38c8561933d2ef4a70c52edfdee73a452838551a3e5825b6c796f7",
+    "scripts/release-pack.mjs": "sha256:5a36e5f4bf49ef1bf25914e4b6acb5a224be8b2ac117f03f75517ebe0cd8406c",
     "scripts/release-registry-status-smoke.mjs": "sha256:e306143aead0f3aa25f32a6bb3e7cee08467c14c3fecd012efbcb08c056afef4",
     "scripts/removed-feature-smoke.mjs": "sha256:3aaed5b5781bd1f0114abb33b8f3bdd0a16a972213b25f9255e2e48773efd545",
     "scripts/scout-receipt-smoke.mjs": "sha256:0a499fb36295201d373ac3b72f67ee3d3f7b874e6b27f75b3fd78ae2ba0321ec",
@@ -175,6 +179,7 @@
     "Reviewed 2.8.10 approval redesign against Mission evidence: exact source/base/policy/stage/scenario/environment/artifact bindings, expiry, failed persistence, nonblocking approval-required Stop handling, preserved deferred decisions, credential non-inheritance and advisory SQL review. No trust-kernel/source/evidence validation removed.",
     "Reviewed 2.8.10 release preparation: synchronized package, package lock and manifest versions; dependency graph unchanged. User explicitly requested no new local Test check execution. The repository transport policy defers only commit/push tests, keeps independent Security check, and preserves CI/deploy requirements, scenario inventory and workflows. No branch-protection change, hook bypass, global install or npm publication is authorized.",
     "User explicitly requested complete removal of the dedicated Test check feature, including manual CLI. Reviewed deletion of its two modules, policy initializer, dedicated adapters, template, guidance, hook coupling, Security check prerequisite and CI execution. Ordinary tests, nine-area security policy, source/artifact/configuration binding, failure notes and deployment inspection remain. Legacy hook test-policy option is accepted without use solely for migration compatibility. User project policies and private evidence are preserved.",
-    "Local removal package is labeled 2.8.11 (not published) to distinguish it from public 2.8.10 and avoid a local prerelease being mistaken for an older numeric version by the existing updater. Final packaged CLI and ownership-preview checks passed; no public release or Git history mutation performed."
+    "Local removal package is labeled 2.8.11 (not published) to distinguish it from public 2.8.10 and avoid a local prerelease being mistaken for an older numeric version by the existing updater. Final packaged CLI and ownership-preview checks passed; no public release or Git history mutation performed.",
+    "Reviewed 2.8.12 source metadata repair: release pack uses a clean exact Git checkout, bounded npm file listing, regular nonlinked files and ignored lifecycle scripts; embeds gitHead only in temporary package manifest, checks the final tarball, preserves source and refuses artifact collisions. Packed lifecycle rejects absent/mismatched gitHead. Both CI packaging workflows and manual handoff use this path. Loopback registry regression exercised actual npm tarball publication and confirmed gitHead in outgoing metadata; updater still fails closed on missing, invalid or conflicting revisions. No updater trust fallback, dependency graph change or security policy relaxation."
   ]
 }

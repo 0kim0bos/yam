@@ -2,7 +2,11 @@
 
 All notable changes to yam-flow are documented here.
 
-## Unreleased
+## 2.8.12
+
+- Preserve the exact source commit in release tarballs so filename-based npm publication retains `gitHead`; reject missing/mismatched packed metadata and test real npm publication against a loopback registry.
+
+## 2.8.11
 
 ### Removed
 

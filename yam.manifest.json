@@ -1,6 +1,6 @@
 {
   "name": "yam",
-  "version": "2.8.11",
+  "version": "2.8.12",
   "principles": [
     "Direction before execution.",
     "Keep the current branch; new/switched branches, worktrees and PRs require explicit user direction or applicable project rules. Protection blockers require reporting, not silent workflow changes or bypass.",

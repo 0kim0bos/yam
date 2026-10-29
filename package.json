@@ -1,6 +1,6 @@
 {
   "name": "yam-flow",
-  "version": "2.8.11",
+  "version": "2.8.12",
   "description": "Progressive proof-first agent flow: start fast, deepen deliberately, stay honest by design.",
   "type": "module",
   "author": "0kim0bos",
@@ -95,8 +95,8 @@
     "release:ref:check:strict": "node ./scripts/check-release-ref.mjs --mode release --remote-ref origin/main --tag-policy signed",
     "release:ref:smoke": "node ./scripts/check-release-ref.mjs --self-test",
     "release:packed-lifecycle:smoke": "node ./scripts/packed-lifecycle-smoke.mjs --self-test",
-    "release:supply-chain:smoke": "npm run build && npm run registry:check:smoke && npm run release:ref:smoke && npm run release:packed-lifecycle:smoke",
-    "release:check": "npm run release:ref:check && npm run typecheck && npm run forbidden-names:check && npm run workflow-pins:check && npm run verify:self && npm run dist:freshness && npm run package-boundary:check && npm run registry:check && npm run cli-smoke",
+    "release:supply-chain:smoke": "npm run build && npm run registry:check:smoke && npm run release:ref:smoke && npm run release:packed-lifecycle:smoke && npm run release:pack:smoke",
+    "release:check": "npm run release:ref:check && npm run release:pack:smoke && npm run typecheck && npm run forbidden-names:check && npm run workflow-pins:check && npm run verify:self && npm run dist:freshness && npm run package-boundary:check && npm run registry:check && npm run cli-smoke",
     "budget": "node ./dist/bin/yam.js budget",
     "measure": "node ./dist/bin/yam.js measure",
     "tools": "node ./dist/bin/yam.js tools",
@@ -112,7 +112,9 @@
     "security-smoke": "node ./scripts/security-check-smoke.mjs",
     "security-integration-smoke": "node ./scripts/security-integration-smoke.mjs",
     "forbidden-names-smoke": "node ./scripts/check-forbidden-names.mjs --self-test",
-    "removed-feature-smoke": "node ./scripts/removed-feature-smoke.mjs"
+    "removed-feature-smoke": "node ./scripts/removed-feature-smoke.mjs",
+    "release:pack": "node scripts/release-pack.mjs",
+    "release:pack:smoke": "node scripts/release-pack-smoke.mjs"
   },
   "keywords": [
     "codex",
