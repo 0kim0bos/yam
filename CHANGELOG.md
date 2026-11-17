@@ -2,6 +2,19 @@
 
 All notable changes to yam-flow are documented here.
 
+## 2.8.13
+
+### Fixed
+
+- Run updater subprocesses asynchronously so slow plugin inventory queries cannot stall parallel registry requests. Preserve bounded output, redaction, timeout termination and observed process closure; reject timeout, spawn-error or signal failures even when the exit status is zero.
+- Restrict initial and post-update plugin inventory to the configured official marketplace without a broad-query fallback. Keep source, revision and path validation unchanged.
+
+### Verification
+
+- Add 12 bounded runner regressions, including real slow, graceful-timeout and forced-termination child processes, plus scoped-query, output-cap and error handling cases.
+- Add explicit-run isolated Scrapling 0.5.1 compatibility checks with run-local wheel hashes, disposable remote-session ownership tests and private-link rollback evidence. Global promotion remains separate; fixture and instrumented-runtime evidence do not establish production or cross-platform compatibility.
+- Record demand-gated compatibility/trust follow-up phases without enabling new hooks, host adapters, telemetry or design services.
+
 ## 2.8.12
 
 - Preserve the exact source commit in release tarballs so filename-based npm publication retains `gitHead`; reject missing/mismatched packed metadata and test real npm publication against a loopback registry.

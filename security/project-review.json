@@ -1,7 +1,7 @@
 {
   "schema": "yam.project-security-review.v1",
-  "reviewer": "yam release metadata engineering review; exact packed source metadata and independent Security check retained",
-  "reviewed_at": "2026-10-29T12:07:38.293368+00:00",
+  "reviewer": "Codex Deep engineering re-review; user-authorized 2.8.13 source and trust-pin refresh; not an independent vulnerability scan",
+  "reviewed_at": "2026-11-17T01:57:00.819Z",
   "source_inventory": [
     ".github/workflows/release.yml",
     ".github/workflows/security-check.yml",
@@ -36,6 +36,8 @@
     "scripts/release-registry-status-smoke.mjs",
     "scripts/removed-feature-smoke.mjs",
     "scripts/scout-receipt-smoke.mjs",
+    "scripts/scrapling-compatibility-live.mjs",
+    "scripts/scrapling-remote-smoke.py",
     "scripts/secret-patterns.mjs",
     "scripts/security-check-smoke.mjs",
     "scripts/security-integration-smoke.mjs",
@@ -71,8 +73,8 @@
     ".github/workflows/release.yml": "sha256:f2962b7add85307c11c50cc2347af1f8586f76dbefc49dc418c21fb9572ba683",
     ".github/workflows/security-check.yml": "sha256:0d0ccff635d6b94e866a1e3024495def6ca3614312dd428a8f7ba1d2d44098cb",
     ".github/workflows/supply-chain.yml": "sha256:295cc35476ac423841962d41f9ae663c870709dfb7824ff9597c63763f62669b",
-    "package-lock.json": "sha256:5d6c7c4c409a51ce0ec526317c797bce39320c1bf57ba31157974166463feb71",
-    "package.json": "sha256:c22a9cce4952653aa165f3d4adaf23777966e7d77b230d05ecf15ef188f30c16",
+    "package-lock.json": "sha256:a513a97f93fb624aeee888ba0ba987afb8a4c5efbae1bf1a3fc84bf219d80ae4",
+    "package.json": "sha256:4ebc43005cb051ddb55f626e207c5c92a89af97b9388b10d23b89be4efe32c5b",
     "scripts/check-dist-freshness.mjs": "sha256:0615ed2dbe97fd2a2cc21dc0937c8fe65a1031226923e3456ef61cf60caee0ce",
     "scripts/check-forbidden-names.mjs": "sha256:f67187ce0efcb86108cf064116bc5db443ec70f335ab9968d00e308151d3f977",
     "scripts/check-package-boundary.mjs": "sha256:ac082b2117b661f8a1dfe10b417f46fd7f138b34912a707c202b5578bb556b51",
@@ -83,7 +85,7 @@
     "scripts/check-workflow-pins.mjs": "sha256:06a4864a9af4acb8014a53d94419be8cc6fa0ed3d5a7ed41ae1e444ba099ba01",
     "scripts/cli-smoke.mjs": "sha256:52e7219635595fc8742bd8114f4b653f283cb45688edc6871586d560f31e4ce7",
     "scripts/design-production-smoke.mjs": "sha256:292b332394658e695f6833068b084e7c29ac7452581f65bffd0737212a21c664",
-    "scripts/external-updates-smoke.mjs": "sha256:b9595ac4f88be7a86f3c669d77501d4657a007c14e0feefea87ff5ae0f4a9088",
+    "scripts/external-updates-smoke.mjs": "sha256:083d9f7ee40a28c84e9f66af55725c00c35b57b998a8f04159099f9d86b97601",
     "scripts/hook-latency-smoke.mjs": "sha256:deced88307ed3e003e13de183c5ac4e1ba023164385bbd1e47cfa6bf6bdf5362",
     "scripts/hook-readiness-smoke.mjs": "sha256:7c701fb9a4ed8e4ff05187066c0d281f79289a71eaba53cdc805864ce32458c8",
     "scripts/install-transaction-smoke.mjs": "sha256:c8e83e34adcb7fe0b2e2fa1d43315bfbc4f6f7789e2e3c81c2dffb3e05dadb22",
@@ -101,6 +103,8 @@
     "scripts/release-registry-status-smoke.mjs": "sha256:e306143aead0f3aa25f32a6bb3e7cee08467c14c3fecd012efbcb08c056afef4",
     "scripts/removed-feature-smoke.mjs": "sha256:3aaed5b5781bd1f0114abb33b8f3bdd0a16a972213b25f9255e2e48773efd545",
     "scripts/scout-receipt-smoke.mjs": "sha256:0a499fb36295201d373ac3b72f67ee3d3f7b874e6b27f75b3fd78ae2ba0321ec",
+    "scripts/scrapling-compatibility-live.mjs": "sha256:1ca5e391d735e5a12c22e30f2287429a4afed903c381f1d5393c2c8f65c82ec5",
+    "scripts/scrapling-remote-smoke.py": "sha256:feb6cf6011b858f3d64a9179e5d6eeb385acad165eb25a095415cc3488c73026",
     "scripts/secret-patterns.mjs": "sha256:592c3ee646d5583a5cbf0480d98c2b478b98a8a93d9be1a38c0b6c7b35bc0d95",
     "scripts/security-check-smoke.mjs": "sha256:10cf422cc5cd55caafab8f5092870cd452eb34b693e76d6dd2ab6bc1f760e8c4",
     "scripts/security-integration-smoke.mjs": "sha256:3e4732cbe5b23a8f2c3402cf3bfb9fc16589ef906392e3383865b65ceeb206c4",
@@ -113,7 +117,7 @@
     "src/lib/benchmark-promotion.ts": "sha256:5be7d5eb5e8dfa3654f8176ceb8098565ee6fdf534e87c5cd8e9b028931a7d3d",
     "src/lib/bounded-input.ts": "sha256:65d207a8f5503c10a1cc8b4007a297fdfdd1a51243bbffe584b53eeb64c2931c",
     "src/lib/design-production.ts": "sha256:46314fbb041e4e10f151f84556fb3b5510a00a0d82b4ef173c574e8e835cd79a",
-    "src/lib/external-updates.ts": "sha256:5346f5a83c8a4353d737eff0a42744e97f04d8d19b124f243c2df46172de0a43",
+    "src/lib/external-updates.ts": "sha256:c54524fa37b4976c0e97e94e3802f2fb81046bdbc6e17ccf2a08fe4447b49567",
     "src/lib/gate-result.ts": "sha256:d2ee2b6ae66e2a07c098781636264accade0132158777c52a610a47fc1910333",
     "src/lib/hook-readiness.ts": "sha256:5318217103665f9569ab418c06d2d9dc99089c01bdffee359626cbca165af519",
     "src/lib/media-provider-receipt.ts": "sha256:a70ea6019b3a736e14c0f79572f1370ad48ee994559a5b8db09920aed656e055",
@@ -148,7 +152,7 @@
     "Sensitive source or executable changes require renewed review rather than automatic approval.",
     "Remote deployment state and installed dependency provenance are not proved by source hashes alone.",
     "Approval redesign had bounded independent code review and synthetic PostgreSQL simulation before release preparation. Release metadata and security_only transport policy are identified engineering self-review; no production application or remote deployment is certified.",
-    "This is an unpublished local development removal build. Source changes and workflow removal are not applied to the remote repository until a separately authorized commit/push and reviewed remote pin rollout."
+    "Source review and local stage gates do not prove hosted CI acceptance, publication, global installation or deployment. Those outcomes require their own observed evidence and authorization."
   ],
   "review_notes": [
     "Reviewed hook schema migration: opt-in, backup and file identity checks, handler preservation, no Codex trust bypass; existing same-user filesystem race limitation retained.",
@@ -180,6 +184,10 @@
     "Reviewed 2.8.10 release preparation: synchronized package, package lock and manifest versions; dependency graph unchanged. User explicitly requested no new local Test check execution. The repository transport policy defers only commit/push tests, keeps independent Security check, and preserves CI/deploy requirements, scenario inventory and workflows. No branch-protection change, hook bypass, global install or npm publication is authorized.",
     "User explicitly requested complete removal of the dedicated Test check feature, including manual CLI. Reviewed deletion of its two modules, policy initializer, dedicated adapters, template, guidance, hook coupling, Security check prerequisite and CI execution. Ordinary tests, nine-area security policy, source/artifact/configuration binding, failure notes and deployment inspection remain. Legacy hook test-policy option is accepted without use solely for migration compatibility. User project policies and private evidence are preserved.",
     "Local removal package is labeled 2.8.11 (not published) to distinguish it from public 2.8.10 and avoid a local prerelease being mistaken for an older numeric version by the existing updater. Final packaged CLI and ownership-preview checks passed; no public release or Git history mutation performed.",
-    "Reviewed 2.8.12 source metadata repair: release pack uses a clean exact Git checkout, bounded npm file listing, regular nonlinked files and ignored lifecycle scripts; embeds gitHead only in temporary package manifest, checks the final tarball, preserves source and refuses artifact collisions. Packed lifecycle rejects absent/mismatched gitHead. Both CI packaging workflows and manual handoff use this path. Loopback registry regression exercised actual npm tarball publication and confirmed gitHead in outgoing metadata; updater still fails closed on missing, invalid or conflicting revisions. No updater trust fallback, dependency graph change or security policy relaxation."
+    "Reviewed 2.8.12 source metadata repair: release pack uses a clean exact Git checkout, bounded npm file listing, regular nonlinked files and ignored lifecycle scripts; embeds gitHead only in temporary package manifest, checks the final tarball, preserves source and refuses artifact collisions. Packed lifecycle rejects absent/mismatched gitHead. Both CI packaging workflows and manual handoff use this path. Loopback registry regression exercised actual npm tarball publication and confirmed gitHead in outgoing metadata; updater still fails closed on missing, invalid or conflicting revisions. No updater trust fallback, dependency graph change or security policy relaxation.",
+    "Reviewed 2.8.13 nonblocking updater execution: shell-free asynchronous spawn preserves cwd/environment, bounded per-stream output and redaction; timeout/output failure requests process-group termination on POSIX then force termination after a grace period. Resolution waits for process/stream closure and rejects spawn errors, signals or timeout even with zero status. Windows terminates the direct child only; this is not an adversarial process sandbox.",
+    "Reviewed initial and post-update plugin inventory: both use only the official configured marketplace, with no broad fallback; source/revision/root validation and explicit update authority are unchanged. Twelve bounded regressions include three observed real child exits plus fixture errors, limits, signal and scope failures. Earlier local packaged checks do not prove the installed global runner was updated.",
+    "Reviewed explicit isolated compatibility harnesses: fixed 0.5.1 primary wheel hash, official PyPI resolution, run-local offline hash-locked candidate/rollback wheelhouses, private environment/browser/link ownership and no user credential inheritance. Remote cases use a disposable loopback browser and distinguish real, fixture-only and instrumented evidence. Global no-mutation checks cover link/entrypoint identity, digest and version, not the entire installation. Browser provenance is observed, egress is not OS-enforced, top-level interruption and other platforms remain unmeasured. Scripts are outside default install/hooks/CI/package contents and are not a global promotion mechanism.",
+    "Reviewed 2.8.13 metadata and ordered demand gates: package, root lock fields and manifest are synchronized; dependency graph, security policy, required checks and workflows remain unchanged. User authorized backup and exact reviewed local/remote hash refresh, commit and push on current main only; no branch/PR, protection change, global installation or npm publication is included."
   ]
 }

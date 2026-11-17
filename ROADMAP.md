@@ -500,3 +500,31 @@ Keep out for now:
 - unbounded revision loops or autonomous approval.
 - remote gallery hosting, public sharing, or background review services.
 - replacing protected source assets or weakening existing provenance and `do_not_replace` checks.
+
+### 17. Compatibility And Trust Readiness Follow-up
+
+Status: P0/P1 isolated verification completed on 2026-11-17 for macOS arm64 / Python 3.14.6; P3a reviewed with no documentation change needed. The authorized run did not promote the candidate globally. Optional phases remain demand-gated.
+
+Ordered phases:
+
+1. **P0 — Isolated verification preflight.** Confirm the current executable, supported Python/platform, exact package artifact, isolated cache/profile paths, and cleanup ownership. Classify updater timeouts without treating a failed check as an up-to-date result.
+2. **P1 — Exact-version compatibility and rollback.** Validate Scrapling 0.5.1 in a separate environment: hash-checked wheel and explicit dependency coverage, CLI/content checks, synchronous/asynchronous remote-session ownership on a disposable local browser, private-link failure rollback, and an evidence receipt. Preserve the real global installation. Passing this phase does not authorize promotion.
+3. **P2 — Optional security guidance integrity.** Enter only when repeated security reviews need a reusable corpus. Design a small commit-pinned, license-preserving, per-file hash manifest with an explicit not-run state; never replace Security check or grant execution permissions.
+4. **P3 — Evidence clarity, then optional measurement.** First inspect whether reports already distinguish local verification from target acceptance and change only an actual gap. Add local, content-free, default-off hook metrics only when repeated false blocks or latency create a measurable need; no new mandatory question or test gates.
+5. **P4 — Optional host adapter.** Enter only after a real second-host task is selected. Validate a read-only CLI contract before MCP or host-specific skill/hook integration; provider routing alone is not host compatibility.
+6. **P5 — Optional design regression rubric.** Enter only on repeated plan review or multi-asset production. Reuse the existing opt-in Canvas, two-round revision bound, and gallery integrity; add no new design runtime.
+
+Execution boundaries:
+
+- P0 and P1 need a separate execution request. P2, P3 measurement, P4, and P5 also need their demand trigger; unmet triggers are deferred, not failed gates or automatic work.
+- Wheel provenance, dependency lock coverage, browser artifact provenance, runtime compatibility, cleanup, and actual target acceptance are separate claims.
+- Compatibility receipts must report real versus fixture evidence, failures, skipped coverage, global no-mutation checks, owned-process exit, and remaining uncertainty.
+- Global promotion, version bumps, commit, push, and publish remain separately authorized. Commit/push/deployment require the existing exact-stage security checks; no new branch or PR workflow is implied.
+
+Execution result (2026-11-17):
+
+- Added explicit-run compatibility harnesses under `scripts/`, outside default install, hooks, CI and package contents. Exact 0.5.1 and rollback 0.4.15 used separate run-local, offline hash-locked wheelhouses; this is not a new product installer lock policy.
+- CLI/content checks and 14 remote-session cases passed on a disposable local browser. Missing-context cases are fixture-only; injected setup/receipt failures and the real updater exercised through private substitutions are instrumented evidence, not an unmodified production update.
+- Private-link rollback and success passed. Owned process exits, closed ports and scratch removal were observed; the global 0.4.15 link/entrypoint identity, digest and reported version stayed unchanged. This does not assert the entire installed package tree was hashed.
+- Browser executable provenance was observed, not independently authenticated; external egress was not OS-enforced. Other platforms, real login state and top-level harness interruption remain unmeasured.
+- The initial read-only updater check timed out despite successful direct metadata fetches. Follow-up diagnosis isolated broad plugin-query latency and synchronous event-loop blocking; a nonblocking, marketplace-scoped local correction passed ordinary and packaged CLI checks. Global installation still needs separate authorization. P2, P3 measurement, P4 and P5 remain deferred without their demand triggers.

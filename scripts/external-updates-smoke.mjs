@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { syncBuiltinESMExports } from 'node:module';
+import { PassThrough } from 'node:stream';
 import {
   existsSync,
   mkdirSync,
@@ -42,6 +45,8 @@ try {
   assert.match(check.components[2].source_revision.note, /plugin manifest version/);
   assert.equal(fixture.fetches.some((url) => url.includes('/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/')), true);
   assert.equal(fixture.fetches.some((url) => url.includes('/HEAD/')), false);
+  assert.ok(fixture.commands.some((item) => item.command === 'codex' && item.args.join(' ') === 'plugin list --json --marketplace gptaku-codex'));
+  await checkDefaultCommandRunner();
 
   for (const scenario of ['metadata404', 'artifact404', 'network', 'auth', 'mismatch', 'untrusted', 'missingGitHead', 'invalidGitHead', 'revisionMismatch']) {
     const pendingFixture = createFixture();
@@ -622,6 +627,121 @@ try {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 }
 
+async function checkDefaultCommandRunner() {
+  const originalSpawn = childProcess.spawn;
+  const originalTimeout = globalThis.setTimeout;
+  try {
+    for (const scenario of ['real_slow', 'real_timeout_zero', 'real_hard_timeout', 'timeout_zero', 'error_zero', 'signal_zero', 'missing', 'throw', 'stdout_limit', 'stderr_limit', 'hard_timeout', 'unsupported_scope']) {
+      const fixture = createFixture();
+      const deps = fixture.dependencies();
+      delete deps.run;
+      let metadataCompleted = false, pluginClosed = false;
+      let metadataBeforePlugin = false, realStatus;
+      const kills = [], realPids = [], pluginQueries = [];
+      const fetchJson = deps.fetchJson;
+      deps.fetchJson = async (url) => {
+        if (url.endsWith('/latest')) {
+          await new Promise((resolve) => originalTimeout(resolve, 10));
+          metadataCompleted = true;
+          metadataBeforePlugin = !pluginClosed;
+        }
+        return fetchJson(url);
+      };
+      globalThis.setTimeout = (callback, delay, ...args) => originalTimeout(callback,
+        scenario.startsWith('real_') && scenario !== 'real_slow' && delay === 30000 ? 1000
+          : scenario.startsWith('real_') && delay === 3000 ? 100
+            : scenario !== 'real_slow' && (delay === 30000 || delay === 3000) ? 20 : delay, ...args);
+      childProcess.spawn = (command, args, options) => {
+        assert.equal(options.shell, false);
+        assert.deepEqual(options.stdio, ['ignore', 'pipe', 'pipe']);
+        assert.equal(options.detached, process.platform !== 'win32');
+        const target = command === 'codex' && args[0] === 'plugin' && args[1] === 'list';
+        if (target) {
+          pluginQueries.push([...args]);
+          assert.deepEqual(args, ['plugin', 'list', '--json', '--marketplace', 'gptaku-codex']);
+        }
+        if (target && scenario === 'throw') throw new Error('fixture spawn failed; token=fixture-secret');
+        if (target && scenario.startsWith('real_')) {
+          const output = JSON.stringify({ installed: [{ pluginId: 'insane-search-codex@gptaku-codex', version: '0.8.2' }] });
+          const program = scenario === 'real_slow' ? `setTimeout(() => process.stdout.write(${JSON.stringify(output)}), 80)`
+            : `process.on('SIGTERM', () => { ${scenario === 'real_timeout_zero' ? 'process.exit(0);' : ''} }); process.stdout.write(${JSON.stringify(output)}); setInterval(() => {}, 1000);`;
+          const child = originalSpawn(process.execPath, ['-e', program], options);
+          realPids.push(child.pid);
+          child.once('close', (status) => { pluginClosed = true; realStatus = status; });
+          return child;
+        }
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        let closed = false;
+        const close = (status, signal = null) => {
+          if (closed) return;
+          closed = true;
+          child.stdout.end(); child.stderr.end();
+          if (target) pluginClosed = true;
+          child.emit('close', status, signal);
+        };
+        child.kill = (signal) => {
+          assert.equal(target, true, 'only the failing fixture command should be terminated');
+          kills.push(signal);
+          if (scenario !== 'hard_timeout' || signal === 'SIGKILL') originalTimeout(() => close(0, signal === 'SIGKILL' ? signal : null), 5);
+          return true;
+        };
+        queueMicrotask(async () => {
+          if (!target) {
+            const result = await fixture.run(command, args);
+            child.stdout.write(result.stdout); child.stderr.write(result.stderr);
+            close(result.status);
+          } else if (scenario === 'error_zero' || scenario === 'missing') {
+            const error = new Error(scenario === 'missing' ? 'fixture ENOENT' : 'fixture timed out; token=fixture-secret');
+            error.code = scenario === 'missing' ? 'ENOENT' : 'ETIMEDOUT';
+            child.emit('error', error);
+            close(scenario === 'missing' ? -2 : 0);
+          } else if (scenario === 'signal_zero') close(0, 'SIGTERM');
+          else if (scenario.endsWith('_limit')) child[scenario === 'stdout_limit' ? 'stdout' : 'stderr'].write(Buffer.alloc(8 * 1024 * 1024 + 1, 65));
+          else if (scenario === 'unsupported_scope') {
+            child.stderr.write('unsupported option --marketplace; token=fixture-secret'); close(1);
+          }
+          // Timeout fixtures deliberately stay open until the runner terminates and observes close.
+        });
+        return child;
+      };
+      syncBuiltinESMExports();
+      const result = await checkExternalUpdates('2.4.0', deps);
+      const plugin = result.components.find((item) => item.component === 'insane-search');
+      assert.deepEqual(pluginQueries, [['plugin', 'list', '--json', '--marketplace', 'gptaku-codex']], 'never fall back to a broad plugin inventory');
+      assert.equal(metadataCompleted, true, scenario);
+      assert.equal(result.components[0].status, 'update_available', scenario);
+      assert.equal(result.components[1].status, 'update_available', scenario);
+      for (const pid of realPids) assert.throws(() => process.kill(pid, 0), (error) => error.code === 'ESRCH');
+      if (scenario === 'real_slow') {
+        assert.equal(result.success, true);
+        assert.equal(metadataBeforePlugin, true, 'metadata timer must progress while the real child runs');
+        assert.equal(pluginClosed, true, 'success waits for child/streams close');
+      } else {
+        assert.equal(result.success, false, scenario);
+        assert.equal(plugin.status, 'check_failed', scenario);
+        assert.match(plugin.error, /codex plugin list failed/, scenario);
+        assert.equal(plugin.error.includes('fixture-secret'), false, 'failure output must stay redacted');
+        if (scenario.includes('timeout')) assert.match(plugin.error, /timed out/);
+        if (scenario === 'real_timeout_zero' && process.platform !== 'win32') assert.equal(realStatus, 0, 'actual graceful zero exit after timeout must still fail');
+        if (scenario === 'real_hard_timeout' && process.platform !== 'win32') assert.match(plugin.error, /SIGKILL/);
+        if (scenario.endsWith('_limit')) assert.match(plugin.error, /8 MiB limit/);
+        if (scenario === 'signal_zero') assert.match(plugin.error, /SIGTERM/);
+        if (scenario === 'missing') assert.match(plugin.error, /ENOENT/);
+        if (scenario === 'hard_timeout') assert.deepEqual(kills, ['SIGTERM', 'SIGKILL']);
+        if (scenario === 'timeout_zero' || scenario.endsWith('_limit')) assert.deepEqual(kills, ['SIGTERM']);
+        if (scenario !== 'throw') assert.equal(pluginClosed, true, 'failure must wait for observed close');
+      }
+    }
+    console.log('external command runner smoke: ok (12 bounded cases; three real children)');
+  } finally {
+    childProcess.spawn = originalSpawn;
+    globalThis.setTimeout = originalTimeout;
+    syncBuiltinESMExports();
+  }
+}
+
 function createFixture(options = {}) {
   const root = mkdtempSync(join(tmpdir(), 'yam-external-updates-'));
   roots.push(root);
@@ -808,7 +928,7 @@ function createFixture(options = {}) {
           }]
         }));
       }
-      if (command === 'codex' && args.join(' ') === 'plugin list --json') {
+      if (command === 'codex' && args.join(' ') === 'plugin list --json --marketplace gptaku-codex') {
         if (fixture.pluginListFailsAfterUpgrade && fixture.marketplaceUpgraded) {
           return fail('plugin state unavailable\n');
         }

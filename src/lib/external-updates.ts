@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -528,7 +528,7 @@ async function checkInsaneSearch(deps: ResolvedDependencies): Promise<ExternalCo
     const manifestUrl = `${INSANE_MANIFEST_ROOT}/${remoteRevision}/${INSANE_MANIFEST_PATH}`;
     const [manifest, pluginList, marketplaceList] = await Promise.all([
       deps.fetchJson(manifestUrl),
-      deps.run('codex', ['plugin', 'list', '--json'], { env: deps.env, timeout: 30000 }),
+      deps.run('codex', ['plugin', 'list', '--json', '--marketplace', INSANE_MARKETPLACE], { env: deps.env, timeout: 30000 }),
       deps.run('codex', ['plugin', 'marketplace', 'list', '--json'], { env: deps.env, timeout: 30000 })
     ]);
     if (!pluginList.ok) throw new Error(`codex plugin list failed: ${commandNote(pluginList)}`);
@@ -1300,7 +1300,7 @@ async function installedInsaneVersion(
   checks: ExternalComponentReceipt['checks'],
   id: string
 ) {
-  const result = await deps.run('codex', ['plugin', 'list', '--json'], { env: deps.env, timeout: 30000 });
+  const result = await deps.run('codex', ['plugin', 'list', '--json', '--marketplace', INSANE_MARKETPLACE], { env: deps.env, timeout: 30000 });
   checks.push(commandCheck(id, result));
   if (!result.ok) {
     return {
@@ -1646,21 +1646,65 @@ function commandNote(result: ExternalCommandResult) {
   return (lines.slice(-4).join(' | ') || `exit ${result.status ?? 'unknown'}`).slice(0, 800);
 }
 
-async function defaultRun(command: string, args: string[], options: ExternalCommandOptions = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd || process.cwd(),
-    env: options.env || process.env,
-    encoding: 'utf8',
-    timeout: options.timeout || 30000,
-    shell: false,
-    maxBuffer: 8 * 1024 * 1024
+async function defaultRun(command: string, args: string[], options: ExternalCommandOptions = {}): Promise<ExternalCommandResult> {
+  return await new Promise((resolve) => {
+    const grouped = process.platform !== 'win32';
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(command, args, {
+        cwd: options.cwd || process.cwd(),
+        env: options.env || process.env,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: grouped,
+        windowsHide: true
+      });
+    } catch (error) {
+      resolve({ ok: false, status: null, stdout: '', stderr: redactSensitiveText(errorMessage(error)) });
+      return;
+    }
+    const stdout: Buffer[] = [], stderr: Buffer[] = [];
+    const sizes = { stdout: 0, stderr: 0 };
+    let commandError: Error | undefined;
+    let failure = '';
+    let hardTimer: ReturnType<typeof setTimeout> | undefined;
+    const signalChild = (signal: NodeJS.Signals) => {
+      if (grouped && child.pid) {
+        try { process.kill(-child.pid, signal); return; } catch {}
+      }
+      child.kill(signal);
+    };
+    const terminate = (reason: string) => {
+      if (failure) return;
+      failure = reason;
+      signalChild('SIGTERM');
+      hardTimer = setTimeout(() => signalChild('SIGKILL'), 3000);
+    };
+    const timer = setTimeout(() => terminate('command timed out'), options.timeout || 30000);
+    for (const [stream, name, chunks] of [[child.stdout, 'stdout', stdout], [child.stderr, 'stderr', stderr]] as const) {
+      stream.on('data', (chunk: Buffer) => {
+        if (failure) return;
+        sizes[name] += chunk.byteLength;
+        if (sizes[name] > 8 * 1024 * 1024) terminate(`command ${name} exceeds 8 MiB limit`);
+        else chunks.push(chunk);
+      });
+    }
+    child.once('error', (error) => { commandError = error; });
+    // Await closed streams/process, including after timeout; a zero status cannot cancel failure.
+    child.once('close', (status, signal) => {
+      clearTimeout(timer);
+      clearTimeout(hardTimer);
+      resolve({
+        ok: status === 0 && !signal && !commandError && !failure,
+        status: typeof status === 'number' ? status : null,
+        stdout: redactSensitiveText(Buffer.concat(stdout).toString('utf8')),
+        stderr: redactSensitiveText([
+          Buffer.concat(stderr).toString('utf8'), commandError?.message, failure,
+          signal ? `command terminated by ${signal}` : ''
+        ].filter(Boolean).join('\n'))
+      });
+    });
   });
-  return {
-    ok: result.status === 0,
-    status: typeof result.status === 'number' ? result.status : null,
-    stdout: redactSensitiveText(String(result.stdout || '')),
-    stderr: redactSensitiveText(String(result.stderr || result.error?.message || ''))
-  };
 }
 
 async function defaultFetchJson(url: string) {
